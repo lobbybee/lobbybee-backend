@@ -4,6 +4,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from django.core.mail import send_mail
 from django.conf import settings
 from django.utils.crypto import get_random_string
+from django.utils import timezone
 from django.db import transaction
 from .models import User, OTP
 from .serializers import UserSerializer
@@ -45,14 +46,14 @@ class UsernameSuggestionView(views.APIView):
             new_suggestion = f"{base_name}{random_suffix}"
             if new_suggestion not in final_suggestions and not User.objects.filter(username=new_suggestion).exists():
                 final_suggestions.append(new_suggestion)
-        
+
         return Response({'suggestions': final_suggestions[:5]}, status=status.HTTP_200_OK)
 
 
 class HotelRegistrationView(generics.CreateAPIView):
     permission_classes = [AllowAny]
     serializer_class = UserSerializer
-    
+
     def create(self, request, *args, **kwargs):
         request.data['user_type'] = 'hotel_admin'
         hotel_name = request.data.get('hotel_name')
@@ -61,7 +62,7 @@ class HotelRegistrationView(generics.CreateAPIView):
 
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        
+
         try:
             with transaction.atomic():
                 user = serializer.save()
@@ -89,12 +90,12 @@ class HotelRegistrationView(generics.CreateAPIView):
 class HotelStaffRegistrationView(generics.CreateAPIView):
     permission_classes = [IsAuthenticated, IsHotelAdmin]
     serializer_class = UserSerializer
-    
+
     def create(self, request, *args, **kwargs):
         # Set the hotel and created_by fields
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        
+
         user = serializer.save(
             hotel=request.user.hotel,
             created_by=request.user,
@@ -120,7 +121,7 @@ class VerifyOTPView(views.APIView):
             user.save()
             otp.delete()
 
-            return Response({'message': 'Email verified successfully.'}, status=status.HTTP_200_OK)
+            return Response({'message': 'Email verified successfully.','data':user.email}, status=status.HTTP_200_OK)
 
         except User.DoesNotExist:
             return Response({'error': 'User not found.'}, status=status.HTTP_404_NOT_FOUND)
@@ -170,4 +171,3 @@ class ResendOTPView(views.APIView):
                 {'error': 'An unexpected error occurred. Could not resend OTP.'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
-

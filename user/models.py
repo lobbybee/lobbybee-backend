@@ -13,6 +13,7 @@ class User(AbstractUser):
         ('department_staff', 'Department Staff'),
     ]
     
+    email = models.EmailField(unique=True)
     user_type = models.CharField(max_length=20, choices=USER_TYPES)
     phone_number = models.CharField(max_length=15, blank=True)
     is_verified = models.BooleanField(default=False)
