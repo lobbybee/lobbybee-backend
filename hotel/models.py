@@ -3,6 +3,7 @@ from django.utils import timezone
 import uuid
 
 from user.models import User
+from lobbybee.utils.file_url import upload_to_hotel_documents
 
 # Hotel Management
 class Hotel(models.Model):
@@ -56,3 +57,22 @@ class Hotel(models.Model):
 
     def get_admin(self):
         return self.user_set.filter(user_type='hotel_admin').first()
+
+class HotelDocument(models.Model):
+    """
+    Stores verification documents for hotels.
+    """
+    DOCUMENT_TYPE = [
+        ('license', 'Business License'),
+        ('registration', 'Company Registration'),
+        ('other', 'Other'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    hotel = models.ForeignKey(Hotel, on_delete=models.CASCADE, related_name='documents')
+    document_type = models.CharField(max_length=20, choices=DOCUMENT_TYPE)
+    document_file = models.FileField(upload_to=upload_to_hotel_documents)
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.get_document_type_display()} for {self.hotel.name}"
