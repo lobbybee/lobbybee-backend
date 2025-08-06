@@ -10,6 +10,29 @@ from .models import User, OTP
 from .serializers import UserSerializer
 from hotel.permissions import IsHotelAdmin
 import re
+from rest_framework_simplejwt.views import TokenObtainPairView
+from rest_framework_simplejwt.tokens import RefreshToken
+
+
+class CustomTokenObtainPairView(TokenObtainPairView):
+    def post(self, request, *args, **kwargs):
+        response = super().post(request, *args, **kwargs)
+        if response.status_code == 200:
+            user = User.objects.get(email=request.data['email'])
+            response.data['user'] = UserSerializer(user).data
+        return response
+
+class LogoutView(views.APIView):
+    permission_classes = (IsAuthenticated,)
+
+    def post(self, request):
+        try:
+            refresh_token = request.data["refresh_token"]
+            token = RefreshToken(refresh_token)
+            token.blacklist()
+            return Response(status=status.HTTP_205_RESET_CONTENT)
+        except Exception as e:
+            return Response(status=status.HTTP_400_BAD_REQUEST)
 
 
 class UsernameSuggestionView(views.APIView):
