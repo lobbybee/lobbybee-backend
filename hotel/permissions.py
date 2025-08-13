@@ -17,3 +17,10 @@ class IsSuperAdmin(BasePermission):
     def has_permission(self, request, view):
         return (request.user.is_authenticated and 
                 request.user.user_type == 'superadmin')
+
+class CanCreateReceptionist(BasePermission):
+    def has_permission(self, request, view):
+        if request.method == 'POST':
+            if request.user.is_authenticated and request.data.get('user_type') == 'receptionist':
+                return request.user.user_type in ['hotel_admin', 'manager']
+        return True # Allow other methods or if not creating a receptionist

@@ -1,4 +1,4 @@
-from rest_framework import generics, status, views
+from rest_framework import generics, status, views, viewsets
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from django.core.mail import send_mail
@@ -8,7 +8,9 @@ from django.utils import timezone
 from django.db import transaction
 from .models import User, OTP
 from .serializers import UserSerializer
-from hotel.permissions import IsHotelAdmin
+from hotel.permissions import IsHotelAdmin, CanCreateReceptionist
+from hotel.models import Hotel
+from hotel.serializers import UserHotelSerializer
 import re
 from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -18,21 +20,37 @@ class CustomTokenObtainPairView(TokenObtainPairView):
     def post(self, request, *args, **kwargs):
         response = super().post(request, *args, **kwargs)
         if response.status_code == 200:
-            user = User.objects.get(email=request.data['email'])
-            response.data['user'] = UserSerializer(user).data
+            user = User.objects.get(username=request.data['username'])
+            user_data = UserSerializer(user).data
+
+            # Add hotel information for hotel users
+            if user.user_type in ['hotel_admin', 'manager', 'receptionist'] and user.hotel:
+                user_data['hotel_id'] = str(user.hotel.id)
+
+            response.data['user'] = user_data
         return response
 
 class LogoutView(views.APIView):
     permission_classes = (IsAuthenticated,)
 
     def post(self, request):
+        refresh_token = request.data.get("refresh")
+
+        if not refresh_token:
+            return Response(
+                {"error": "Refresh token is required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
         try:
-            refresh_token = request.data["refresh_token"]
             token = RefreshToken(refresh_token)
             token.blacklist()
-            return Response(status=status.HTTP_205_RESET_CONTENT)
+            return Response({"message": "Successfully logged out"}, status=status.HTTP_205_RESET_CONTENT)
         except Exception as e:
-            return Response(status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"error": "Invalid refresh token"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
 
 class UsernameSuggestionView(views.APIView):
@@ -194,3 +212,30 @@ class ResendOTPView(views.APIView):
                 {'error': 'An unexpected error occurred. Could not resend OTP.'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+class UserViewSet(viewsets.ModelViewSet):
+    queryset = User.objects.all()
+    serializer_class = UserSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        if user.user_type == 'hotel_admin':
+            return User.objects.filter(hotel=user.hotel)
+        return User.objects.none() # Superadmins can see all users, but for now, only hotel admins can see their hotel's users.
+
+    def get_permissions(self):
+        if self.action == 'create':
+            # Check if the request is to create a 'receptionist'
+            if self.request.data.get('user_type') == 'receptionist':
+                permission_classes = [IsAuthenticated, CanCreateReceptionist]
+            else:
+                # For creating other user types, only hotel_admin is allowed
+                permission_classes = [IsAuthenticated, IsHotelAdmin]
+        elif self.action in ['list', 'retrieve']:
+            permission_classes = [IsAuthenticated, IsHotelAdmin]
+        elif self.action in ['update', 'partial_update', 'destroy']:
+            permission_classes = [IsAuthenticated, IsHotelAdmin]
+        else:
+            permission_classes = [IsAuthenticated]
+        return [permission() for permission in permission_classes]
