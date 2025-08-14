@@ -1,0 +1,88 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-lobbybee}
+      POSTGRES_USER: ${POSTGRES_USER:-lobbybee_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-lobbybee_password}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  redis:
+    image: redis:7
+    restart: unless-stopped
+
+  web:
+    build: .
+    command: gunicorn lobbybee.wsgi:application --bind 0.0.0.0:8000
+    volumes:
+      - static_volume:/app/static
+      - media_volume:/app/media
+    environment:
+      - DJANGO_ENV=production
+    depends_on:
+      - db
+      - redis
+    env_file:
+      - .env
+    restart: unless-stopped
+
+  celery:
+    build: .
+    command: celery -A lobbybee worker --loglevel=info
+    volumes:
+      - ./lobbybee:/app/lobbybee
+      - ./user:/app/user
+      - ./hotel:/app/hotel
+      - ./guest:/app/guest
+      - ./hotelstat:/app/hotelstat
+      - ./context_manager:/app/context_manager
+    environment:
+      - DJANGO_ENV=production
+    depends_on:
+      - db
+      - redis
+    env_file:
+      - .env
+    restart: unless-stopped
+
+  celery-beat:
+    build: .
+    command: celery -A lobbybee beat --loglevel=info --scheduler django_celery_beat.schedulers:DatabaseScheduler
+    volumes:
+      - ./lobbybee:/app/lobbybee
+      - ./user:/app/user
+      - ./hotel:/app/hotel
+      - ./guest:/app/guest
+      - ./hotelstat:/app/hotelstat
+      - ./context_manager:/app/context_manager
+    environment:
+      - DJANGO_ENV=production
+    depends_on:
+      - db
+      - redis
+    env_file:
+      - .env
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - static_volume:/app/static
+      - media_volume:/app/media
+      - ./config/nginx:/etc/nginx/conf.d
+      - ./config/certs:/etc/nginx/certs
+    depends_on:
+      - web
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  static_volume:
+  media_volume:

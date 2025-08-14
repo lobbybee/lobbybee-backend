@@ -21,3 +21,7 @@ DEFAULT_FILE_STORAGE = 'lobbybee.utils.storage_backends.MediaStorage'
 # File Upload Settings
 FILE_UPLOAD_MAX_MEMORY_SIZE = 5242880  # 5MB
 DATA_UPLOAD_MAX_MEMORY_SIZE = 5242880   # 5MB
+
+# Celery Configuration for development
+CELERY_TASK_ALWAYS_EAGER = True
+CELERY_TASK_EAGER_PROPAGATES = True

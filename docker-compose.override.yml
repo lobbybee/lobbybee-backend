@@ -1,0 +1,33 @@
+services:
+  web:
+    volumes:
+      - ./lobbybee:/app/lobbybee
+      - ./user:/app/user
+      - ./hotel:/app/hotel
+      - ./guest:/app/guest
+      - ./hotelstat:/app/hotelstat
+      - ./context_manager:/app/context_manager
+    environment:
+      - DJANGO_ENV=development
+
+  celery:
+    volumes:
+      - ./lobbybee:/app/lobbybee
+      - ./user:/app/user
+      - ./hotel:/app/hotel
+      - ./guest:/app/guest
+      - ./hotelstat:/app/hotelstat
+      - ./context_manager:/app/context_manager
+    environment:
+      - DJANGO_ENV=development
+
+  celery-beat:
+    volumes:
+      - ./lobbybee:/app/lobbybee
+      - ./user:/app/user
+      - ./hotel:/app/hotel
+      - ./guest:/app/guest
+      - ./hotelstat:/app/hotelstat
+      - ./context_manager:/app/context_manager
+    environment:
+      - DJANGO_ENV=development
