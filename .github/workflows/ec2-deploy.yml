@@ -107,11 +107,11 @@ jobs:
           echo "Stopping current services..."
           docker compose -f docker-compose.prod.yml down --remove-orphans
 
-          # Build the web service image locally on EC2 (forces rebuild with new code)
-          echo "Building web service image..."
-          docker compose -f docker-compose.prod.yml build --no-cache web
+          # Build the web, celery, and celery-beat service images locally on EC2 (forces rebuild with new code)
+          echo "Building service images..."
+          docker compose -f docker-compose.prod.yml build --no-cache web celery celery-beat
 
-          # Pull the latest images for other services (db, redis, celery, celery-beat, nginx)
+          # Pull the latest images for other services (db, redis, nginx)
           echo "Pulling other service images..."
           docker compose -f docker-compose.prod.yml pull
 
