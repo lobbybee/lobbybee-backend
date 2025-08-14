@@ -48,31 +48,6 @@ jobs:
         cache-from: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/lobbybee-web:latest # *** ADJUST ***
         cache-to: type=inline
 
-    # --- Deployment Steps ---
-
-    # --- DIAGNOSTIC STEP ---
-    - name: List files for debugging SCP
-      run: |
-        echo "Current directory: $(pwd)"
-        echo "Contents of current directory:"
-        ls -la
-        echo ""
-        echo "Checking for specific files/dirs:"
-        if [ -f "docker-compose.prod.yml" ]; then
-          echo "  Found: docker-compose.prod.yml"
-        else
-          echo "  Missing: docker-compose.prod.yml"
-        fi
-
-        if [ -d "config" ]; then
-          echo "  Found: config/ directory"
-          echo "  Contents of config/:"
-          ls -la config/
-        else
-          echo "  Missing: config/ directory"
-        fi
-    # --- END DIAGNOSTIC STEP ---
-
     - name: Copy necessary files to EC2
       uses: appleboy/scp-action@master
       with:
@@ -80,9 +55,8 @@ jobs:
         username: ${{ secrets.EC2_USERNAME }}
         key: ${{ secrets.EC2_SSH_KEY }}
         port: 22
-        source: |
-          docker-compose.prod.yml
-          config
+        # Use comma-separated list for source
+        source: docker-compose.prod.yml,config
         target: "~/app"
         strip_components: 0
 
