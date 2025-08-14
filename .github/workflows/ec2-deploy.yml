@@ -50,6 +50,29 @@ jobs:
 
     # --- Deployment Steps ---
 
+    # --- DIAGNOSTIC STEP ---
+    - name: List files for debugging SCP
+      run: |
+        echo "Current directory: $(pwd)"
+        echo "Contents of current directory:"
+        ls -la
+        echo ""
+        echo "Checking for specific files/dirs:"
+        if [ -f "docker-compose.prod.yml" ]; then
+          echo "  Found: docker-compose.prod.yml"
+        else
+          echo "  Missing: docker-compose.prod.yml"
+        fi
+
+        if [ -d "config" ]; then
+          echo "  Found: config/ directory"
+          echo "  Contents of config/:"
+          ls -la config/
+        else
+          echo "  Missing: config/ directory"
+        fi
+    # --- END DIAGNOSTIC STEP ---
+
     - name: Copy necessary files to EC2
       uses: appleboy/scp-action@master
       with:
@@ -57,7 +80,6 @@ jobs:
         username: ${{ secrets.EC2_USERNAME }}
         key: ${{ secrets.EC2_SSH_KEY }}
         port: 22
-        # Use list format for source
         source: |
           docker-compose.prod.yml
           config
