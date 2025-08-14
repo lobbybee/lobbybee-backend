@@ -115,6 +115,10 @@ jobs:
           echo "Pulling other service images..."
           docker compose -f docker-compose.prod.yml pull
 
+          # Run Django migrations
+          echo "Applying Django migrations..."
+          docker compose -f docker-compose.prod.yml run --rm web python manage.py migrate --noinput
+
           # Start services in detached mode using the production compose file
           echo "Starting services with docker-compose.prod.yml..."
           docker compose -f docker-compose.prod.yml up -d
