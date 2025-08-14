@@ -53,6 +53,7 @@ INSTALLED_APPS = [
     'guest',
     'hotelstat',
     'django_filters',
+    'context_manager',
 ]
 
 MIDDLEWARE = [

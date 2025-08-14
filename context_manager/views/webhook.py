@@ -1,0 +1,164 @@
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status
+from ..services import process_incoming_message
+import logging
+import uuid
+
+logger = logging.getLogger(__name__)
+
+class WhatsAppWebhookView(APIView):
+    """
+    View to handle incoming WhatsApp messages from the WhatsApp Business API.
+    """
+    # Disable authentication for webhooks as they come from external sources
+    authentication_classes = []
+    permission_classes = []
+    
+    def post(self, request):
+        """
+        Handle incoming POST requests from WhatsApp API.
+        """
+        try:
+            # Log the incoming request for debugging
+            logger.info(f"Incoming webhook request: {request.data}")
+            
+            # Extract relevant data from the webhook payload
+            # This implementation assumes a specific payload structure
+            # You may need to adjust this based on your actual WhatsApp API format
+            
+            # For Twilio-like format
+            if 'From' in request.data and 'Body' in request.data:
+                from_no = request.data.get('From', '').replace('whatsapp:', '')
+                message_body = request.data.get('Body', '')
+            # For generic format
+            elif 'from_no' in request.data and 'message' in request.data:
+                from_no = request.data.get('from_no')
+                message_body = request.data.get('message', '')
+            else:
+                # Try to extract from other possible formats
+                from_no = request.data.get('from', request.data.get('From', ''))
+                message_body = request.data.get('body', request.data.get('Body', request.data.get('message', '')))
+            
+            # Process the incoming message
+            payload = {
+                'from_no': from_no,
+                'message': message_body
+            }
+            
+            result = process_incoming_message(payload)
+            
+            # Log the result
+            logger.info(f"Processed message from {from_no}: {result}")
+            
+            # In a real implementation, you would send the response back via WhatsApp API
+            # For now, we just return a success response to the webhook
+            
+            return Response({
+                'status': 'success',
+                'message': 'Webhook processed successfully'
+            }, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            logger.error(f"Error processing webhook: {str(e)}")
+            return Response({
+                'status': 'error',
+                'message': 'An error occurred while processing the webhook'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    def handle_initial_message(self, whatsapp_number, message_body):
+        """
+        Handle initial messages like QR code scans (start-{hotel_id}).
+        
+        Args:
+            whatsapp_number (str): The guest's WhatsApp number
+            message_body (str): The message content
+            
+        Returns:
+            dict: Response with status and message
+        """
+        try:
+            # Check if this is a QR code scan message
+            if message_body.startswith('start-'):
+                # Extract hotel ID from message
+                hotel_id_str = message_body.replace('start-', '')
+                
+                try:
+                    hotel_id = uuid.UUID(hotel_id_str)
+                except ValueError:
+                    return {
+                        'status': 'error',
+                        'message': 'Invalid hotel ID format'
+                    }
+                
+                # In a real implementation, you would:
+                # 1. Verify the hotel exists
+                # 2. Create or update the guest record
+                # 3. Create a new conversation context
+                # 4. Send the initial flow step message
+                
+                # For now, we'll just return a placeholder response
+                return {
+                    'status': 'success',
+                    'message': f'Welcome! You have started a conversation with hotel {hotel_id}. How can we help you today?'
+                }
+            
+            # Handle demo command
+            elif message_body.lower() == 'demo':
+                return {
+                    'status': 'success',
+                    'message': 'Welcome to the demo! This is a demonstration of the hotel CRM system.'
+                }
+            
+            # Handle unknown initial messages
+            else:
+                return {
+                    'status': 'success',
+                    'message': 'Thank you for your message. Please start a new conversation by scanning a QR code or typing "demo".'
+                }
+                
+        except Exception as e:
+            logger.error(f"Error handling initial message: {str(e)}")
+            return {
+                'status': 'error',
+                'message': 'An error occurred while processing your message'
+            }
+    
+    def send_whatsapp_message(self, recipient, message):
+        """
+        Send a message via WhatsApp API.
+        
+        Args:
+            recipient (str): The recipient's WhatsApp number
+            message (str): The message to send
+            
+        Returns:
+            dict: Response with status and details
+        """
+        # In a real implementation, you would integrate with the actual WhatsApp Business API
+        # This is a placeholder implementation
+        
+        try:
+            # Log the message that would be sent
+            logger.info(f"Sending WhatsApp message to {recipient}: {message}")
+            
+            # Placeholder for actual WhatsApp API integration
+            # Example with Twilio:
+            # from twilio.rest import Client
+            # client = Client(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
+            # message = client.messages.create(
+            #     from_=settings.TWILIO_WHATSAPP_NUMBER,
+            #     body=message,
+            #     to=f'whatsapp:{recipient}'
+            # )
+            
+            return {
+                'status': 'success',
+                'message_id': 'placeholder_message_id'
+            }
+        except Exception as e:
+            logger.error(f"Error sending WhatsApp message: {str(e)}")
+            return {
+                'status': 'error',
+                'message': 'Failed to send message'
+            }

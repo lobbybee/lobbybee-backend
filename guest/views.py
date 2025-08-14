@@ -2,6 +2,7 @@ from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.db.models import Q
+from context_manager.models import ConversationContext
 from .models import Guest, GuestIdentityDocument, Stay
 from .serializers import (
     GuestSerializer,
@@ -10,7 +11,7 @@ from .serializers import (
     CheckInSerializer,
     CheckOutSerializer,
 )
-from hotel.permissions import IsHotelAdmin, IsSameHotelUser
+from hotel.permissions import IsHotelAdmin, IsSameHotelUser, CanCheckInCheckOut
 from django.utils import timezone
 
 
@@ -112,7 +113,69 @@ class StayViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         serializer.save(hotel=self.request.user.hotel)
 
-    @action(detail=False, methods=["post"], url_path="check-in")
+    @action(
+        detail=True,  # Acts on a specific stay instance
+        methods=["post"],
+        url_path="initiate-checkin",
+        permission_classes=[IsHotelAdmin], # Or a more specific permission
+    )
+    def initiate_checkin(self, request, pk=None):
+        """
+        Initiates the WhatsApp check-in flow for a guest.
+        """
+        try:
+            stay = self.get_object()
+        except Stay.DoesNotExist:
+            return Response(
+                {"detail": "Stay not found in this hotel."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        if stay.status != "pending":
+            return Response(
+                {"detail": f"Check-in cannot be initiated. Stay status is ''{stay.status}'' instead of ''pending''."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        guest = stay.guest
+        if not guest.whatsapp_number:
+            return Response(
+                {"detail": "Guest does not have a WhatsApp number."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Create or update the conversation context for the guest
+        context, created = ConversationContext.objects.update_or_create(
+            user_id=guest.whatsapp_number,
+            hotel=request.user.hotel,
+            defaults={
+                'context_data': {
+                    'current_flow': 'guest_checkin',
+                    'current_step': 'start',
+                    'stay_id': stay.id,
+                    'guest_id': guest.id,
+                    'accumulated_data': {},
+                    'navigation_stack': ['start'],
+                    'error_count': 0,
+                },
+                'is_active': True,
+            }
+        )
+
+        # TODO: Trigger a message to the user via a Celery task
+        # For now, we just confirm the context is created.
+        
+        return Response(
+            {"detail": "WhatsApp check-in flow initiated successfully."},
+            status=status.HTTP_200_OK,
+        )
+
+    @action(
+        detail=False,
+        methods=["post"],
+        url_path="check-in",
+        permission_classes=[CanCheckInCheckOut],
+    )
     def check_in(self, request):
         serializer = CheckInSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -158,11 +221,14 @@ class StayViewSet(viewsets.ModelViewSet):
         guest.status = "checked_in"
         guest.save()
 
-        return Response(
-            StaySerializer(stay).data, status=status.HTTP_200_OK
-        )
+        return Response(StaySerializer(stay).data, status=status.HTTP_200_OK)
 
-    @action(detail=False, methods=["post"], url_path="check-out")
+    @action(
+        detail=False,
+        methods=["post"],
+        url_path="check-out",
+        permission_classes=[CanCheckInCheckOut],
+    )
     def check_out(self, request):
         serializer = CheckOutSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -196,6 +262,4 @@ class StayViewSet(viewsets.ModelViewSet):
         guest.status = "checked_out"
         guest.save()
 
-        return Response(
-            StaySerializer(stay).data, status=status.HTTP_200_OK
-        )
+        return Response(StaySerializer(stay).data, status=status.HTTP_200_OK)
