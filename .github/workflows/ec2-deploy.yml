@@ -48,15 +48,16 @@ jobs:
         cache-from: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/lobbybee-web:latest # *** ADJUST ***
         cache-to: type=inline
 
-    - name: Copy necessary files to EC2
+    - name: Copy application code and configs to EC2
       uses: appleboy/scp-action@master
       with:
         host: ${{ secrets.EC2_HOST }}
         username: ${{ secrets.EC2_USERNAME }}
         key: ${{ secrets.EC2_SSH_KEY }}
         port: 22
-        # Use comma-separated list for source
-        source: docker-compose.prod.yml,config
+        # Copy the entire project context needed for docker build and compose
+        source: |
+          .
         target: "~/app"
         strip_components: 0
 
