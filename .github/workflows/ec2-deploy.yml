@@ -57,11 +57,12 @@ jobs:
         username: ${{ secrets.EC2_USERNAME }}
         key: ${{ secrets.EC2_SSH_KEY }}
         port: 22
+        # Use list format for source
         source: |
           docker-compose.prod.yml
-          config/
+          config
         target: "~/app"
-        strip_components: 0 # Adjust if needed based on your desired structure on EC2
+        strip_components: 0
 
     - name: Deploy to EC2
       uses: appleboy/ssh-action@master
