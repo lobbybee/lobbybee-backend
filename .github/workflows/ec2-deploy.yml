@@ -59,7 +59,6 @@ jobs:
         port: 22
         source: |
           docker-compose.prod.yml
-          .env # Make sure .env contains production secrets
           config/
         target: "~/app"
         strip_components: 0 # Adjust if needed based on your desired structure on EC2
@@ -89,7 +88,15 @@ jobs:
           # ---
 
           # List files for verification
-          echo "Files on EC2:"
+          echo "Files on EC2 (before creating .env):"
+          ls -al
+
+          # Recreate the .env file ON THE EC2 INSTANCE using the secret
+          echo "Creating .env file on EC2..."
+          echo "${{ secrets.ENV_PROD }}" | base64 --decode > .env
+
+          # Verify .env was created on EC2 (optional)
+          echo "Files on EC2 (after creating .env):"
           ls -al
 
           # Export required environment variables for docker login (if needed in script context)
@@ -99,16 +106,11 @@ jobs:
           echo ${{ secrets.DOCKERHUB_TOKEN }} | docker login --username ${{ secrets.DOCKERHUB_USERNAME }} --password-stdin
 
           # Pull the latest images defined in docker-compose.prod.yml
-          # This will pull the newly built 'web' image and the standard images for db, redis, celery, celery-beat, nginx
           docker compose -f docker-compose.prod.yml pull
 
           # Gracefully stop services but try to preserve volumes
           echo "Stopping current services..."
           docker compose -f docker-compose.prod.yml down --remove-orphans
-
-          # Optional: Remove the old web image to ensure the new one is used
-          # Be careful with this if you have multiple projects or tags
-          # docker rmi ${{ secrets.DOCKERHUB_USERNAME }}/lobbybee-web:latest || true
 
           # Start services in detached mode using the production compose file
           echo "Starting services with docker-compose.prod.yml..."
