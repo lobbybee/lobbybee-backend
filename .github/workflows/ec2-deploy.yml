@@ -103,12 +103,17 @@ jobs:
           # Login to Docker Hub within the EC2 instance
           echo ${{ secrets.DOCKERHUB_TOKEN }} | docker login --username ${{ secrets.DOCKERHUB_USERNAME }} --password-stdin
 
-          # Pull the latest images defined in docker-compose.prod.yml
-          docker compose -f docker-compose.prod.yml pull
-
           # Gracefully stop services but try to preserve volumes
           echo "Stopping current services..."
           docker compose -f docker-compose.prod.yml down --remove-orphans
+
+          # Build the web service image locally on EC2 (forces rebuild with new code)
+          echo "Building web service image..."
+          docker compose -f docker-compose.prod.yml build --no-cache web
+
+          # Pull the latest images for other services (db, redis, celery, celery-beat, nginx)
+          echo "Pulling other service images..."
+          docker compose -f docker-compose.prod.yml pull
 
           # Start services in detached mode using the production compose file
           echo "Starting services with docker-compose.prod.yml..."
