@@ -48,12 +48,19 @@ jobs:
         cache-from: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/lobbybee-web:latest # *** ADJUST ***
         cache-to: type=inline
 
-    - name: Fix file permissions for SSL certs
-      run: |
-        chmod 644 config/certs/ssl-dhparams.pem
-        chmod 644 config/certs/options-ssl-nginx.conf
-        chmod 755 config/certs/
+    # Step 1: Clean EC2 directory FIRST
+    - name: Clean EC2 directory
+      uses: appleboy/ssh-action@master
+      with:
+        host: ${{ secrets.EC2_HOST }}
+        username: ${{ secrets.EC2_USERNAME }}
+        key: ${{ secrets.EC2_SSH_KEY }}
+        script: |
+          # Remove existing app directory to avoid permission conflicts
+          sudo rm -rf ~/app
+          mkdir -p ~/app
 
+    # Step 2: Copy files (excluding SSL certs)
     - name: Copy application code and configs to EC2
       uses: appleboy/scp-action@master
       with:
@@ -61,12 +68,15 @@ jobs:
         username: ${{ secrets.EC2_USERNAME }}
         key: ${{ secrets.EC2_SSH_KEY }}
         port: 22
-        # Copy the entire project context needed for docker build and compose
         source: |
           .
+          !config/certs/ssl-dhparams.pem
+          !config/certs/options-ssl-nginx.conf
         target: "~/app"
         strip_components: 0
+        overwrite: true
 
+    # Step 3: Deploy to EC2
     - name: Deploy to EC2
       uses: appleboy/ssh-action@master
       with:
@@ -75,6 +85,13 @@ jobs:
         key: ${{ secrets.EC2_SSH_KEY }}
         script: |
           cd ~/app
+
+          # Create SSL certs directory and files
+          mkdir -p config/certs/
+          echo "${{ secrets.SSL_DHPARAMS }}" > config/certs/ssl-dhparams.pem
+          echo "${{ secrets.SSL_NGINX_CONF }}" > config/certs/options-ssl-nginx.conf
+          chmod 644 config/certs/ssl-dhparams.pem
+          chmod 644 config/certs/options-ssl-nginx.conf
 
           # Ensure Docker Compose plugin is installed (Idempotent)
           # This part is mostly relevant if Docker Compose V2 isn't standard
