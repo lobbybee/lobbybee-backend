@@ -60,7 +60,7 @@ jobs:
           sudo rm -rf ~/app
           mkdir -p ~/app
 
-    # Step 2: Copy files (excluding SSL certs)
+    # Step 2: Copy files (using your original working configuration)
     - name: Copy application code and configs to EC2
       uses: appleboy/scp-action@master
       with:
@@ -70,13 +70,12 @@ jobs:
         port: 22
         source: |
           .
-          !config/certs/ssl-dhparams.pem
-          !config/certs/options-ssl-nginx.conf
         target: "~/app"
         strip_components: 0
         overwrite: true
+        rm: true
 
-    # Step 3: Deploy to EC2
+    # Step 3: Fix SSL cert permissions and deploy
     - name: Deploy to EC2
       uses: appleboy/ssh-action@master
       with:
@@ -86,27 +85,10 @@ jobs:
         script: |
           cd ~/app
 
-          # Create SSL certs directory and files
-          mkdir -p config/certs/
-          echo "${{ secrets.SSL_DHPARAMS }}" > config/certs/ssl-dhparams.pem
-          echo "${{ secrets.SSL_NGINX_CONF }}" > config/certs/options-ssl-nginx.conf
+          # Fix SSL certificate permissions immediately after copy
           chmod 644 config/certs/ssl-dhparams.pem
           chmod 644 config/certs/options-ssl-nginx.conf
-
-          # Ensure Docker Compose plugin is installed (Idempotent)
-          # This part is mostly relevant if Docker Compose V2 isn't standard
-          # You might be able to skip this if your EC2 setup already has it
-          # ---
-          # DOCKER_CONFIG=${DOCKER_CONFIG:-$HOME/.docker}
-          # mkdir -p $DOCKER_CONFIG/cli-plugins
-          # if [ ! -f "$DOCKER_CONFIG/cli-plugins/docker-compose" ]; then
-          #   echo "Installing Docker Compose plugin..."
-          #   curl -SL https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64 -o $DOCKER_CONFIG/cli-plugins/docker-compose
-          #   chmod +x $DOCKER_CONFIG/cli-plugins/docker-compose
-          # else
-          #   echo "Docker Compose plugin already installed."
-          # fi
-          # ---
+          chmod 755 config/certs/
 
           # List files for verification
           echo "Files on EC2 (before creating .env):"
