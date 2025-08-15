@@ -78,6 +78,8 @@ services:
       - media_volume:/app/media
       - ./config/nginx/default.conf:/etc/nginx/conf.d/default.conf
       - certs_volume:/etc/nginx/certs
+      - ./config/certs/options-ssl-nginx.conf:/etc/nginx/certs/options-ssl-nginx.conf
+      - ./config/certs/ssl-dhparams.pem:/etc/nginx/certs/ssl-dhparams.pem
       - certbot_webroot:/var/www/certbot
     depends_on:
       - web
