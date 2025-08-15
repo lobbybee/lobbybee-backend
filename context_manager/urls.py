@@ -8,7 +8,7 @@ from .views import (
 )
 
 urlpatterns = [
-    path('context/webhook/', WhatsAppWebhookView.as_view(), name='whatsapp-webhook'),
+    path('webhook/', WhatsAppWebhookView.as_view(), name='whatsapp-webhook'),
     
     # FlowStep endpoints
     path('hotels/<uuid:hotel_id>/flow-steps/', FlowStepListView.as_view(), name='flow-step-list'),
