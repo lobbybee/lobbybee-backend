@@ -48,6 +48,12 @@ jobs:
         cache-from: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/lobbybee-web:latest # *** ADJUST ***
         cache-to: type=inline
 
+    - name: Fix file permissions for SSL certs
+      run: |
+        chmod 644 config/certs/ssl-dhparams.pem
+        chmod 644 config/certs/options-ssl-nginx.conf
+        chmod 755 config/certs/
+
     - name: Copy application code and configs to EC2
       uses: appleboy/scp-action@master
       with:
