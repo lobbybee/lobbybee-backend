@@ -2,7 +2,7 @@ name: Docker Build and Deploy
 
 on:
   push:
-    branches: [ "main" ] # Or your main branch name
+    branches: [ "main" ]
 
 jobs:
   build-and-deploy:
@@ -11,13 +11,9 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    # --- NEW STEP: Create .env file for build ---
     - name: Create .env file for Docker build
       run: |
         echo "${{ secrets.ENV_PROD }}" | base64 --decode > .env
-        # Optional: Verify the file was created (be careful not to print secrets)
-        # ls -l .env # Check file exists
-        # head -n 5 .env # Check first few lines (avoid printing SECRET_KEY!)
 
     - name: Login to Docker Hub
       uses: docker/login-action@v3
@@ -32,7 +28,7 @@ jobs:
       id: meta
       uses: docker/metadata-action@v5
       with:
-        images: ${{ secrets.DOCKERHUB_USERNAME }}/lobbybee-web # *** ADJUST THIS IMAGE NAME ***
+        images: ${{ secrets.DOCKERHUB_USERNAME }}/lobbybee-web
         tags: |
           type=raw,value=latest,enable={{is_default_branch}}
           type=sha,prefix=,suffix=,format=short
@@ -40,15 +36,43 @@ jobs:
     - name: Build and push Django app (web service)
       uses: docker/build-push-action@v5
       with:
-        context: . # Build context is the root of your repo, as your Dockerfile is there
-        file: ./Dockerfile # Explicitly point to your Dockerfile if not in context root
+        context: .
+        file: ./Dockerfile
         push: true
         tags: ${{ steps.meta.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}
-        cache-from: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/lobbybee-web:latest # *** ADJUST ***
+        cache-from: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/lobbybee-web:latest
         cache-to: type=inline
 
-    # Step 1: Clean EC2 directory FIRST
+    # NEW: Clean up Docker resources FIRST
+    - name: Clean up Docker resources on EC2
+      uses: appleboy/ssh-action@master
+      with:
+        host: ${{ secrets.EC2_HOST }}
+        username: ${{ secrets.EC2_USERNAME }}
+        key: ${{ secrets.EC2_SSH_KEY }}
+        script: |
+          echo "Cleaning up Docker resources..."
+
+          # Gracefully stop services first
+          docker compose -f ~/app/docker-compose.prod.yml down --remove-orphans 2>/dev/null || true
+
+          # Remove unused images (aggressive cleanup)
+          docker image prune -a -f
+
+          # Remove unused volumes
+          docker volume prune -f
+
+          # Remove unused networks
+          docker network prune -f
+
+          # Remove build cache
+          docker builder prune -a -f
+
+          # Show disk usage after cleanup
+          echo "Disk usage after cleanup:"
+          df -h
+
     - name: Clean EC2 directory
       uses: appleboy/ssh-action@master
       with:
@@ -56,11 +80,9 @@ jobs:
         username: ${{ secrets.EC2_USERNAME }}
         key: ${{ secrets.EC2_SSH_KEY }}
         script: |
-          # Remove existing app directory to avoid permission conflicts
           sudo rm -rf ~/app
           mkdir -p ~/app
 
-    # Step 2: Copy files (using your original working configuration)
     - name: Copy application code and configs to EC2
       uses: appleboy/scp-action@master
       with:
@@ -75,7 +97,6 @@ jobs:
         overwrite: true
         rm: true
 
-    # Step 3: Fix SSL cert permissions and deploy
     - name: Deploy to EC2
       uses: appleboy/ssh-action@master
       with:
@@ -85,48 +106,31 @@ jobs:
         script: |
           cd ~/app
 
-          # Fix SSL certificate permissions immediately after copy
+          # Fix SSL certificate permissions
           chmod 644 config/certs/ssl-dhparams.pem
           chmod 644 config/certs/options-ssl-nginx.conf
           chmod 755 config/certs/
 
-          # List files for verification
-          echo "Files on EC2 (before creating .env):"
-          ls -al
-
-          # Recreate the .env file ON THE EC2 INSTANCE using the secret
-          echo "Creating .env file on EC2..."
+          # Recreate the .env file
           echo "${{ secrets.ENV_PROD }}" | base64 --decode > .env
 
-          # Verify .env was created on EC2 (optional)
-          echo "Files on EC2 (after creating .env):"
-          ls -al
-
-          # Export required environment variables for docker login (if needed in script context)
-          export DOCKERHUB_USERNAME="${{ secrets.DOCKERHUB_USERNAME }}"
-
-          # Login to Docker Hub within the EC2 instance
+          # Login to Docker Hub
           echo ${{ secrets.DOCKERHUB_TOKEN }} | docker login --username ${{ secrets.DOCKERHUB_USERNAME }} --password-stdin
 
-          # Gracefully stop services but try to preserve volumes
-          echo "Stopping current services..."
-          docker compose -f docker-compose.prod.yml down --remove-orphans
-
-          # Build the web, celery, and celery-beat service images locally on EC2 (forces rebuild with new code)
+          # Build images with no cache to ensure fresh build
           echo "Building service images..."
           docker compose -f docker-compose.prod.yml build --no-cache web celery celery-beat
 
-          # Pull the latest images for other services (db, redis, nginx)
+          # Pull other images
           echo "Pulling other service images..."
           docker compose -f docker-compose.prod.yml pull
 
-          # Run Django migrations
+          # Run migrations
           echo "Applying Django migrations..."
           docker compose -f docker-compose.prod.yml run --rm web python manage.py migrate --noinput
 
-          # Start services in detached mode using the production compose file
-          echo "Starting services with docker-compose.prod.yml..."
+          # Start services
+          echo "Starting services..."
           docker compose -f docker-compose.prod.yml up -d
 
-          # Optional: Add health checks or status reporting here
-          echo "Deployment script finished. Check service status with 'docker compose -f docker-compose.prod.yml ps'"
+          echo "Deployment finished!"
