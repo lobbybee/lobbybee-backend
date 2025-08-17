@@ -9,7 +9,7 @@ class Guest(models.Model):
         ('checked_out', 'Checked Out'),
     ]
     
-    whatsapp_number = models.CharField(max_length=15, unique=True)
+    whatsapp_number = models.CharField(max_length=20, unique=True)
     register_number = models.CharField(max_length=50, unique=True, blank=True, null=True)
     full_name = models.CharField(max_length=200, blank=True)
     email = models.EmailField(blank=True)

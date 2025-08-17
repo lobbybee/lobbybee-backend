@@ -7,6 +7,7 @@ from ..services import (
     get_active_context,
 )
 from ..models import WebhookLog
+from django.db import utils as db_utils
 import logging
 
 logger = logging.getLogger(__name__)
@@ -60,21 +61,30 @@ class WhatsAppWebhookView(APIView):
             return Response(result, status=status.HTTP_200_OK)
 
         except ValueError as ve:
-            logger.warning(f"Bad request processing webhook: {str(ve)}")
+            error_message = str(ve)
+            logger.warning(f"Bad request processing webhook: {error_message}")
             if webhook_log:
-                webhook_log.error_message = str(ve)
+                webhook_log.error_message = error_message
                 webhook_log.save()
             return Response({
                 'status': 'error',
-                'message': str(ve)
+                'message': error_message
             }, status=status.HTTP_400_BAD_REQUEST)
             
         except Exception as e:
-            logger.error(f"Error processing webhook: {str(e)}", exc_info=True)
+            error_message = str(e)
+            logger.error(f"Error processing webhook: {error_message}", exc_info=True)
             if webhook_log:
-                webhook_log.error_message = str(e)
+                webhook_log.error_message = error_message
                 webhook_log.save()
+
+            # Customize response for database errors to guide the developer.
+            if isinstance(e, db_utils.ProgrammingError):
+                message = "Database schema error. Please ensure migrations are applied."
+            else:
+                message = "An internal error occurred while processing the webhook."
+
             return Response({
                 'status': 'error',
-                'message': 'An internal error occurred while processing the webhook.'
+                'message': message
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
