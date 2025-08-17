@@ -23,12 +23,12 @@ class WhatsAppWebhookView(APIView):
         """
         Handle incoming POST requests from the WhatsApp API.
         """
-        webhook_log = WebhookLog.objects.create(
-            payload=request.data,
-            processed_successfully=False
-        )
-
+        webhook_log = None
         try:
+            webhook_log = WebhookLog.objects.create(
+                payload=request.data,
+                processed_successfully=False
+            )
             # 1. Extract data from the webhook payload
             # This handles various formats, e.g., Twilio, generic
             if 'From' in request.data and 'Body' in request.data:
@@ -52,16 +52,18 @@ class WhatsAppWebhookView(APIView):
                 result = process_webhook_message(from_no, message_body)
 
             # 3. Log success and return the response
-            webhook_log.processed_successfully = True
-            webhook_log.save()
+            if webhook_log:
+                webhook_log.processed_successfully = True
+                webhook_log.save()
 
             logger.info(f"Processed message from {from_no}: {result}")
             return Response(result, status=status.HTTP_200_OK)
 
         except ValueError as ve:
             logger.warning(f"Bad request processing webhook: {str(ve)}")
-            webhook_log.error_message = str(ve)
-            webhook_log.save()
+            if webhook_log:
+                webhook_log.error_message = str(ve)
+                webhook_log.save()
             return Response({
                 'status': 'error',
                 'message': str(ve)
@@ -69,8 +71,9 @@ class WhatsAppWebhookView(APIView):
             
         except Exception as e:
             logger.error(f"Error processing webhook: {str(e)}", exc_info=True)
-            webhook_log.error_message = str(e)
-            webhook_log.save()
+            if webhook_log:
+                webhook_log.error_message = str(e)
+                webhook_log.save()
             return Response({
                 'status': 'error',
                 'message': 'An internal error occurred while processing the webhook.'
