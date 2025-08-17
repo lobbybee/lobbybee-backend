@@ -3,12 +3,8 @@
 
 -- Clear existing data from all relevant tables in the correct order to avoid FK constraints.
 TRUNCATE TABLE
-    context_manager_conversationmessage,
     context_manager_conversationcontext,
-    context_manager_webhooklog,
     context_manager_flowstep,
-    context_manager_hotelflowconfiguration,
-    context_manager_flowsteptemplate_actions,
     context_manager_flowsteptemplate,
     context_manager_flowaction,
     context_manager_flowtemplate,
@@ -64,10 +60,6 @@ DECLARE
     fst_fallback_main_menu_id INT;
 
 BEGIN
-    -- 1. Seed Super Admin User
-    -- Password is 'lobbybee_admin_password'
-    INSERT INTO user_user (password, is_superuser, username, first_name, last_name, email, is_staff, is_active, date_joined, user_type, is_verified, is_active_hotel_user)
-    VALUES ('pbkdf2_sha256$720000$HqYJtqI3xV9n$u/aOqjwj5s2h3yZp8q3y5s2h3yZp8q3y5s2h3yZp8q3y5s=', true, 'superadmin', 'Super', 'Admin', 'superadmin@lobbybee.com', true, true, NOW(), 'superadmin', true, true);
 
     -- 2. Seed Hotel
     INSERT INTO hotel_hotel (id, name, description, address, city, state, country, pincode, phone, email, status, is_verified, is_active, registration_date, check_in_time, time_zone, unique_qr_code)
@@ -78,7 +70,9 @@ BEGIN
     VALUES (hotel_id, 'Deluxe Suite', 'A spacious suite with a city view.', 250.00, 2, '["wifi", "tv", "ac"]', NOW());
 
     INSERT INTO hotel_room (hotel_id, room_number, category_id, floor, status)
-    VALUES (hotel_id, '205', (SELECT id FROM hotel_roomcategory WHERE name='Deluxe Suite' AND hotel_id=hotel_id), 2, 'occupied');
+    VALUES
+        (hotel_id, '205', (SELECT id FROM hotel_roomcategory WHERE name='Deluxe Suite' AND hotel_id=hotel_id), 2, 'available'),
+        (hotel_id, '206', (SELECT id FROM hotel_roomcategory WHERE name='Deluxe Suite' AND hotel_id=hotel_id), 2, 'occupied');
 
     -- Add a returning guest (with a past, completed stay)
     INSERT INTO guest_guest (whatsapp_number, full_name, email, loyalty_points, status)
@@ -102,20 +96,35 @@ BEGIN
     VALUES (
         hotel_id,
         (SELECT id FROM guest_guest WHERE whatsapp_number='+22222222222'),
-        (SELECT id FROM hotel_room WHERE room_number='205' AND hotel_id=hotel_id),
+        (SELECT id FROM hotel_room WHERE room_number='206' AND hotel_id=hotel_id),
         NOW() - INTERVAL '1 day',
         NOW() + INTERVAL '2 days',
         'active'
     );
 
+    -- Link the active guest to the room
+    UPDATE hotel_room SET current_guest_id = (SELECT id FROM guest_guest WHERE whatsapp_number='+22222222222') WHERE room_number='206' AND hotel_id=hotel_id;
+
     -- 3. Seed Flow Templates
     INSERT INTO context_manager_flowtemplate (name, description, category, is_active) VALUES
-        ('New Guest Discovery (Interactive)', 'Guides a new user through account creation.', 'new_guest_discovery_interactive', true),
-        ('Guest Check-in', 'Handles check-in for guests who scanned a QR code.', 'guest_checkin', true),
-        ('In-Stay Services', 'Main menu for checked-in guests.', 'in_stay_services', true),
-        ('Returning Guest', 'Menu for known guests without an active stay.', 'returning_guest', true),
+        ('New Guest Discovery (Interactive)', 'Guides a new user through account creation.', 'new_guest_discovery_interactive', true)
+    RETURNING id INTO ft_new_guest_discovery_id;
+
+    INSERT INTO context_manager_flowtemplate (name, description, category, is_active) VALUES
+        ('Guest Check-in', 'Handles check-in for guests who scanned a QR code.', 'guest_checkin', true)
+    RETURNING id INTO ft_guest_checkin_id;
+
+    INSERT INTO context_manager_flowtemplate (name, description, category, is_active) VALUES
+        ('In-Stay Services', 'Main menu for checked-in guests.', 'in_stay_services', true)
+    RETURNING id INTO ft_in_stay_services_id;
+
+    INSERT INTO context_manager_flowtemplate (name, description, category, is_active) VALUES
+        ('Returning Guest', 'Menu for known guests without an active stay.', 'returning_guest', true)
+    RETURNING id INTO ft_returning_guest_id;
+
+    INSERT INTO context_manager_flowtemplate (name, description, category, is_active) VALUES
         ('Main Menu (Fallback)', 'A generic main menu for session resets.', 'main_menu', true)
-    RETURNING id, id, id, id, id INTO ft_new_guest_discovery_id, ft_guest_checkin_id, ft_in_stay_services_id, ft_returning_guest_id, ft_main_menu_id;
+    RETURNING id INTO ft_main_menu_id;
 
     -- 4. Seed Flow Step Templates
     
