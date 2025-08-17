@@ -1,8 +1,9 @@
-from .models import ConversationContext, FlowStep
+from .models import ConversationContext, FlowStep, FlowStepTemplate, FlowTemplate, HotelFlowConfiguration
 from guest.models import Guest, Stay
 from hotel.models import Hotel
 import logging
 from datetime import datetime
+from django.utils import timezone
 
 logger = logging.getLogger(__name__)
 
@@ -37,33 +38,36 @@ def process_incoming_message(payload):
             }
         
         # Reset last activity timestamp
-        context.last_activity = datetime.now()
+        context.last_activity = timezone.now()
         context.save()
         
         # Handle navigation commands
         if user_message in ['back', 'main menu']:
             return handle_navigation(context, user_message)
         
-        # Get current step
-        current_step_id = context.context_data.get('current_step')
-        if not current_step_id:
-            logger.error(f"No current step found in context for {whatsapp_number}")
+        # Get current step using template system
+        current_step_template_id = context.context_data.get('current_step_template')
+        if not current_step_template_id:
+            logger.error(f"No current step template found in context for {whatsapp_number}")
             return {
                 'status': 'error',
                 'message': 'Conversation state is invalid. Please start over.'
             }
         
         try:
-            current_step = FlowStep.objects.get(step_id=current_step_id)
-        except FlowStep.DoesNotExist:
-            logger.error(f"FlowStep {current_step_id} does not exist")
+            current_step_template = FlowStepTemplate.objects.get(id=current_step_template_id)
+        except FlowStepTemplate.DoesNotExist:
+            logger.error(f"FlowStepTemplate {current_step_template_id} does not exist")
             return {
                 'status': 'error',
                 'message': 'Conversation flow is invalid. Please start over.'
             }
         
+        # Get hotel-specific flow step (with customizations)
+        hotel_step = get_hotel_flow_step(context.hotel, current_step_template)
+        
         # Validate input
-        validation_result = validate_input(context, user_message, current_step)
+        validation_result = validate_input(context, user_message, current_step_template, hotel_step)
         if not validation_result['valid']:
             # Increment error count
             context.context_data['error_count'] = context.context_data.get('error_count', 0) + 1
@@ -90,12 +94,12 @@ def process_incoming_message(payload):
             context.save()
         
         # Update accumulated data
-        update_accumulated_data(context, user_message, current_step)
+        update_accumulated_data(context, user_message, current_step_template)
         
         # Determine next step
-        next_step = transition_step(context, user_message, current_step)
+        next_step_template = transition_step(context, user_message, current_step_template, hotel_step)
         
-        if not next_step:
+        if not next_step_template:
             # Conversation is ending
             context.is_active = False
             context.save()
@@ -105,12 +109,18 @@ def process_incoming_message(payload):
             }
         
         # Update context with next step
-        context.context_data['current_step'] = next_step.step_id
-        context.context_data['navigation_stack'].append(next_step.step_id)
+        context.context_data['current_step_template'] = next_step_template.id
+        navigation_stack = context.context_data.get('navigation_stack', [])
+        navigation_stack.append(next_step_template.id)
+        context.context_data['navigation_stack'] = navigation_stack
+        
+        # Update flow expiry (5-hour rule)
+        from datetime import timedelta
+        context.flow_expires_at = timezone.now() + timedelta(hours=5)
         context.save()
         
         # Generate response for next step
-        response_message = generate_response(context, next_step)
+        response_message = generate_response(context, next_step_template)
         
         return {
             'status': 'success',
@@ -146,43 +156,81 @@ def get_active_context(whatsapp_number):
         logger.error(f"Error retrieving context for {whatsapp_number}: {str(e)}")
         return None
 
-def get_flow_step(step_id):
+def get_hotel_flow_step(hotel, step_template):
     """
-    Retrieve a flow step by its ID.
+    Get hotel-specific flow step with customizations.
     
     Args:
-        step_id (str): The step ID to retrieve
+        hotel (Hotel): The hotel
+        step_template (FlowStepTemplate): The base step template
         
     Returns:
-        FlowStep: The flow step or None if not found
+        dict: Combined step data with hotel customizations
     """
     try:
-        return FlowStep.objects.get(step_id=step_id)
-    except FlowStep.DoesNotExist:
-        return None
+        # Get hotel flow configuration
+        config = HotelFlowConfiguration.objects.filter(
+            hotel=hotel,
+            flow_template=step_template.flow_template,
+            is_enabled=True
+        ).first()
+        
+        # Start with base template data
+        step_data = {
+            'message_template': step_template.message_template,
+            'options': step_template.options,
+            'conditional_next_steps': step_template.conditional_next_steps
+        }
+        
+        # Apply customizations if they exist
+        if config and config.customization_data:
+            customizations = config.customization_data.get('step_customizations', {})
+            step_customization = customizations.get(step_template.id, {})
+            
+            # Override with hotel customizations
+            if 'message_template' in step_customization:
+                step_data['message_template'] = step_customization['message_template']
+            if 'options' in step_customization:
+                step_data['options'] = step_customization['options']
+            if 'conditional_next_steps' in step_customization:
+                step_data['conditional_next_steps'] = step_customization['conditional_next_steps']
+        
+        return step_data
+    except Exception as e:
+        logger.error(f"Error getting hotel flow step: {str(e)}")
+        # Return base template data if error occurs
+        return {
+            'message_template': step_template.message_template,
+            'options': step_template.options,
+            'conditional_next_steps': step_template.conditional_next_steps
+        }
 
-def generate_response(context, flow_step):
+def generate_response(context, step_template):
     """
     Generate a response message for the current flow step.
     
     Args:
         context (ConversationContext): The conversation context
-        flow_step (FlowStep): The current flow step
+        step_template (FlowStepTemplate): The current flow step template
         
     Returns:
         str: The generated response message
     """
     try:
+        # Get hotel-specific step data
+        hotel_step_data = get_hotel_flow_step(context.hotel, step_template)
+        
         # Start with the template message
-        message_template = flow_step.message_template
+        message_template = hotel_step_data['message_template']
         
         # Replace placeholders with actual data
         response_message = replace_placeholders(message_template, context)
         
         # Add options if they exist
-        if flow_step.options:
+        options = hotel_step_data['options']
+        if options:
             options_text = "\n"
-            for key, value in flow_step.options.items():
+            for key, value in options.items():
                 options_text += f"{key}. {value}\n"
             response_message += options_text
         
@@ -265,32 +313,34 @@ def replace_placeholders(template, context):
         logger.error(f"Error replacing placeholders: {str(e)}")
         return template
 
-def transition_step(context, user_input, current_step):
+def transition_step(context, user_input, current_step_template, hotel_step_data):
     """
     Determine the next step based on user input and current step.
     
     Args:
         context (ConversationContext): The conversation context
         user_input (str): The user's input
-        current_step (FlowStep): The current flow step
+        current_step_template (FlowStepTemplate): The current flow step template
+        hotel_step_data (dict): Hotel-specific step data
         
     Returns:
-        FlowStep: The next flow step or None if conversation should end
+        FlowStepTemplate: The next flow step template or None if conversation should end
     """
     try:
         # Check for conditional next steps first
-        if current_step.conditional_next_steps:
-            for condition, next_step_id in current_step.conditional_next_steps.items():
+        conditional_next_steps = hotel_step_data.get('conditional_next_steps', current_step_template.conditional_next_steps)
+        if conditional_next_steps:
+            for condition, next_step_template_id in conditional_next_steps.items():
                 # Simple condition checking - in a real implementation, this would be more complex
                 if condition == user_input or condition == '*':  # '*' means any input
                     try:
-                        return FlowStep.objects.get(step_id=next_step_id)
-                    except FlowStep.DoesNotExist:
-                        logger.warning(f"Conditional next step {next_step_id} does not exist")
+                        return FlowStepTemplate.objects.get(id=next_step_template_id)
+                    except FlowStepTemplate.DoesNotExist:
+                        logger.warning(f"Conditional next step template {next_step_template_id} does not exist")
         
         # Check for direct next step
-        if current_step.next_step:
-            return current_step.next_step
+        if current_step_template.next_step_template:
+            return current_step_template.next_step_template
         
         # If no next step defined, conversation ends
         return None
@@ -298,14 +348,15 @@ def transition_step(context, user_input, current_step):
         logger.error(f"Error determining next step: {str(e)}")
         return None
 
-def validate_input(context, user_input, current_step):
+def validate_input(context, user_input, step_template, hotel_step_data):
     """
     Validate user input against current step requirements.
     
     Args:
         context (ConversationContext): The conversation context
         user_input (str): The user's input
-        current_step (FlowStep): The current flow step
+        step_template (FlowStepTemplate): The current flow step template
+        hotel_step_data (dict): Hotel-specific step data
         
     Returns:
         dict: Validation result with 'valid' and 'message' keys
@@ -316,13 +367,14 @@ def validate_input(context, user_input, current_step):
             return {'valid': True}
         
         # Check if step has options
-        if current_step.options:
+        options = hotel_step_data.get('options', step_template.options)
+        if options:
             # Check if input matches one of the options
-            if user_input in current_step.options:
+            if user_input in options:
                 return {'valid': True}
             else:
                 # Generate error message with available options
-                options_list = ', '.join([f"'{key}'" for key in current_step.options.keys()])
+                options_list = ', '.join([f"'{key}'" for key in options.keys()])
                 return {
                     'valid': False,
                     'message': f"Please select a valid option: {options_list}"
@@ -353,40 +405,22 @@ def handle_navigation(context, command):
             # Reset to initial step and clear accumulated data
             context.context_data['accumulated_data'] = {}
             context.context_data['error_count'] = 0
-            # For now, we'll assume the initial step is 'main_menu' for general flows
-            # But fallback to 'checkin_start' for checkin flows
-            current_flow = context.context_data.get('current_flow', '')
-            if 'checkin' in current_flow:
-                initial_step_id = 'checkin_start'
-            else:
-                initial_step_id = 'main_menu'
-            context.context_data['current_step'] = initial_step_id
-            context.context_data['navigation_stack'] = [initial_step_id]
-            context.save()
+            context.context_data['navigation_stack'] = []
             
-            # Get the initial step
-            try:
-                initial_step = FlowStep.objects.get(step_id=initial_step_id)
-                response_message = generate_response(context, initial_step)
+            # For template-based system, we need to determine the initial flow
+            # For now, we'll use a default approach
+            initial_template = FlowStepTemplate.objects.first()
+            if initial_template:
+                context.context_data['current_step_template'] = initial_template.id
+                context.context_data['navigation_stack'] = [initial_template.id]
+                context.save()
+                
+                response_message = generate_response(context, initial_template)
                 return {
                     'status': 'success',
                     'message': response_message
                 }
-            except FlowStep.DoesNotExist:
-                # Fallback to checkin_start if main_menu doesn't exist
-                if initial_step_id == 'main_menu':
-                    try:
-                        initial_step = FlowStep.objects.get(step_id='checkin_start')
-                        response_message = generate_response(context, initial_step)
-                        return {
-                            'status': 'success',
-                            'message': response_message
-                        }
-                    except FlowStep.DoesNotExist:
-                        return {
-                            'status': 'error',
-                            'message': 'Main menu is not available. Please start a new conversation.'
-                        }
+            else:
                 return {
                     'status': 'error',
                     'message': 'Main menu is not available. Please start a new conversation.'
@@ -399,21 +433,21 @@ def handle_navigation(context, command):
                 # Remove current step
                 navigation_stack.pop()
                 # Get previous step
-                previous_step_id = navigation_stack[-1]
+                previous_step_template_id = navigation_stack[-1]
                 context.context_data['navigation_stack'] = navigation_stack
-                context.context_data['current_step'] = previous_step_id
+                context.context_data['current_step_template'] = previous_step_template_id
                 context.context_data['error_count'] = 0  # Reset error count
                 context.save()
                 
-                # Get the previous step
+                # Get the previous step template
                 try:
-                    previous_step = FlowStep.objects.get(step_id=previous_step_id)
-                    response_message = generate_response(context, previous_step)
+                    previous_step_template = FlowStepTemplate.objects.get(id=previous_step_template_id)
+                    response_message = generate_response(context, previous_step_template)
                     return {
                         'status': 'success',
                         'message': response_message
                     }
-                except FlowStep.DoesNotExist:
+                except FlowStepTemplate.DoesNotExist:
                     return {
                         'status': 'error',
                         'message': 'Unable to navigate back. Please try again.'
@@ -433,14 +467,14 @@ def handle_navigation(context, command):
             'message': 'An error occurred while processing your navigation request.'
         }
 
-def update_accumulated_data(context, user_input, current_step):
+def update_accumulated_data(context, user_input, step_template):
     """
     Update accumulated data in context based on user input and current step.
     
     Args:
         context (ConversationContext): The conversation context
         user_input (str): The user's input
-        current_step (FlowStep): The current flow step
+        step_template (FlowStepTemplate): The current flow step template
     """
     try:
         # Initialize accumulated_data if it doesn't exist
@@ -450,20 +484,22 @@ def update_accumulated_data(context, user_input, current_step):
         accumulated_data = context.context_data['accumulated_data']
         
         # Special handling for certain steps
-        step_id = current_step.step_id
+        step_name = step_template.step_name
         
-        if step_id == 'checkin_start':
+        # This is a simplified approach - in a real implementation, you might have
+        # more sophisticated logic based on step names or other identifiers
+        if 'checkin' in step_name.lower() and 'start' in step_name.lower():
             # Handle name confirmation
             if user_input == '1':  # Yes
                 accumulated_data['name_confirmed'] = True
             elif user_input == '2':  # No
                 accumulated_data['name_confirmed'] = False
         
-        elif step_id == 'checkin_collect_dob':
+        elif 'collect' in step_name.lower() and 'dob' in step_name.lower():
             # Store date of birth
             accumulated_data['date_of_birth'] = user_input
         
-        elif step_id == 'checkin_upload_document_prompt':
+        elif 'upload' in step_name.lower() and 'document' in step_name.lower():
             # Mark document as uploaded
             accumulated_data['document_uploaded'] = True
         

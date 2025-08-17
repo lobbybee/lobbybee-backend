@@ -2,8 +2,14 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from ..services import process_incoming_message
+from ..models import WebhookLog, ConversationContext, ConversationMessage
+from ..tasks import send_pending_messages
+from guest.models import Guest
+from hotel.models import Hotel
 import logging
 import uuid
+from datetime import timedelta
+from django.utils import timezone
 
 logger = logging.getLogger(__name__)
 
@@ -19,10 +25,13 @@ class WhatsAppWebhookView(APIView):
         """
         Handle incoming POST requests from WhatsApp API.
         """
+        # Log the incoming webhook
+        webhook_log = WebhookLog.objects.create(
+            payload=request.data,
+            processed_successfully=False
+        )
+        
         try:
-            # Log the incoming request for debugging
-            logger.info(f"Incoming webhook request: {request.data}")
-            
             # Extract relevant data from the webhook payload
             # This implementation assumes a specific payload structure
             # You may need to adjust this based on your actual WhatsApp API format
@@ -46,7 +55,11 @@ class WhatsAppWebhookView(APIView):
                 'message': message_body
             }
             
-            result = process_incoming_message(payload)
+            result = self.process_webhook_message(from_no, message_body)
+            
+            # Update webhook log
+            webhook_log.processed_successfully = True
+            webhook_log.save()
             
             # Log the result
             logger.info(f"Processed message from {from_no}: {result}")
@@ -56,10 +69,156 @@ class WhatsAppWebhookView(APIView):
             
         except Exception as e:
             logger.error(f"Error processing webhook: {str(e)}")
+            # Update webhook log with error
+            webhook_log.error_message = str(e)
+            webhook_log.save()
             return Response({
                 'status': 'error',
                 'message': 'An error occurred while processing the webhook'
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    def process_webhook_message(self, whatsapp_number, message_body):
+        """
+        Process an incoming WhatsApp message with full context management.
+        
+        Args:
+            whatsapp_number (str): The guest's WhatsApp number
+            message_body (str): The message content
+            
+        Returns:
+            dict: Response with status and message
+        """
+        try:
+            # Handle initial messages like QR code scans (start-{hotel_id})
+            if message_body.startswith('start-') or message_body.lower() == 'demo':
+                return self.handle_initial_message(whatsapp_number, message_body)
+            
+            # Find or create guest record
+            guest, created = Guest.objects.get_or_create(
+                whatsapp_number=whatsapp_number,
+                defaults={
+                    'full_name': 'Guest',
+                    'email': '',
+                    'nationality': ''
+                }
+            )
+            
+            # Retrieve or create conversation context
+            context = self.get_or_create_context(whatsapp_number, guest)
+            
+            # Update last guest message timestamp
+            context.last_guest_message_at = timezone.now()
+            context.save()
+            
+            # Trigger task to send any pending messages that are now within the 24-hour window
+            send_pending_messages.delay(whatsapp_number)
+            
+            # Check if flow has expired (5-hour rule)
+            if context.flow_expires_at and timezone.now() > context.flow_expires_at:
+                # Reset context to main menu
+                return self.reset_context_to_main_menu(context)
+            
+            # Log the incoming message
+            ConversationMessage.objects.create(
+                context=context,
+                message_content=message_body,
+                is_from_guest=True
+            )
+            
+            # Process the message through the service
+            payload = {
+                'from_no': whatsapp_number,
+                'message': message_body
+            }
+            
+            result = process_incoming_message(payload)
+            
+            # Log the outgoing message if successful
+            if result.get('status') == 'success' and 'message' in result:
+                ConversationMessage.objects.create(
+                    context=context,
+                    message_content=result['message'],
+                    is_from_guest=False
+                )
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error processing webhook message: {str(e)}")
+            return {
+                'status': 'error',
+                'message': 'An error occurred while processing your message'
+            }
+    
+    def get_or_create_context(self, whatsapp_number, guest):
+        """
+        Get existing active context or create a new one.
+        
+        Args:
+            whatsapp_number (str): The guest's WhatsApp number
+            guest (Guest): The guest record
+            
+        Returns:
+            ConversationContext: The conversation context
+        """
+        # Try to get existing active context
+        context = ConversationContext.objects.filter(
+            user_id=whatsapp_number,
+            is_active=True
+        ).first()
+        
+        if not context:
+            # Create new context
+            # For now, we'll use a default hotel. In a real implementation,
+            # you might determine this from the guest's last stay or other logic.
+            default_hotel = Hotel.objects.first()
+            if not default_hotel:
+                # Create a placeholder hotel if none exist
+                default_hotel = Hotel.objects.create(
+                    name="Default Hotel",
+                    email="info@defaulthotel.com",
+                    phone="+1234567890"
+                )
+            
+            context = ConversationContext.objects.create(
+                user_id=whatsapp_number,
+                hotel=default_hotel,
+                context_data={
+                    'guest_id': guest.id,
+                    'navigation_stack': [],
+                    'accumulated_data': {},
+                    'error_count': 0
+                },
+                is_active=True,
+                navigation_stack=[],
+                flow_expires_at=timezone.now() + timedelta(hours=5)  # 5-hour expiry
+            )
+        
+        return context
+    
+    def reset_context_to_main_menu(self, context):
+        """
+        Reset conversation context to main menu.
+        
+        Args:
+            context (ConversationContext): The conversation context to reset
+            
+        Returns:
+            dict: Response with status and message
+        """
+        # Reset context data
+        context.context_data['accumulated_data'] = {}
+        context.context_data['error_count'] = 0
+        context.navigation_stack = []
+        
+        # Set flow expiry for 5 hours from now
+        context.flow_expires_at = timezone.now() + timedelta(hours=5)
+        context.save()
+        
+        return {
+            'status': 'success',
+            'message': 'Your session has expired. Returning to main menu. How can I help you today?'
+        }
     
     def handle_initial_message(self, whatsapp_number, message_body):
         """
@@ -86,23 +245,173 @@ class WhatsAppWebhookView(APIView):
                         'message': 'Invalid hotel ID format'
                     }
                 
-                # In a real implementation, you would:
-                # 1. Verify the hotel exists
-                # 2. Create or update the guest record
-                # 3. Create a new conversation context
-                # 4. Send the initial flow step message
+                try:
+                    hotel = Hotel.objects.get(id=hotel_id)
+                except Hotel.DoesNotExist:
+                    return {
+                        'status': 'error',
+                        'message': 'Hotel not found'
+                    }
                 
-                # For now, we'll just return a placeholder response
+                # Find or create guest
+                guest, created = Guest.objects.get_or_create(
+                    whatsapp_number=whatsapp_number,
+                    defaults={
+                        'full_name': 'Guest',
+                        'email': '',
+                        'nationality': ''
+                    }
+                )
+                
+                # Create or update conversation context
+                context, created = ConversationContext.objects.get_or_create(
+                    user_id=whatsapp_number,
+                    hotel=hotel,
+                    defaults={
+                        'context_data': {
+                            'guest_id': guest.id,
+                            'navigation_stack': [],
+                            'accumulated_data': {},
+                            'error_count': 0
+                        },
+                        'is_active': True,
+                        'navigation_stack': [],
+                        'flow_expires_at': timezone.now() + timedelta(hours=5),  # 5-hour expiry
+                        'last_guest_message_at': timezone.now()
+                    }
+                )
+                
+                if not created:
+                    # Update existing context
+                    context.is_active = True
+                    context.flow_expires_at = timezone.now() + timedelta(hours=5)
+                    context.last_guest_message_at = timezone.now()
+                    context.save()
+                
+                # Set up initial flow step for QR code check-in
+                # Find the appropriate check-in flow step
+                from ..models import FlowStepTemplate, FlowTemplate
+                checkin_flow = FlowTemplate.objects.filter(
+                    category="guest_checkin",
+                    is_active=True
+                ).first()
+                
+                if checkin_flow:
+                    checkin_start_step = FlowStepTemplate.objects.filter(
+                        flow_template=checkin_flow,
+                        step_name="Check-in Start"
+                    ).first()
+                    
+                    if checkin_start_step:
+                        # Set up context with initial step
+                        context.context_data['current_step_template'] = checkin_start_step.id
+                        context.context_data['navigation_stack'] = [checkin_start_step.id]
+                        context.context_data['guest_id'] = guest.id
+                        context.navigation_stack = [checkin_start_step.id]
+                        context.save()
+                
+                # Log the incoming message
+                ConversationMessage.objects.create(
+                    context=context,
+                    message_content=message_body,
+                    is_from_guest=True
+                )
+                
+                # Generate proper response based on flow step
+                if checkin_flow and 'current_step_template' in context.context_data:
+                    from ..services import generate_response
+                    try:
+                        current_step_template = FlowStepTemplate.objects.get(
+                            id=context.context_data['current_step_template']
+                        )
+                        response_message = generate_response(context, current_step_template)
+                    except FlowStepTemplate.DoesNotExist:
+                        response_message = f'Welcome to {hotel.name}! How can we help you today?'
+                else:
+                    response_message = f'Welcome to {hotel.name}! How can we help you today?'
+                
+                # Log the outgoing message
+                ConversationMessage.objects.create(
+                    context=context,
+                    message_content=response_message,
+                    is_from_guest=False
+                )
+                
                 return {
                     'status': 'success',
-                    'message': f'Welcome! You have started a conversation with hotel {hotel_id}. How can we help you today?'
+                    'message': response_message
                 }
             
             # Handle demo command
             elif message_body.lower() == 'demo':
+                # Find or create guest
+                guest, created = Guest.objects.get_or_create(
+                    whatsapp_number=whatsapp_number,
+                    defaults={
+                        'full_name': 'Demo Guest',
+                        'email': '',
+                        'nationality': ''
+                    }
+                )
+                
+                # Get or create context with default hotel
+                context = self.get_or_create_context(whatsapp_number, guest)
+                
+                # Set up initial flow step for demo
+                # Find the discovery welcome step
+                from ..models import FlowStepTemplate, FlowTemplate
+                discovery_flow = FlowTemplate.objects.filter(
+                    category="new_guest_discovery",
+                    is_active=True
+                ).first()
+                
+                if discovery_flow:
+                    discovery_welcome_step = FlowStepTemplate.objects.filter(
+                        flow_template=discovery_flow,
+                        step_name="Discovery Welcome"
+                    ).first()
+                    
+                    if discovery_welcome_step:
+                        # Set up context with initial step
+                        context.context_data['current_step_template'] = discovery_welcome_step.id
+                        context.context_data['navigation_stack'] = [discovery_welcome_step.id]
+                        context.context_data['guest_id'] = guest.id
+                        context.context_data['accumulated_data'] = {}
+                        context.context_data['error_count'] = 0
+                        context.flow_expires_at = timezone.now() + timedelta(hours=5)
+                        context.navigation_stack = [discovery_welcome_step.id]
+                        context.save()
+                
+                # Log the incoming message
+                ConversationMessage.objects.create(
+                    context=context,
+                    message_content=message_body,
+                    is_from_guest=True
+                )
+                
+                # Generate proper response based on flow step
+                if discovery_flow and 'current_step_template' in context.context_data:
+                    from ..services import generate_response
+                    try:
+                        current_step_template = FlowStepTemplate.objects.get(
+                            id=context.context_data['current_step_template']
+                        )
+                        response_message = generate_response(context, current_step_template)
+                    except FlowStepTemplate.DoesNotExist:
+                        response_message = 'Welcome to the demo! This is a demonstration of the hotel CRM system. How can I assist you today?'
+                else:
+                    response_message = 'Welcome to the demo! This is a demonstration of the hotel CRM system. How can I assist you today?'
+                
+                # Log the outgoing message
+                ConversationMessage.objects.create(
+                    context=context,
+                    message_content=response_message,
+                    is_from_guest=False
+                )
+                
                 return {
                     'status': 'success',
-                    'message': 'Welcome to the demo! This is a demonstration of the hotel CRM system.'
+                    'message': response_message
                 }
             
             # Handle unknown initial messages

@@ -1,0 +1,122 @@
+from rest_framework import generics, status
+from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated
+from ..models import FlowTemplate, FlowStepTemplate, FlowAction, HotelFlowConfiguration
+from ..serializers import FlowTemplateSerializer, FlowStepTemplateSerializer, FlowActionSerializer, HotelFlowConfigurationSerializer
+import logging
+
+logger = logging.getLogger(__name__)
+
+class FlowTemplateListView(generics.ListCreateAPIView):
+    """
+    View for listing and creating FlowTemplate records.
+    """
+    serializer_class = FlowTemplateSerializer
+    permission_classes = [IsAuthenticated]
+    
+    def get_queryset(self):
+        """
+        Return all FlowTemplate records.
+        """
+        return FlowTemplate.objects.all()
+
+class FlowTemplateDetailView(generics.RetrieveUpdateDestroyAPIView):
+    """
+    View for retrieving, updating, and deleting a specific FlowTemplate record.
+    """
+    serializer_class = FlowTemplateSerializer
+    permission_classes = [IsAuthenticated]
+    lookup_field = 'id'
+    
+    def get_queryset(self):
+        """
+        Return all FlowTemplate records.
+        """
+        return FlowTemplate.objects.all()
+
+class FlowStepTemplateListView(generics.ListCreateAPIView):
+    """
+    View for listing and creating FlowStepTemplate records.
+    """
+    serializer_class = FlowStepTemplateSerializer
+    permission_classes = [IsAuthenticated]
+    
+    def get_queryset(self):
+        """
+        Return all FlowStepTemplate records, optionally filtered by flow_template.
+        """
+        flow_template_id = self.request.query_params.get('flow_template', None)
+        if flow_template_id:
+            return FlowStepTemplate.objects.filter(flow_template_id=flow_template_id)
+        return FlowStepTemplate.objects.all()
+
+class FlowStepTemplateDetailView(generics.RetrieveUpdateDestroyAPIView):
+    """
+    View for retrieving, updating, and deleting a specific FlowStepTemplate record.
+    """
+    serializer_class = FlowStepTemplateSerializer
+    permission_classes = [IsAuthenticated]
+    lookup_field = 'id'
+    
+    def get_queryset(self):
+        """
+        Return all FlowStepTemplate records.
+        """
+        return FlowStepTemplate.objects.all()
+
+class FlowActionListView(generics.ListCreateAPIView):
+    """
+    View for listing and creating FlowAction records.
+    """
+    serializer_class = FlowActionSerializer
+    permission_classes = [IsAuthenticated]
+    
+    def get_queryset(self):
+        """
+        Return all FlowAction records.
+        """
+        return FlowAction.objects.all()
+
+class FlowActionDetailView(generics.RetrieveUpdateDestroyAPIView):
+    """
+    View for retrieving, updating, and deleting a specific FlowAction record.
+    """
+    serializer_class = FlowActionSerializer
+    permission_classes = [IsAuthenticated]
+    lookup_field = 'id'
+    
+    def get_queryset(self):
+        """
+        Return all FlowAction records.
+        """
+        return FlowAction.objects.all()
+
+class HotelFlowConfigurationListView(generics.ListCreateAPIView):
+    """
+    View for listing and creating HotelFlowConfiguration records.
+    """
+    serializer_class = HotelFlowConfigurationSerializer
+    permission_classes = [IsAuthenticated]
+    
+    def get_queryset(self):
+        """
+        Return all HotelFlowConfiguration records, optionally filtered by hotel.
+        """
+        hotel_id = self.request.query_params.get('hotel', None)
+        if hotel_id:
+            return HotelFlowConfiguration.objects.filter(hotel_id=hotel_id)
+        return HotelFlowConfiguration.objects.all()
+
+class HotelFlowConfigurationDetailView(generics.RetrieveUpdateDestroyAPIView):
+    """
+    View for retrieving, updating, and deleting a specific HotelFlowConfiguration record.
+    """
+    serializer_class = HotelFlowConfigurationSerializer
+    permission_classes = [IsAuthenticated]
+    lookup_field = 'id'
+    
+    def get_queryset(self):
+        """
+        Return all HotelFlowConfiguration records.
+        """
+        return HotelFlowConfiguration.objects.all()

@@ -1,5 +1,26 @@
 from rest_framework import serializers
-from .models import FlowStep, ScheduledMessageTemplate
+from .models import FlowStep, ScheduledMessageTemplate, FlowTemplate, FlowStepTemplate, FlowAction, HotelFlowConfiguration
+
+
+class FlowTemplateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = FlowTemplate
+        fields = '__all__'
+        read_only_fields = ('id',)
+
+
+class FlowActionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = FlowAction
+        fields = '__all__'
+        read_only_fields = ('id',)
+
+
+class FlowStepTemplateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = FlowStepTemplate
+        fields = '__all__'
+        read_only_fields = ('id',)
 
 
 class FlowStepSerializer(serializers.ModelSerializer):
@@ -27,6 +48,13 @@ class FlowStepUpdateSerializer(serializers.ModelSerializer):
         model = FlowStep
         fields = '__all__'
         read_only_fields = ('id', 'step_id')
+
+
+class HotelFlowConfigurationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = HotelFlowConfiguration
+        fields = '__all__'
+        read_only_fields = ('id',)
 
 
 class ScheduledMessageTemplateSerializer(serializers.ModelSerializer):

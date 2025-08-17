@@ -64,6 +64,7 @@ htmlcov/
 # migrations/
 # !migrations/__init__.py
 GEMINI.md
+QWEN.md
 description.md
 schema.md
 .aider*
