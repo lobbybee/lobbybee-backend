@@ -32,22 +32,15 @@ class FlowStepTemplate(models.Model):
         return f"{self.step_name} ({self.flow_template.name})"
 
 class FlowStep(models.Model):
-    step_id = models.CharField(max_length=100, unique=True)
-    hotel = models.ForeignKey(Hotel, on_delete=models.CASCADE, null=True, blank=True)  # Hotel-specific customization
-    flow_type = models.CharField(max_length=50)  # e.g., 'room_service', 'checkin'
-    message_template = models.TextField()
-    options = models.JSONField(default=dict, blank=True)  # User-facing options
-    next_step = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='parent_next')
-    previous_step = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='parent_previous')
-    conditional_next_steps = models.JSONField(null=True, blank=True)  # For branching logic
-    is_optional = models.BooleanField(default=False)
-    is_hotel_customizable = models.BooleanField(
-        default=True,
-    )
+    template = models.ForeignKey(FlowStepTemplate, on_delete=models.CASCADE)
+    hotel = models.ForeignKey(Hotel, on_delete=models.CASCADE)
+    step_id = models.CharField(max_length=100)
+
+    class Meta:
+        unique_together = ['template', 'hotel']
 
     def __str__(self):
-        hotel_name = self.hotel.name if self.hotel else "Platform"
-        return f"{self.flow_type} - {self.step_id} ({hotel_name})"
+        return f"{self.template.step_name} for {self.hotel.name}"
 
 class HotelFlowConfiguration(models.Model):
     hotel = models.ForeignKey(Hotel, on_delete=models.CASCADE)

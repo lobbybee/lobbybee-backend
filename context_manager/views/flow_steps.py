@@ -1,6 +1,7 @@
 from rest_framework import generics, status
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.exceptions import ValidationError
 from ..models import FlowStep
 from ..serializers import FlowStepSerializer, FlowStepUpdateSerializer
 from hotel.models import Hotel
@@ -32,7 +33,7 @@ class FlowStepListView(generics.ListCreateAPIView):
             serializer.save(hotel=hotel)
         except Hotel.DoesNotExist:
             logger.error(f"Hotel with id {hotel_id} does not exist")
-            raise serializers.ValidationError("Invalid hotel ID")
+            raise ValidationError("Invalid hotel ID")
     
     def create(self, request, *args, **kwargs):
         """
@@ -63,7 +64,7 @@ class FlowStepDetailView(generics.RetrieveUpdateDestroyAPIView):
     """
     serializer_class = FlowStepUpdateSerializer
     permission_classes = [IsAuthenticated]
-    lookup_field = 'step_id'
+    lookup_field = 'pk'
     
     def get_queryset(self):
         """

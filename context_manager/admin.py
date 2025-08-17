@@ -21,9 +21,9 @@ class FlowStepTemplateAdmin(admin.ModelAdmin):
 
 @admin.register(FlowStep)
 class FlowStepAdmin(admin.ModelAdmin):
-    list_display = ('step_id', 'flow_type', 'next_step', 'previous_step')
-    list_filter = ('flow_type',)
-    search_fields = ('step_id', 'message_template')
+    list_display = ('step_id', 'hotel', 'template')
+    list_filter = ('hotel',)
+    search_fields = ('step_id', 'template__step_name')
 
 @admin.register(HotelFlowConfiguration)
 class HotelFlowConfigurationAdmin(admin.ModelAdmin):

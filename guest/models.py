@@ -26,6 +26,7 @@ class Guest(models.Model):
     # WhatsApp interaction preferences
     preferred_language = models.CharField(max_length=10, default='en')
     is_whatsapp_active = models.BooleanField(default=True)
+    loyalty_points = models.IntegerField(default=0)
     notes = models.TextField(blank=True)
 
     def __str__(self):
