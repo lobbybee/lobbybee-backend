@@ -18,11 +18,33 @@ class FlowAction(models.Model):
     def __str__(self):
         return f"{self.name} ({self.action_type})"
 
+class Placeholder(models.Model):
+    name = models.CharField(max_length=50, unique=True, help_text="The placeholder name, e.g., 'guest_name'")
+    description = models.TextField(help_text="A description of what the placeholder represents.")
+    resolving_logic = models.CharField(max_length=200, help_text="The logic to resolve the placeholder, e.g., 'guest.full_name'")
+
+    def __str__(self):
+        return self.name
+
+
 class FlowStepTemplate(models.Model):
+    MESSAGE_TYPE_CHOICES = [
+        ('text', 'Text'),
+        ('media', 'Media'),
+        ('quick-reply', 'Quick Reply'),
+        ('list-picker', 'List Picker'),
+        ('call-to-action', 'Call to Action'),
+        ('template', 'Template'),
+    ]
+
     flow_template = models.ForeignKey(FlowTemplate, on_delete=models.CASCADE)
     step_name = models.CharField(max_length=100)
     message_template = models.TextField()
-    message_type = models.CharField(max_length=50)  # TEXT, INTERACTIVE_MENU, etc.
+    message_type = models.CharField(
+        max_length=50,
+        choices=MESSAGE_TYPE_CHOICES,
+        default='text'
+    )
     options = models.JSONField(default=dict)
     actions = models.ManyToManyField(FlowAction, blank=True)
     next_step_template = models.ForeignKey('self', null=True, blank=True, on_delete=models.SET_NULL)
