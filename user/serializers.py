@@ -11,7 +11,6 @@ class UserSerializer(serializers.ModelSerializer):
         read_only_fields = ['hotel', 'created_by', 'is_active_hotel_user'] # These fields are set by the system, not directly by the user
 
     def create(self, validated_data):
-        # The hotel_name logic was specific to HotelRegistrationView, removed here.
         # For staff creation, hotel and created_by are passed directly to serializer.save()
         user = User.objects.create_user(
             username=validated_data['username'],

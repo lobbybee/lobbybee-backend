@@ -106,7 +106,12 @@ class HotelRegistrationView(generics.CreateAPIView):
 
         try:
             with transaction.atomic():
-                user = serializer.save()
+                hotel = Hotel.objects.create(
+                    name=hotel_name,
+                    email=request.data.get('email'),
+                    phone=request.data.get('phone_number', '')
+                )
+                user = serializer.save(hotel=hotel)
 
                 # Send OTP
                 otp_code = get_random_string(length=6, allowed_chars='1234567890')
