@@ -105,6 +105,7 @@ class ConversationContext(models.Model):
     current_step = models.ForeignKey('FlowStep', null=True, on_delete=models.SET_NULL)
     navigation_stack = models.JSONField(default=list)  # Stores a stack of visited step_template IDs
     last_guest_message_at = models.DateTimeField(null=True)
+    error_count = models.IntegerField(default=0)
 
     class Meta:
         unique_together = ['user_id', 'hotel']
