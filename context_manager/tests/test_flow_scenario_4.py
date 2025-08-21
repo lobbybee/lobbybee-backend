@@ -125,8 +125,8 @@ Recent stays:
         self.client.post(reverse('whatsapp-webhook'), data=payload, content_type='application/json')
         context = ConversationContext.objects.get(user_id=self.guest.whatsapp_number)
 
-        # 2. Manually expire the context
-        context.flow_expires_at = timezone.now() - datetime.timedelta(hours=6)
+        # 2. Manually expire the context by setting last_activity to be old
+        context.last_activity = timezone.now() - datetime.timedelta(hours=6)
         context.save()
 
         # 3. Send another message to trigger the expiry logic

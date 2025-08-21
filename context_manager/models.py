@@ -104,7 +104,6 @@ class ConversationContext(models.Model):
     # New fields for template-based system
     current_step = models.ForeignKey('FlowStep', null=True, on_delete=models.SET_NULL)
     navigation_stack = models.JSONField(default=list)  # Stores a stack of visited step_template IDs
-    flow_expires_at = models.DateTimeField(null=True)
     last_guest_message_at = models.DateTimeField(null=True)
 
     class Meta:

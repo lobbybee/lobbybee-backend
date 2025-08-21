@@ -10,7 +10,7 @@ def validate_input(context, user_input):
     if config and config.customization_data:
         step_customs = config.customization_data.get('step_customizations', {})
         # IMPORTANT: Assumes customization is keyed by step_name
-        custom_options = step_customs.get(step_template.step_name, {}).get('options')
+        custom_options = step_customs.get(str(step_template.id), {}).get('options')
         if custom_options:
             options = custom_options
 
@@ -34,8 +34,8 @@ def generate_response(context):
     # Apply hotel-specific customizations
     if config and config.customization_data:
         step_customs = config.customization_data.get('step_customizations', {})
-        # IMPORTANT: Assumes customization is keyed by step_name
-        customizations = step_customs.get(step_template.step_name, {})
+        # Use the step template's ID for robust matching
+        customizations = step_customs.get(str(step_template.id), {})
         message_template = customizations.get('message_template', message_template)
         options = customizations.get('options', options)
 

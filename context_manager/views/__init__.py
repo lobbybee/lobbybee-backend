@@ -15,6 +15,7 @@ from .admin_api import (
 from .hotel_api import (
     HotelFlowConfigurationListView,
     HotelFlowCustomizeView,
+    HotelFlowDetailView,
 )
 
 __all__ = [
@@ -32,4 +33,5 @@ __all__ = [
     'AdminHotelFlowConfigurationListView',
     'HotelFlowConfigurationListView',
     'HotelFlowCustomizeView',
+    'HotelFlowDetailView',
 ]

@@ -15,6 +15,7 @@ from .views import (
     AdminHotelFlowConfigurationListView,
     # Hotel API views
     HotelFlowConfigurationListView,
+    HotelFlowDetailView,
     HotelFlowCustomizeView,
 )
 
@@ -32,6 +33,7 @@ urlpatterns = [
     
     # Hotel API endpoints for flow configuration
     path('hotels/<uuid:hotel_id>/flow-configurations/', HotelFlowConfigurationListView.as_view(), name='hotel-flow-config-list'),
+    path('hotels/<uuid:hotel_id>/flows/<int:template_id>/', HotelFlowDetailView.as_view(), name='hotel-flow-detail'),
     path('hotels/<uuid:hotel_id>/flows/<int:template_id>/customize/', HotelFlowCustomizeView.as_view(), name='hotel-flow-customize'),
     
     # FlowStep endpoints

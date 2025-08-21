@@ -119,8 +119,7 @@ class ContextManagerModelsTestCase(TestCase):
             hotel=self.hotel,
             context_data={"test": "data"},
             is_active=True,
-            navigation_stack=[1, 2, 3],
-            flow_expires_at=timezone.now() + timedelta(hours=5)
+            navigation_stack=[1, 2, 3]
         )
         
         self.assertEqual(context.user_id, self.guest.whatsapp_number)

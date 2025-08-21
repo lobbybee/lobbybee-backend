@@ -4,7 +4,7 @@ This document logs the conversations that occurred during testing.
 
 ---
 
-### Scenario: In-Stay Service Access - 2025-08-17 02:53:33
+### Scenario: In-Stay Service Access - 2025-08-18 06:58:39
 
 **Guest (+2233445566):** Hi
 
@@ -18,7 +18,7 @@ Room 205 | Grand Palace Hotel
 
 ---
 
-### Scenario: In-Stay Service Access - 2025-08-17 02:53:33
+### Scenario: In-Stay Service Access - 2025-08-18 06:58:39
 
 **Guest (+2233445566):** 1
 
@@ -28,7 +28,7 @@ Room 205 | Grand Palace Hotel
 
 ---
 
-### Scenario: In-Stay Service Access - 2025-08-17 02:53:33
+### Scenario: In-Stay Service Access - 2025-08-18 06:58:39
 
 **Guest (+2233445566):** 1
 
@@ -39,7 +39,7 @@ What do you need?
 
 ---
 
-### Scenario: In-Stay Service Access - 2025-08-17 02:53:33
+### Scenario: In-Stay Service Access - 2025-08-18 06:58:39
 
 **Guest (+2233445566):** 1
 
@@ -52,7 +52,7 @@ Anything else?
 
 ---
 
-### Scenario 4: Returning Guest - 2025-08-17 02:53:33
+### Scenario 4: Returning Guest - 2025-08-18 06:58:39
 
 **Guest (+3344556677):** Hello
 
@@ -69,7 +69,7 @@ Anything else?
 
 ---
 
-### Scenario 4: Returning Guest - 2025-08-17 02:53:33
+### Scenario 4: Returning Guest - 2025-08-18 06:58:39
 
 **Guest (+3344556677):** 1
 
@@ -81,7 +81,7 @@ Recent stays:
 
 ---
 
-### Session Management: 5-Hour Expiry - 2025-08-17 02:53:33
+### Session Management: 5-Hour Expiry - 2025-08-18 06:58:39
 
 **Guest (+3344556677):** 1
 
@@ -92,7 +92,7 @@ Welcome back! How can I help you?
 
 ---
 
-### Navigation & State - 2025-08-17 02:53:33
+### Navigation & State - 2025-08-18 06:58:39
 
 **Guest (+5555555555):** demo
 
@@ -102,7 +102,7 @@ Welcome back! How can I help you?
 
 ---
 
-### Navigation & State - 2025-08-17 02:53:33
+### Navigation & State - 2025-08-18 06:58:39
 
 **Guest (+5555555555):** 1
 
@@ -110,7 +110,7 @@ Welcome back! How can I help you?
 
 ---
 
-### Navigation & State - 2025-08-17 02:53:33
+### Navigation & State - 2025-08-18 06:58:39
 
 **Guest (+5555555555):** John Doe
 
@@ -118,7 +118,7 @@ Welcome back! How can I help you?
 
 ---
 
-### Navigation & State - 2025-08-17 02:53:33
+### Navigation & State - 2025-08-18 06:58:39
 
 **Guest (+5555555555):** back
 
@@ -128,7 +128,7 @@ Welcome back! How can I help you?
 
 ---
 
-### Navigation & State - 2025-08-17 02:53:33
+### Navigation & State - 2025-08-18 06:58:39
 
 **Guest (+5555555555):** main menu
 
@@ -140,7 +140,7 @@ Welcome back! How can I help you?
 
 ---
 
-### Scenario 1: New Guest Discovery - 2025-08-17 02:53:33
+### Scenario 1: New Guest Discovery - 2025-08-18 06:58:39
 
 **Guest (+9876543210):** demo
 
@@ -150,7 +150,7 @@ Welcome back! How can I help you?
 
 ---
 
-### Scenario 1: New Guest Discovery - 2025-08-17 02:53:33
+### Scenario 1: New Guest Discovery - 2025-08-18 06:58:39
 
 **Guest (+9876543210):** 1
 
@@ -158,15 +158,15 @@ Welcome back! How can I help you?
 
 ---
 
-### Scenario 2: QR Code Check-in - 2025-08-17 02:53:33
+### Scenario 2: QR Code Check-in - 2025-08-18 06:58:39
 
-**Guest (+1234567890):** start-3cb240d5-aced-426c-af0c-db5a8c31ba0c
+**Guest (+1234567890):** start-5deed84b-dcf5-43c4-98b7-863c30adf017
 
 **System:** Welcome to Grand Test Hotel! To check in, please confirm your full name.
 
 ---
 
-### Scenario 3: Full Guest Discovery - 2025-08-17 02:53:33
+### Scenario 3: Full Guest Discovery - 2025-08-18 06:58:39
 
 **Guest (+1122334455):** Hi
 
@@ -182,7 +182,7 @@ Welcome back! How can I help you?
 
 ---
 
-### Scenario 3: Full Guest Discovery - 2025-08-17 02:53:33
+### Scenario 3: Full Guest Discovery - 2025-08-18 06:58:39
 
 **Guest (+1122334455):** 1
 
@@ -191,7 +191,7 @@ Please share your full name:
 
 ---
 
-### Scenario 3: Full Guest Discovery - 2025-08-17 02:53:33
+### Scenario 3: Full Guest Discovery - 2025-08-18 06:58:39
 
 **Guest (+1122334455):** Test User
 
@@ -199,7 +199,7 @@ Please share your full name:
 
 ---
 
-### Scenario 3: Full Guest Discovery - 2025-08-17 02:53:33
+### Scenario 3: Full Guest Discovery - 2025-08-18 06:58:39
 
 **Guest (+1122334455):** test@example.com
 
@@ -207,7 +207,7 @@ Please share your full name:
 
 ---
 
-### Scenario 3: Full Guest Discovery - 2025-08-17 02:53:33
+### Scenario 3: Full Guest Discovery - 2025-08-18 06:58:39
 
 **Guest (+1122334455):** +1122334455
 
@@ -216,7 +216,7 @@ Please share your full name:
 
 ---
 
-### Scenario 3: Full Guest Discovery - 2025-08-17 02:53:33
+### Scenario 3: Full Guest Discovery - 2025-08-18 06:58:39
 
 **Guest (+1122334455):** ID_document.jpg
 

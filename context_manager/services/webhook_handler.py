@@ -1,5 +1,7 @@
 import logging
+import os
 import uuid
+from datetime import timedelta
 
 from django.utils import timezone
 from guest.models import Guest, Stay
@@ -7,13 +9,20 @@ from hotel.models import Hotel
 
 from .context import (
     get_active_context, get_or_create_context, log_conversation_message,
-    update_context_activity)
+    update_context_activity, reset_user_conversation)
 from .flow import start_flow, transition_to_next_step
 from .message import (
     generate_response, update_accumulated_data, validate_input)
 from .navigation import handle_navigation, reset_context_to_main_menu
 
 logger = logging.getLogger(__name__)
+
+# Define the session timeout duration
+SESSION_TIMEOUT = timedelta(hours=5)
+
+# Admin command configuration
+ADMIN_RESET_COMMAND = "admin_reset_user:"
+FROM_NO_ADMIN = os.environ.get('FROM_NO_ADMIN')
 
 def process_webhook_message(whatsapp_number, message_body):
     """
@@ -27,6 +36,21 @@ def process_webhook_message(whatsapp_number, message_body):
         dict: Response with status and message.
     """
     try:
+        # --- Admin Command Handling ---
+        if FROM_NO_ADMIN and whatsapp_number == FROM_NO_ADMIN and message_body.lower().startswith(ADMIN_RESET_COMMAND):
+            target_user_id = message_body.lower().replace(ADMIN_RESET_COMMAND, '').strip()
+            if target_user_id:
+                deleted_count = reset_user_conversation(target_user_id)
+                return {
+                    'status': 'success',
+                    'message': f'Conversation data for user {target_user_id} reset. Deleted {deleted_count} contexts.'
+                }
+            else:
+                return {
+                    'status': 'error',
+                    'message': f'Usage: {ADMIN_RESET_COMMAND}<user_id_to_reset>'
+                }
+
         context = get_active_context(whatsapp_number)
         if not context:
             return {
@@ -34,12 +58,12 @@ def process_webhook_message(whatsapp_number, message_body):
                 'message': 'Your session has ended. Please start a new conversation by scanning a QR code or typing "demo".'
             }
 
-        # Update timestamps and log message
-        update_context_activity(context, message_body)
+        # Check for session expiry based on idle time
+        if timezone.now() - context.last_activity > SESSION_TIMEOUT:
+            return reset_context_to_main_menu(context, 'Your session has expired due to inactivity. Returning to the main menu.')
 
-        # Check for session expiry (5-hour rule)
-        if context.flow_expires_at and timezone.now() > context.flow_expires_at:
-            return reset_context_to_main_menu(context, 'Your session has expired. Returning to the main menu.')
+        # Update timestamps and log message *after* the expiry check
+        update_context_activity(context, message_body)
 
         # Handle navigation commands first
         if message_body.lower() in ['back', 'main menu']:

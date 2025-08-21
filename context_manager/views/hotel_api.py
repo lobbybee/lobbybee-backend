@@ -2,7 +2,7 @@ from rest_framework import generics, status
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from ..models import HotelFlowConfiguration, FlowTemplate, FlowStepTemplate, FlowStep
-from ..serializers import HotelFlowConfigurationSerializer
+from ..serializers import HotelFlowConfigurationSerializer, HotelFlowDetailSerializer
 from hotel.models import Hotel
 import logging
 
@@ -21,6 +21,46 @@ class HotelFlowConfigurationListView(generics.ListAPIView):
         """
         hotel_id = self.kwargs['hotel_id']
         return HotelFlowConfiguration.objects.filter(hotel_id=hotel_id)
+
+
+class HotelFlowDetailView(generics.RetrieveAPIView):
+    """
+    Provides a detailed view of a flow template for hotel customization,
+    including all steps and any existing customizations for that hotel.
+    """
+    serializer_class = HotelFlowDetailSerializer
+    permission_classes = [IsAuthenticated]  # TODO: Replace with specific hotel permissions
+    queryset = FlowTemplate.objects.all()
+    lookup_url_kwarg = 'template_id'
+
+    def get_serializer_context(self):
+        """
+        Passes the hotel object to the serializer.
+        """
+        context = super().get_serializer_context()
+        try:
+            hotel_id = self.kwargs['hotel_id']
+            context['hotel'] = Hotel.objects.get(id=hotel_id)
+        except (Hotel.DoesNotExist, KeyError):
+            context['hotel'] = None
+        return context
+
+    def retrieve(self, request, *args, **kwargs):
+        if 'hotel_id' not in self.kwargs:
+            return Response(
+                {'error': 'Hotel ID must be provided in the URL.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        if not self.get_serializer_context().get('hotel'):
+            return Response(
+                {'error': 'Hotel not found.'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        instance = self.get_object()
+        serializer = self.get_serializer(instance)
+        return Response(serializer.data)
+
 
 class HotelFlowCustomizeView(generics.UpdateAPIView):
     """
