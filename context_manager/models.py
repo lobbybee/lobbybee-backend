@@ -99,7 +99,7 @@ class ConversationMessage(models.Model):
 
 class ConversationContext(models.Model):
     user_id = models.CharField(max_length=20)  # Typically a phone number
-    hotel = models.ForeignKey(Hotel, on_delete=models.CASCADE)
+    hotel = models.ForeignKey(Hotel, on_delete=models.CASCADE, null=True, blank=True) # Allow null/blank for platform-level contexts
     context_data = models.JSONField(default=dict)
     last_activity = models.DateTimeField(auto_now=True)
     is_active = models.BooleanField(default=True)
@@ -116,7 +116,8 @@ class ConversationContext(models.Model):
         ]
 
     def __str__(self):
-        return f"Context for {self.user_id} at {self.hotel.name}"
+        hotel_name = self.hotel.name if self.hotel else "Platform"
+        return f"Context for {self.user_id} at {hotel_name}"
 
 class ScheduledMessageTemplate(models.Model):
     hotel = models.ForeignKey(Hotel, on_delete=models.CASCADE, related_name='message_templates')

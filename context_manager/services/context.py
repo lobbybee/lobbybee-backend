@@ -11,25 +11,35 @@ from ..tasks import send_pending_messages
 def get_or_create_context(whatsapp_number, guest, hotel):
     """
     Retrieves an active context or creates a new one, ensuring atomicity.
+    If guest is None, context is created without linking a Guest object.
+    If hotel is None, context is created at a platform level.
+    The 'guest_id' in context_data is only set if a Guest object is provided.
     """
+    defaults = {
+        'is_active': True,
+        'navigation_stack': [],
+        'context_data': {'accumulated_data': {}}
+    }
+    # Only store guest_id if a Guest object is provided
+    if guest:
+        defaults['context_data']['guest_id'] = guest.id
+
+    # get_or_create will now work with hotel=None
     context, created = ConversationContext.objects.select_for_update().get_or_create(
         user_id=whatsapp_number,
-        hotel=hotel,
-        defaults={
-            'is_active': True,
-            'navigation_stack': [],
-            'context_data': {'guest_id': guest.id, 'accumulated_data': {}}
-        }
+        hotel=hotel, # This can now be None
+        defaults=defaults
     )
 
     if not created and not context.is_active:
         # Reactivate an inactive context for a new conversation
         context.is_active = True
-        context.hotel = hotel
-        context.guest = guest
+        context.hotel = hotel # This can now be None
+        # Note: context.guest is not set here, as ConversationContext doesn't have a guest field.
+        # The guest association is managed through context_data.
         context.current_step = None
         context.navigation_stack = []
-        context.accumulated_data = {}
+        context.context_data = defaults # Reset context_data
         context.error_count = 0
         context.save()
     

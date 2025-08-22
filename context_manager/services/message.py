@@ -53,16 +53,31 @@ def generate_response(context):
 import re
 
 def replace_placeholders(template, context):
-    """Replaces placeholders like {guest_name} with actual data."""
+    """Replaces placeholders like {guest_name} with actual data.
+    Handles cases where Guest or Hotel object might not exist yet (e.g., during check-in collection or platform-level interactions).
+    """
     guest_id = context.context_data.get('guest_id')
     guest = Guest.objects.get(id=guest_id) if guest_id else None
+    # Handle case where context.hotel is None (platform level)
     hotel = context.hotel
-    stay = Stay.objects.filter(guest=guest, hotel=hotel, status='active').first() if guest else None
+    # Only try to find an active stay if there's a specific hotel context
+    stay = None
+    if guest and hotel:
+        stay = Stay.objects.filter(guest=guest, hotel=hotel, status='active').first()
+
+    # If guest object doesn't exist, try to get data from collected_checkin_data
+    if not guest:
+        collected_data = context.context_data.get('collected_checkin_data', {})
+        # Create a temporary object for placeholder replacement
+        if collected_data:
+             # Use a simple object or dict to hold collected data for replacement
+            guest = type('TempGuest', (), collected_data)() # Or just use collected_data dict directly
 
     # Build a dictionary of all possible replacement values
+    # Handle hotel being None gracefully
     replacement_data = {
         'guest': guest,
-        'hotel': hotel,
+        'hotel': hotel, # This will be None for platform contexts
         'stay': stay,
         **context.context_data.get('accumulated_data', {})
     }
@@ -83,12 +98,18 @@ def replace_placeholders(template, context):
             if obj_name in replacement_data:
                 obj = replacement_data[obj_name]
                 if obj and attr_name:
-                    value = getattr(obj, attr_name)
+                    # Handle potential temporary guest object attributes
+                    # Also handle hotel being None (e.g., obj is None)
+                    value = getattr(obj, attr_name, '') # Default to empty string if attribute missing or obj is None
                     if hasattr(value, 'strftime'):
                         value = value.strftime('%d-%m-%Y %H:%M')
                     replacements[p.name] = str(value)
                 elif obj:
                     replacements[p.name] = str(obj)
+                # Handle case where obj is None (e.g., hotel is None)
+                # The placeholder will resolve to an empty string
+                else:
+                    replacements[p.name] = ''
         except (AttributeError, IndexError):
             replacements[p.name] = ''
 
@@ -108,8 +129,11 @@ def update_accumulated_data(context, user_input):
     """
     Updates the context's accumulated_data based on the current step.
     This logic can be expanded with more sophisticated rules.
+    For check-in flows, data is also stored in 'collected_checkin_data'.
     """
     step_name = context.current_step.template.step_name
+    flow_category = context.current_step.template.flow_template.category
+    
     # A simple convention: if a step name contains "Collect", store the input
     # using a key derived from the step name.
     if 'collect' in step_name.lower():
@@ -119,4 +143,10 @@ def update_accumulated_data(context, user_input):
             if 'accumulated_data' not in context.context_data:
                 context.context_data['accumulated_data'] = {}
             context.context_data['accumulated_data'][data_key] = user_input
+            
+            # If this is part of the check-in flow, also store in collected_checkin_data
+            if flow_category == 'hotel_checkin':
+                 checkin_data = context.context_data.setdefault('collected_checkin_data', {})
+                 checkin_data[data_key] = user_input
+                 
             context.save()

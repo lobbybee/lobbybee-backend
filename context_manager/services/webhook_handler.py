@@ -14,6 +14,8 @@ from .flow import start_flow, transition_to_next_step
 from .message import (
     generate_response, update_accumulated_data, validate_input)
 from .navigation import handle_navigation, reset_context_to_main_menu
+# Import the new checkin finalizer
+from .checkin_finalizer import finalize_checkin
 
 logger = logging.getLogger(__name__)
 
@@ -128,20 +130,35 @@ def handle_initial_message(whatsapp_number, message_body):
     """
     Handles the first message from a user, which starts a new flow.
     (e.g., from a QR code scan, typing "demo", or a generic greeting).
+    This function avoids creating a Guest object immediately.
+    For checkin flows, it checks for an existing guest.
+    For other flows, no Guest object is created here.
     """
     flow_category = None
     hotel = None
+    guest = None # Initialize guest as None
 
     if message_body.lower().startswith('start-'):
         try:
             hotel_id_str = message_body.lower().replace('start-', '')
             hotel = Hotel.objects.get(id=uuid.UUID(hotel_id_str))
             flow_category = 'guest_checkin'
+            # For checkin, check if guest already exists, but don't create yet
+            try:
+                guest = Guest.objects.get(whatsapp_number=whatsapp_number)
+                # Indicate this is an existing guest for checkin
+                # We'll store this flag in context_data later
+            except Guest.DoesNotExist:
+                # Guest does not exist, will be created at checkin completion
+                # Store a flag in context_data to indicate this
+                pass
         except (ValueError, Hotel.DoesNotExist):
             return {'status': 'error', 'message': 'Invalid hotel identifier.'}
     elif message_body.lower() == 'demo':
-        flow_category = 'new_guest_discovery'
+        # Aligning with seed.sql: 'random_guest' is the correct category for demo/discovery
+        flow_category = 'random_guest'
         hotel = Hotel.objects.first()  # In demo mode, associate with the first hotel
+        # No guest creation for demo
     else:
         # For a generic greeting, determine if user is new, returning, or in-stay.
         try:
@@ -160,13 +177,16 @@ def handle_initial_message(whatsapp_number, message_body):
             else:
                 # Known guest, but no active stay. This is a returning guest.
                 flow_category = 'returning_guest'
-                hotel = Hotel.objects.first() # Default hotel for platform interactions
+                # Do not assign a specific hotel, handle at platform level
+                hotel = None # Indicate platform-level context
+            # Guest object 'guest' is already retrieved and will be passed
 
         except Guest.DoesNotExist:
             # Guest is not known, so proceed to discovery.
             # Aligning with seed.sql: 'random_guest' is the flow for new/discovery
             flow_category = 'random_guest'
-            hotel = Hotel.objects.first()
+            hotel = None # Platform level context for unknown users
+            # No guest creation for unknown returning/discovery flows
 
     if not hotel:
         return {'status': 'error', 'message': 'No hotels are configured for the demo.'}
@@ -175,12 +195,20 @@ def handle_initial_message(whatsapp_number, message_body):
         # This should not be reached with the current logic.
         return {'status': 'error', 'message': 'Could not determine the correct action. Please scan a valid QR code.'}
 
-    # Get or create the guest and context
-    guest, _ = Guest.objects.get_or_create(
-        whatsapp_number=whatsapp_number,
-        defaults={'full_name': 'Guest'} # Basic default
-    )
+    # Get or create the context. Guest is passed but get_or_create_context handles guest=None
     context = get_or_create_context(whatsapp_number, guest, hotel)
+    
+    # Store additional flags in context_data based on the flow initiation logic
+    if flow_category == 'guest_checkin':
+        if guest:
+             # Existing guest, flag for potential update
+            context.context_data['is_temp_guest'] = False
+        else:
+            # New guest for checkin, flag for creation
+            context.context_data['is_temp_guest'] = True
+            context.context_data['temp_whatsapp_number'] = whatsapp_number
+        context.save(update_fields=['context_data']) # Save the flags
+        
     update_context_activity(context, message_body)
 
     # Start the determined flow

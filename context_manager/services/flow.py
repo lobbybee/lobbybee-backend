@@ -3,6 +3,8 @@ import logging
 from ..models import FlowStep, FlowStepTemplate, FlowTemplate
 from .context import log_conversation_message
 from .message import generate_response
+# Import the checkin finalizer
+from .checkin_finalizer import finalize_checkin
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +49,7 @@ def start_flow(context, flow_category):
 def transition_to_next_step(context, user_input):
     """
     Determines the next step, updates the context, and returns the new step.
+    Checks if the next step is the end of the check-in flow and finalizes check-in if so.
     """
     current_step = context.current_step
     next_step_template = None
@@ -75,6 +78,52 @@ def transition_to_next_step(context, user_input):
         context.current_step = next_step
         context.navigation_stack.append(next_step.id)
         context.save()
+        
+        # Check if this transition leads to the end of the check-in flow
+        # This is a simplification. A more robust way is to check if next_step.template
+        # is the 'Checkin Success' step or has no further transitions.
+        # For now, let's assume the 'Checkin Success' step is the one that signifies completion.
+        # We can identify it by its name or a specific flag if added to the template.
+        # Let's check by step name for now.
+        if next_step.template.step_name == 'Checkin Success':
+             # Finalize the check-in process
+             guest = finalize_checkin(context)
+             logger.info(f"Check-in finalized for guest: {guest}")
+        
+        # --- Check-in Finalization Logic ---
+        # Check if the current flow is 'hotel_checkin' and the next step is the end (None)
+        # This assumes the 'Checkin Success' step is the last one in the 'hotel_checkin' flow.
+        # A more robust way might be to check the specific step name or a flag on the step template.
+        if (current_step.template.flow_template.category == 'hotel_checkin' and 
+            next_step.template.flow_template.category != 'hotel_checkin'):
+            # The next step belongs to a different flow, implying the check-in flow has ended successfully.
+            logger.info("Check-in flow completed. Finalizing guest creation/update.")
+            try:
+                guest = finalize_checkin(context)
+                if guest:
+                    logger.info(f"Guest {guest} successfully finalized.")
+                else:
+                    logger.warning("Check-in finalization did not create/update a guest.")
+            except Exception as e:
+                logger.error(f"Error during check-in finalization: {e}", exc_info=True)
+                # Depending on requirements, you might want to halt the transition or continue
+                # For now, we'll log the error and continue the transition.
+        
         return next_step
 
+    # --- Check-in Finalization Logic (Alternative) ---
+    # If next_step_template is None (end of flow) and the current flow was check-in
+    elif current_step.template.flow_template.category == 'hotel_checkin':
+         # This case handles if the check-in flow simply ends without transitioning to another flow.
+         # The 'Checkin Success' step itself might be the last one.
+         logger.info("Check-in flow ended. Finalizing guest creation/update.")
+         try:
+             guest = finalize_checkin(context)
+             if guest:
+                 logger.info(f"Guest {guest} successfully finalized.")
+             else:
+                 logger.warning("Check-in finalization did not create/update a guest.")
+         except Exception as e:
+             logger.error(f"Error during check-in finalization: {e}", exc_info=True)
+             
     return None # End of flow
