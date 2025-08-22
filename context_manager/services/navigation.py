@@ -40,7 +40,8 @@ def reset_context_to_main_menu(context, message):
     context.error_count = 0
     context.save()
     # We pass the context and the category, start_flow handles the rest
-    response = start_flow(context, 'main_menu')
+    # Aligning with seed.sql: 'random_guest' acts as the main menu/discovery flow
+    response = start_flow(context, 'random_guest')
     # Prepend the reason for the reset to the response message
     response['message'] = f"{message}\n\n{response.get('message', '')}"
     return response

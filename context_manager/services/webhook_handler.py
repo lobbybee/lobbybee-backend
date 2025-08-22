@@ -164,7 +164,8 @@ def handle_initial_message(whatsapp_number, message_body):
 
         except Guest.DoesNotExist:
             # Guest is not known, so proceed to discovery.
-            flow_category = 'new_guest_discovery_interactive'
+            # Aligning with seed.sql: 'random_guest' is the flow for new/discovery
+            flow_category = 'random_guest'
             hotel = Hotel.objects.first()
 
     if not hotel:
