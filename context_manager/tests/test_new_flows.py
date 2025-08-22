@@ -253,14 +253,14 @@ Your guest ID: {guest_id}
         context.refresh_from_db()
         self.assertEqual(context.context_data['accumulated_data'].get('full_name'), 'John Doe')
 
-        # 4. Navigate 'back' (should skip the 'collect name' step since we have the name)
+        # 4. Navigate 'back' (should go back one step to 'collect name')
         response = self.client.post(reverse('whatsapp-webhook'), data={'from_no': nav_whatsapp_number, 'message': 'back'}, content_type='application/json')
         self.log_conversation(nav_whatsapp_number, 'back', response.json().get('message', 'Error'), 'Navigation & State')
         context.refresh_from_db()
         self.assertEqual(response.json()['status'], 'success')
-        self.assertIn("Welcome to the LobbyBee network!", response.json()['message'])
-        self.assertEqual(context.current_step.template, self.discovery_welcome)
-        self.assertEqual(len(context.navigation_stack), 1)
+        self.assertIn("Great! What is your full name?", response.json()['message'])
+        self.assertEqual(context.current_step.template, self.discovery_collect_name)
+        self.assertEqual(len(context.navigation_stack), 2) # Stack is now [welcome, collect_name]
 
         # 5. Navigate to 'main menu'
         response = self.client.post(reverse('whatsapp-webhook'), data={'from_no': nav_whatsapp_number, 'message': 'main menu'}, content_type='application/json')

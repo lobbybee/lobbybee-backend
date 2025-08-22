@@ -49,6 +49,8 @@ class FlowStepTemplate(models.Model):
     actions = models.ManyToManyField(FlowAction, blank=True)
     next_step_template = models.ForeignKey('self', null=True, blank=True, on_delete=models.SET_NULL)
     conditional_next_steps = models.JSONField(null=True, blank=True)
+    allowed_flow_categories = models.JSONField(default=list, blank=True)
+    quick_reply_navigation = models.JSONField(default=dict, blank=True, help_text="e.g., {'Back': 'back', 'Main Menu': 'main_menu'}")
 
     def __str__(self):
         return f"{self.step_name} ({self.flow_template.name})"
@@ -102,7 +104,7 @@ class ConversationContext(models.Model):
     last_activity = models.DateTimeField(auto_now=True)
     is_active = models.BooleanField(default=True)
     # New fields for template-based system
-    current_step = models.ForeignKey('FlowStep', null=True, on_delete=models.SET_NULL)
+    current_step = models.ForeignKey('FlowStep', null=True, on_delete=models.CASCADE)
     navigation_stack = models.JSONField(default=list)  # Stores a stack of visited step_template IDs
     last_guest_message_at = models.DateTimeField(null=True)
     error_count = models.IntegerField(default=0)

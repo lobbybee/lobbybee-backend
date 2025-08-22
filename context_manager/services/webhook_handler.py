@@ -92,6 +92,13 @@ def process_webhook_message(whatsapp_number, message_body):
         context.error_count = 0
         context.save()
 
+        # --- Flow Transition Check ---
+        if (
+            context.current_step.template.allowed_flow_categories
+            and message_body in context.current_step.template.allowed_flow_categories
+        ):
+            return start_flow(context, message_body)
+
         # Update accumulated data and execute actions for the current step
         update_accumulated_data(context, message_body)
         # execute_step_actions(context) # Placeholder for future action execution

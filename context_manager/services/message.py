@@ -14,6 +14,9 @@ def validate_input(context, user_input):
         if custom_options:
             options = custom_options
 
+    if step_template.allowed_flow_categories and user_input in step_template.allowed_flow_categories:
+        return True, ""
+
     if options:
         if user_input in options:
             return True, ""
@@ -47,6 +50,8 @@ def generate_response(context):
         
     return response_message
 
+import re
+
 def replace_placeholders(template, context):
     """Replaces placeholders like {guest_name} with actual data."""
     guest_id = context.context_data.get('guest_id')
@@ -54,43 +59,50 @@ def replace_placeholders(template, context):
     hotel = context.hotel
     stay = Stay.objects.filter(guest=guest, hotel=hotel, status='active').first() if guest else None
 
-    # Get all placeholders from the database
-    placeholders = Placeholder.objects.all()
-    
+    # Build a dictionary of all possible replacement values
+    replacement_data = {
+        'guest': guest,
+        'hotel': hotel,
+        'stay': stay,
+        **context.context_data.get('accumulated_data', {})
+    }
+
+    # Find all unique placeholders in the template
+    placeholders_in_template = set(re.findall(r'\{([^}]+)\}', template))
+
+    # Fetch only the required placeholders from the DB
+    db_placeholders = Placeholder.objects.filter(name__in=placeholders_in_template)
+
     replacements = {}
-    for p in placeholders:
-        # Resolve the placeholder logic
+    for p in db_placeholders:
         try:
-            # Split the logic into parts (e.g., 'guest.full_name' -> ['guest', 'full_name'])
             parts = p.resolving_logic.split('.')
-            # Get the initial object (e.g., guest, hotel, stay)
-            obj = locals().get(parts[0])
-            if obj:
-                # Traverse the attributes to get the final value
-                value = obj
-                for part in parts[1:]:
-                    value = getattr(value, part)
-                
-                # Format the value if it's a datetime object
-                if hasattr(value, 'strftime'):
-                    value = value.strftime('%d-%m-%Y %H:%M')
+            obj_name = parts[0]
+            attr_name = parts[1] if len(parts) > 1 else None
 
-                replacements[f'{{{p.name}}}'] = str(value)
-            else:
-                replacements[f'{{{p.name}}}'] = ''
+            if obj_name in replacement_data:
+                obj = replacement_data[obj_name]
+                if obj and attr_name:
+                    value = getattr(obj, attr_name)
+                    if hasattr(value, 'strftime'):
+                        value = value.strftime('%d-%m-%Y %H:%M')
+                    replacements[p.name] = str(value)
+                elif obj:
+                    replacements[p.name] = str(obj)
         except (AttributeError, IndexError):
-            replacements[f'{{{p.name}}}'] = ''
+            replacements[p.name] = ''
 
-    # Add accumulated data to replacements
-    if 'accumulated_data' in context.context_data:
-        for key, value in context.context_data['accumulated_data'].items():
-            replacements[f'{{{key}}}'] = str(value)
+    # Add accumulated data that might not be in placeholders table
+    for key, value in replacement_data.items():
+        if key not in replacements:
+            replacements[key] = str(value)
 
-    # Replace all placeholders in the template
-    for placeholder, value in replacements.items():
-        template = template.replace(placeholder, value)
-        
-    return template
+    # Replace all placeholders in one go
+    def get_replacement(match):
+        placeholder_name = match.group(1)
+        return replacements.get(placeholder_name, match.group(0))
+
+    return re.sub(r'\{([^}]+)\}', get_replacement, template)
 
 def update_accumulated_data(context, user_input):
     """

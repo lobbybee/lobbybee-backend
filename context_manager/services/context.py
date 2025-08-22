@@ -35,11 +35,12 @@ def get_or_create_context(whatsapp_number, guest, hotel):
     
     return context
 
+@transaction.atomic
 def get_active_context(whatsapp_number):
     """
     Retrieve the active conversation context for a guest.
     """
-    return ConversationContext.objects.filter(user_id=whatsapp_number, is_active=True).first()
+    return ConversationContext.objects.select_for_update().filter(user_id=whatsapp_number, is_active=True).first()
 
 def update_context_activity(context, message_body):
     """
@@ -61,6 +62,20 @@ def log_conversation_message(context, content, is_from_guest):
         message_content=content,
         is_from_guest=is_from_guest
     )
+
+@transaction.atomic
+def reset_conversation(context):
+    """
+    Resets the conversation context, clearing the navigation stack and accumulated data,
+    but keeps the conversation active and linked to the same guest and hotel.
+    """
+    context.navigation_stack = []
+    context.context_data['accumulated_data'] = {}
+    context.error_count = 0
+    # Optionally, reset to a specific starting flow, e.g., main_menu
+    # from .flow import start_flow
+    # start_flow(context, 'main_menu') 
+    context.save()
 
 @transaction.atomic
 def reset_user_conversation(user_id):

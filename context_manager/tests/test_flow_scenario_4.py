@@ -126,8 +126,8 @@ Recent stays:
         context = ConversationContext.objects.get(user_id=self.guest.whatsapp_number)
 
         # 2. Manually expire the context by setting last_activity to be old
-        context.last_activity = timezone.now() - datetime.timedelta(hours=6)
-        context.save()
+        # Use update to bypass auto_now=True on the last_activity field
+        ConversationContext.objects.filter(pk=context.pk).update(last_activity=timezone.now() - datetime.timedelta(hours=6))
 
         # 3. Send another message to trigger the expiry logic
         payload['message'] = '1' # Try to continue the expired flow
@@ -136,7 +136,7 @@ Recent stays:
         
         # 4. Assert that the session was reset to the main menu
         self.assertEqual(response.status_code, 200)
-        self.assertIn("Your session has expired.", response.json()['message'])
+        self.assertIn("Your session has expired due to inactivity. Returning to the main menu.", response.json()['message'])
         self.assertIn("Welcome back! How can I help you?", response.json()['message'])
         context.refresh_from_db()
         self.assertEqual(context.current_step.template, self.main_menu_step)

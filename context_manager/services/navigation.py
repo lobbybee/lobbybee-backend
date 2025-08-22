@@ -16,38 +16,20 @@ def handle_navigation(context, command):
         if len(context.navigation_stack) <= 1:
             return reset_context_to_main_menu(context, 'You are at the beginning. Returning to main menu.')
 
-        context.navigation_stack.pop()  # Pop the current step first
+        context.navigation_stack.pop()  # Pop the current step
 
-        while context.navigation_stack:
-            previous_step_id = context.navigation_stack[-1]
-            try:
-                previous_step = FlowStep.objects.get(id=previous_step_id)
-            except FlowStep.DoesNotExist:
-                return reset_context_to_main_menu(context, 'Could not navigate back. Returning to main menu.')
+        previous_step_id = context.navigation_stack[-1]
+        try:
+            previous_step = FlowStep.objects.get(id=previous_step_id)
+            context.current_step = previous_step
+            context.error_count = 0
+            context.save()
 
-            # Check if this step should be skipped
-            step_template = previous_step.template
-            step_name = step_template.step_name
-            should_skip = False
-            if 'collect' in step_name.lower():
-                data_key = step_name.lower().replace('collect', '').strip().replace(' ', '_')
-                if context.context_data.get('accumulated_data', {}).get(data_key):
-                    should_skip = True
-            
-            if should_skip and len(context.navigation_stack) > 1:
-                context.navigation_stack.pop()
-            else:
-                # Found our destination
-                context.current_step = previous_step
-                context.error_count = 0
-                context.save()
-                
-                response_message = generate_response(context)
-                log_conversation_message(context, response_message, is_from_guest=False)
-                return {'status': 'success', 'message': response_message}
-        
-        # If loop finishes, we've popped everything. Go to main menu.
-        return reset_context_to_main_menu(context, 'You are at the beginning. Returning to main menu.')
+            response_message = generate_response(context)
+            log_conversation_message(context, response_message, is_from_guest=False)
+            return {'status': 'success', 'message': response_message}
+        except FlowStep.DoesNotExist:
+            return reset_context_to_main_menu(context, 'Could not navigate back. Returning to main menu.')
 
 
 def reset_context_to_main_menu(context, message):
