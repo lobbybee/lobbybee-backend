@@ -13,7 +13,7 @@ class FlowTemplate(models.Model):
 class FlowAction(models.Model):
     name = models.CharField(max_length=100)
     action_type = models.CharField(max_length=50)  # e.g., 'SEND_NOTIFICATION'
-    configuration = models.JSONField()  # e.g., {'department_name': 'reception'}
+    configuration = models.JSONField(null=True, blank=True)  # e.g., {'department_name': 'reception'}
 
     def __str__(self):
         return f"{self.name} ({self.action_type})"
@@ -46,12 +46,12 @@ class FlowStepTemplate(models.Model):
         choices=MESSAGE_TYPE_CHOICES,
         default='text'
     )
-    options = models.JSONField(default=dict)
+    options = models.JSONField(default=dict, null=True, blank=True)
     actions = models.ManyToManyField(FlowAction, blank=True)
     next_step_template = models.ForeignKey('self', null=True, blank=True, on_delete=models.SET_NULL)
     conditional_next_steps = models.JSONField(null=True, blank=True)
-    allowed_flow_categories = models.JSONField(default=list, blank=True)
-    quick_reply_navigation = models.JSONField(default=dict, blank=True, help_text="e.g., {'Back': 'back', 'Main Menu': 'main_menu'}")
+    allowed_flow_categories = models.JSONField(default=list, null=True, blank=True)
+    quick_reply_navigation = models.JSONField(default=dict, null=True, blank=True, help_text="e.g., {'Back': 'back', 'Main Menu': 'main_menu'}")
 
     def __str__(self):
         return f"{self.step_name} ({self.flow_template.name})"
@@ -71,7 +71,7 @@ class HotelFlowConfiguration(models.Model):
     hotel = models.ForeignKey(Hotel, on_delete=models.CASCADE)
     flow_template = models.ForeignKey(FlowTemplate, on_delete=models.CASCADE)
     is_enabled = models.BooleanField(default=True)
-    customization_data = models.JSONField(default=dict)  # Stores overrides
+    customization_data = models.JSONField(default=dict, null=True, blank=True)  # Stores overrides
 
     class Meta:
         unique_together = ['hotel', 'flow_template']
@@ -81,7 +81,7 @@ class HotelFlowConfiguration(models.Model):
 
 class WebhookLog(models.Model):
     timestamp = models.DateTimeField(auto_now_add=True)
-    payload = models.JSONField()
+    payload = models.JSONField(null=True, blank=True)
     processed_successfully = models.BooleanField(default=False)
     error_message = models.TextField(blank=True)
 
@@ -101,12 +101,12 @@ class ConversationMessage(models.Model):
 class ConversationContext(models.Model):
     user_id = models.CharField(max_length=20)  # Typically a phone number
     hotel = models.ForeignKey(Hotel, on_delete=models.CASCADE, null=True, blank=True) # Allow null/blank for platform-level contexts
-    context_data = models.JSONField(default=dict)
+    context_data = models.JSONField(default=dict, null=True, blank=True)
     last_activity = models.DateTimeField(auto_now=True)
     is_active = models.BooleanField(default=True)
     # New fields for template-based system
     current_step = models.ForeignKey('FlowStep', null=True, on_delete=models.CASCADE)
-    navigation_stack = models.JSONField(default=list)  # Stores a stack of visited step_template IDs
+    navigation_stack = models.JSONField(default=list, null=True, blank=True)  # Stores a stack of visited step_template IDs
     last_guest_message_at = models.DateTimeField(null=True)
     error_count = models.IntegerField(default=0)
 
@@ -123,7 +123,7 @@ class ConversationContext(models.Model):
 class ScheduledMessageTemplate(models.Model):
     hotel = models.ForeignKey(Hotel, on_delete=models.CASCADE, related_name='message_templates')
     message_type = models.CharField(max_length=50)  # e.g., 'checkout_reminder', 'promo', 'welcome'
-    trigger_condition = models.JSONField()  # e.g., {'hours_before_checkout': 2}
+    trigger_condition = models.JSONField(null=True, blank=True)  # e.g., {'hours_before_checkout': 2}
     message_template = models.TextField()
     is_active = models.BooleanField(default=True)
 

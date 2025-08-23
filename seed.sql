@@ -61,34 +61,34 @@ INSERT INTO context_manager_flowaction (name, action_type, configuration) VALUES
 
 -- ============================================
 -- FLOW STEP TEMPLATES
--- Insert all steps first without conditional/next step references.
+-- Insert all steps first with order and without conditional/next step references.
 -- These will be linked in the UPDATE section at the end.
 -- ============================================
 
 -- RANDOM GUEST FLOW
-INSERT INTO context_manager_flowsteptemplate (flow_template_id, step_name, message_template, message_type, options, quick_reply_navigation) VALUES
-((SELECT id FROM context_manager_flowtemplate WHERE category = 'random_guest'), 'Welcome Message', 'Welcome! How can we assist you today?', 'quick-reply', '{"demo": "View Demo", "contact": "Contact Us"}', '{}'),
-((SELECT id FROM context_manager_flowtemplate WHERE category = 'random_guest'), 'Demo Services', 'Here is a demo of our premium services. You can explore:', 'quick-reply', '{"explore_services": "Explore Hotel Services"}', '{"Back": "back", "Main Menu": "main_menu"}'),
-((SELECT id FROM context_manager_flowtemplate WHERE category = 'random_guest'), 'Contact Details', 'Contact Information:
+INSERT INTO context_manager_flowsteptemplate (flow_template_id, step_name, "order", message_template, message_type, options, quick_reply_navigation) VALUES
+((SELECT id FROM context_manager_flowtemplate WHERE category = 'random_guest'), 'Welcome Message', 0, 'Welcome! How can we assist you today?', 'quick-reply', '{"demo": "View Demo", "contact": "Contact Us"}', '{}'),
+((SELECT id FROM context_manager_flowtemplate WHERE category = 'random_guest'), 'Demo Services', 1, 'Here is a demo of our premium services. You can explore:', 'quick-reply', '{"explore_services": "Explore Hotel Services"}', '{"Back": "back", "Main Menu": "main_menu"}'),
+((SELECT id FROM context_manager_flowtemplate WHERE category = 'random_guest'), 'Contact Details', 2, 'Contact Information:
 📞 Phone: +1234567890
 📧 Email: contact@grandpalace.com
 📍 Address: 123 Palace Rd, Metropolis', 'text', '{}', '{"Back": "back", "Main Menu": "main_menu"}');
 
 -- HOTEL CHECK-IN FLOW
-INSERT INTO context_manager_flowsteptemplate (flow_template_id, step_name, message_template, message_type, options, quick_reply_navigation) VALUES
-((SELECT id FROM context_manager_flowtemplate WHERE category = 'hotel_checkin'), 'Checkin Welcome', 'Welcome to Grand Palace Hotel! Ready to begin your check-in process?', 'quick-reply', '{"proceed": "Proceed with Check-in"}', '{}'),
-((SELECT id FROM context_manager_flowtemplate WHERE category = 'hotel_checkin'), 'Guest Verification', 'Let me verify your details:
+INSERT INTO context_manager_flowsteptemplate (flow_template_id, step_name, "order", message_template, message_type, options, quick_reply_navigation) VALUES
+((SELECT id FROM context_manager_flowtemplate WHERE category = 'hotel_checkin'), 'Checkin Welcome', 0, 'Welcome to Grand Palace Hotel! Ready to begin your check-in process?', 'quick-reply', '{"proceed": "Proceed with Check-in"}', '{}'),
+((SELECT id FROM context_manager_flowtemplate WHERE category = 'hotel_checkin'), 'Guest Verification', 1, 'Let me verify your details:
 
 Name: {guest_name}
 Phone: {guest_phone}
 
 Are these details correct?', 'quick-reply', '{"confirm": "Confirm Details", "update": "Update Details"}', '{}'),
-((SELECT id FROM context_manager_flowtemplate WHERE category = 'hotel_checkin'), 'Details Update', 'Let me help you update your details.', 'text', '{}', '{}'),
-((SELECT id FROM context_manager_flowtemplate WHERE category = 'hotel_checkin'), 'Collect Full Name', 'What is your full name?', 'text', '{}', '{}'),
-((SELECT id FROM context_manager_flowtemplate WHERE category = 'hotel_checkin'), 'ID Type Selection', 'Please select your ID type:', 'list-picker', '{"pan": "PAN Card", "aadhaar": "Aadhaar Card", "driving_license": "Driving License"}', '{"Back": "back"}'),
-((SELECT id FROM context_manager_flowtemplate WHERE category = 'hotel_checkin'), 'ID Photo Upload', 'Please upload a clear photo of your selected ID document.', 'media', '{}', '{"Back": "back"}'),
-((SELECT id FROM context_manager_flowtemplate WHERE category = 'hotel_checkin'), 'Room Request Placed', 'Your room request has been placed and is being processed by our reception team.', 'text', '{}', '{}'),
-((SELECT id FROM context_manager_flowtemplate WHERE category = 'hotel_checkin'), 'Checkin Success', 'Check-in successful! 🎉
+((SELECT id FROM context_manager_flowtemplate WHERE category = 'hotel_checkin'), 'Details Update', 2, 'Let me help you update your details.', 'text', '{}', '{}'),
+((SELECT id FROM context_manager_flowtemplate WHERE category = 'hotel_checkin'), 'Collect Full Name', 3, 'What is your full name?', 'text', '{}', '{}'),
+((SELECT id FROM context_manager_flowtemplate WHERE category = 'hotel_checkin'), 'ID Type Selection', 4, 'Please select your ID type:', 'list-picker', '{"pan": "PAN Card", "aadhaar": "Aadhaar Card", "driving_license": "Driving License"}', '{"Back": "back"}'),
+((SELECT id FROM context_manager_flowtemplate WHERE category = 'hotel_checkin'), 'ID Photo Upload', 5, 'Please upload a clear photo of your selected ID document.', 'media', '{}', '{"Back": "back"}'),
+((SELECT id FROM context_manager_flowtemplate WHERE category = 'hotel_checkin'), 'Room Request Placed', 6, 'Your room request has been placed and is being processed by our reception team.', 'text', '{}', '{}'),
+((SELECT id FROM context_manager_flowtemplate WHERE category = 'hotel_checkin'), 'Checkin Success', 7, 'Check-in successful! 🎉
 
 Room: {room_number}
 WiFi: {wifi_password}
@@ -96,33 +96,33 @@ WiFi: {wifi_password}
 How can we assist you today?', 'quick-reply', '{"services": "Explore Hotel Services"}', '{}');
 
 -- HOTEL SERVICES FLOW
-INSERT INTO context_manager_flowsteptemplate (flow_template_id, step_name, message_template, message_type, options, quick_reply_navigation) VALUES
-((SELECT id FROM context_manager_flowtemplate WHERE category = 'hotel_services'), 'Services Menu', 'How can we assist you today?', 'list-picker', '{"reception": "Reception", "room_service": "Room Service", "restaurant": "Cafe/Restaurant", "management": "Management"}', '{"Main Menu": "main_menu"}'),
-((SELECT id FROM context_manager_flowtemplate WHERE category = 'hotel_services'), 'Reception Request', 'What would you like to check with Reception?', 'text', '{}', '{"Back": "back"}'),
-((SELECT id FROM context_manager_flowtemplate WHERE category = 'hotel_services'), 'Reception Confirmation', 'Your request has been forwarded to reception. They will assist you shortly.', 'quick-reply', '{"services": "Back to Hotel Services"}', '{}'),
-((SELECT id FROM context_manager_flowtemplate WHERE category = 'hotel_services'), 'Room Service Options', 'Select a room service option:', 'list-picker', '{"clean_room": "Clean Room", "maintenance": "Room Maintenance Request", "accessory": "Accessory Request"}', '{"Back": "back"}'),
-((SELECT id FROM context_manager_flowtemplate WHERE category = 'hotel_services'), 'Room Service Details', 'Please describe your service request in detail:', 'text', '{}', '{"Back": "back"}'),
-((SELECT id FROM context_manager_flowtemplate WHERE category = 'hotel_services'), 'Room Service Confirmation', 'Your service request has been submitted and will be deployed to your room shortly.', 'quick-reply', '{"services": "Back to Hotel Services"}', '{}'),
-((SELECT id FROM context_manager_flowtemplate WHERE category = 'hotel_services'), 'Restaurant Categories', 'Available dining options (Timings: 07:00 AM - 11:00 PM):', 'list-picker', '{"breakfast": "Breakfast", "dessert": "Dessert", "chinese": "Chinese"}', '{"Back": "back"}'),
-((SELECT id FROM context_manager_flowtemplate WHERE category = 'hotel_services'), 'Breakfast Menu', 'Here are our breakfast options:', 'list-picker', '{"continental": "Continental Breakfast - $18", "american": "American Breakfast - $22", "healthy": "Healthy Bowl - $16"}', '{"Back": "back"}'),
-((SELECT id FROM context_manager_flowtemplate WHERE category = 'hotel_services'), 'Dessert Menu', 'Here are our dessert options:', 'list-picker', '{"chocolate_cake": "Chocolate Cake - $12", "ice_cream": "Premium Ice Cream - $8", "fruit_platter": "Fresh Fruit Platter - $10"}', '{"Back": "back"}'),
-((SELECT id FROM context_manager_flowtemplate WHERE category = 'hotel_services'), 'Chinese Menu', 'Here are our Chinese options:', 'list-picker', '{"sweet_sour": "Sweet & Sour Chicken - $24", "beef_broccoli": "Beef with Broccoli - $26", "kung_pao": "Kung Pao Chicken - $25"}', '{"Back": "back"}'),
-((SELECT id FROM context_manager_flowtemplate WHERE category = 'hotel_services'), 'Order Confirmation', 'Confirm your order for {selected_item}?', 'quick-reply', '{"confirm": "Confirm Order", "cancel": "Cancel"}', '{}'),
-((SELECT id FROM context_manager_flowtemplate WHERE category = 'hotel_services'), 'Order Success', 'Your order has been placed successfully and will be delivered to your room!', 'quick-reply', '{"services": "Back to Hotel Services"}', '{}'),
-((SELECT id FROM context_manager_flowtemplate WHERE category = 'hotel_services'), 'Management Options', 'Management Services:', 'list-picker', '{"complaint": "Raise a Complaint", "feedback": "General Feedback"}', '{"Back": "back"}'),
-((SELECT id FROM context_manager_flowtemplate WHERE category = 'hotel_services'), 'Complaint Details', 'Please describe your complaint in detail. We take all feedback seriously:', 'text', '{}', '{"Back": "back"}'),
-((SELECT id FROM context_manager_flowtemplate WHERE category = 'hotel_services'), 'Feedback Input', 'Please share your feedback about our services:', 'text', '{}', '{"Back": "back"}'),
-((SELECT id FROM context_manager_flowtemplate WHERE category = 'hotel_services'), 'Management Response', 'Thank you for your feedback. Our management team will review this and get back to you within 24 hours.', 'quick-reply', '{"services": "Back to Hotel Services"}', '{}');
+INSERT INTO context_manager_flowsteptemplate (flow_template_id, step_name, "order", message_template, message_type, options, quick_reply_navigation) VALUES
+((SELECT id FROM context_manager_flowtemplate WHERE category = 'hotel_services'), 'Services Menu', 0, 'How can we assist you today?', 'list-picker', '{"reception": "Reception", "room_service": "Room Service", "restaurant": "Cafe/Restaurant", "management": "Management"}', '{"Main Menu": "main_menu"}'),
+((SELECT id FROM context_manager_flowtemplate WHERE category = 'hotel_services'), 'Reception Request', 1, 'What would you like to check with Reception?', 'text', '{}', '{"Back": "back"}'),
+((SELECT id FROM context_manager_flowtemplate WHERE category = 'hotel_services'), 'Reception Confirmation', 2, 'Your request has been forwarded to reception. They will assist you shortly.', 'quick-reply', '{"services": "Back to Hotel Services"}', '{}'),
+((SELECT id FROM context_manager_flowtemplate WHERE category = 'hotel_services'), 'Room Service Options', 3, 'Select a room service option:', 'list-picker', '{"clean_room": "Clean Room", "maintenance": "Room Maintenance Request", "accessory": "Accessory Request"}', '{"Back": "back"}'),
+((SELECT id FROM context_manager_flowtemplate WHERE category = 'hotel_services'), 'Room Service Details', 4, 'Please describe your service request in detail:', 'text', '{}', '{"Back": "back"}'),
+((SELECT id FROM context_manager_flowtemplate WHERE category = 'hotel_services'), 'Room Service Confirmation', 5, 'Your service request has been submitted and will be deployed to your room shortly.', 'quick-reply', '{"services": "Back to Hotel Services"}', '{}'),
+((SELECT id FROM context_manager_flowtemplate WHERE category = 'hotel_services'), 'Restaurant Categories', 6, 'Available dining options (Timings: 07:00 AM - 11:00 PM):', 'list-picker', '{"breakfast": "Breakfast", "dessert": "Dessert", "chinese": "Chinese"}', '{"Back": "back"}'),
+((SELECT id FROM context_manager_flowtemplate WHERE category = 'hotel_services'), 'Breakfast Menu', 7, 'Here are our breakfast options:', 'list-picker', '{"continental": "Continental Breakfast - $18", "american": "American Breakfast - $22", "healthy": "Healthy Bowl - $16"}', '{"Back": "back"}'),
+((SELECT id FROM context_manager_flowtemplate WHERE category = 'hotel_services'), 'Dessert Menu', 8, 'Here are our dessert options:', 'list-picker', '{"chocolate_cake": "Chocolate Cake - $12", "ice_cream": "Premium Ice Cream - $8", "fruit_platter": "Fresh Fruit Platter - $10"}', '{"Back": "back"}'),
+((SELECT id FROM context_manager_flowtemplate WHERE category = 'hotel_services'), 'Chinese Menu', 9, 'Here are our Chinese options:', 'list-picker', '{"sweet_sour": "Sweet & Sour Chicken - $24", "beef_broccoli": "Beef with Broccoli - $26", "kung_pao": "Kung Pao Chicken - $25"}', '{"Back": "back"}'),
+((SELECT id FROM context_manager_flowtemplate WHERE category = 'hotel_services'), 'Order Confirmation', 10, 'Confirm your order for {selected_item}?', 'quick-reply', '{"confirm": "Confirm Order", "cancel": "Cancel"}', '{}'),
+((SELECT id FROM context_manager_flowtemplate WHERE category = 'hotel_services'), 'Order Success', 11, 'Your order has been placed successfully and will be delivered to your room!', 'quick-reply', '{"services": "Back to Hotel Services"}', '{}'),
+((SELECT id FROM context_manager_flowtemplate WHERE category = 'hotel_services'), 'Management Options', 12, 'Management Services:', 'list-picker', '{"complaint": "Raise a Complaint", "feedback": "General Feedback"}', '{"Back": "back"}'),
+((SELECT id FROM context_manager_flowtemplate WHERE category = 'hotel_services'), 'Complaint Details', 13, 'Please describe your complaint in detail. We take all feedback seriously:', 'text', '{}', '{"Back": "back"}'),
+((SELECT id FROM context_manager_flowtemplate WHERE category = 'hotel_services'), 'Feedback Input', 14, 'Please share your feedback about our services:', 'text', '{}', '{"Back": "back"}'),
+((SELECT id FROM context_manager_flowtemplate WHERE category = 'hotel_services'), 'Management Response', 15, 'Thank you for your feedback. Our management team will review this and get back to you within 24 hours.', 'quick-reply', '{"services": "Back to Hotel Services"}', '{}');
 
 -- CHECKOUT FLOW
-INSERT INTO context_manager_flowsteptemplate (flow_template_id, step_name, message_template, message_type, options, quick_reply_navigation) VALUES
-((SELECT id FROM context_manager_flowtemplate WHERE category = 'checkout'), 'Checkout Initiation', 'Ready to check out? We hope you had a wonderful stay with us!', 'quick-reply', '{"proceed": "Proceed with Checkout"}', '{}'),
-((SELECT id FROM context_manager_flowtemplate WHERE category = 'checkout'), 'Feedback Request', 'Please share your feedback about your stay with us. Your opinion matters:', 'text', '{}', '{}'),
-((SELECT id FROM context_manager_flowtemplate WHERE category = 'checkout'), 'Feedback Thank You', 'Thank you for your valuable feedback! We hope to welcome you back soon. Have a safe journey!', 'text', '{}', '{}');
+INSERT INTO context_manager_flowsteptemplate (flow_template_id, step_name, "order", message_template, message_type, options, quick_reply_navigation) VALUES
+((SELECT id FROM context_manager_flowtemplate WHERE category = 'checkout'), 'Checkout Initiation', 0, 'Ready to check out? We hope you had a wonderful stay with us!', 'quick-reply', '{"proceed": "Proceed with Checkout"}', '{}'),
+((SELECT id FROM context_manager_flowtemplate WHERE category = 'checkout'), 'Feedback Request', 1, 'Please share your feedback about your stay with us. Your opinion matters:', 'text', '{}', '{}'),
+((SELECT id FROM context_manager_flowtemplate WHERE category = 'checkout'), 'Feedback Thank You', 2, 'Thank you for your valuable feedback! We hope to welcome you back soon. Have a safe journey!', 'text', '{}', '{}');
 
 -- RETURNING GUEST FLOW (SIMPLIFIED AND CORRECTED)
-INSERT INTO context_manager_flowsteptemplate (flow_template_id, step_name, message_template, message_type, options, allowed_flow_categories, quick_reply_navigation) VALUES
-((SELECT id FROM context_manager_flowtemplate WHERE category = 'returning_guest'), 'Welcome Returning Guest', 'Welcome back! How can we assist you today?', 'quick-reply', '{"hotel_checkin": "Check-in for New Stay", "random_guest": "Other Inquiries"}', '["hotel_checkin", "random_guest"]', '{}');
+INSERT INTO context_manager_flowsteptemplate (flow_template_id, step_name, "order", message_template, message_type, options, allowed_flow_categories, quick_reply_navigation) VALUES
+((SELECT id FROM context_manager_flowtemplate WHERE category = 'returning_guest'), 'Welcome Returning Guest', 0, 'Welcome back! How can we assist you today?', 'quick-reply', '{"hotel_checkin": "Check-in for New Stay", "random_guest": "Other Inquiries"}', '["hotel_checkin", "random_guest"]', '{}');
 
 
 -- ============================================
