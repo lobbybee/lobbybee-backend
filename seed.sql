@@ -18,8 +18,8 @@ TRUNCATE TABLE context_manager_scheduledmessagetemplate CASCADE;
 
 -- ============================================-- DEMO HOTEL
 -- ============================================
-INSERT INTO hotel_hotel (id, name, description, address, city, state, country, pincode, phone, email, status, is_verified, is_active, is_demo, time_zone, check_in_time, registration_date, updated_at) VALUES
-('00000000000000000000000000000001', 'LobbyBee Demo', 'A demonstration hotel to showcase the features of LobbyBee.', '123 Demo Street', 'Metropolis', 'Demo State', 'DEMO', '12345', '+10000000000', 'demo@lobbybee.com', 'verified', true, true, true, 'UTC', '14:00:00', NOW(), NOW());
+INSERT INTO hotel_hotel (id, name, description, address, city, state, country, pincode, phone, email, license_document_url, registration_document_url, additional_documents, latitude, longitude, qr_code_url, unique_qr_code, wifi_password, check_in_time, time_zone, status, is_verified, is_active, is_demo, registration_date, verified_at, updated_at) VALUES
+('00000000000000000000000000000001', 'LobbyBee Demo', 'A demonstration hotel to showcase the features of LobbyBee.', '123 Demo Street', 'Metropolis', 'Demo State', 'DEMO', '12345', '+10000000000', 'demo@lobbybee.com', NULL, NULL, '[]', NULL, NULL, '', 'lobbybee_demo_seed', '', '14:00:00', 'UTC', 'verified', true, true, true, NOW(), NOW(), NOW());
 
 
 -- ============================================-- PLACEHOLDERS

@@ -166,7 +166,7 @@ def handle_initial_message(whatsapp_number, message_body):
     elif message_body.lower() == 'demo':
         # Aligning with seed.sql: 'random_guest' is the correct category for demo/discovery
         flow_category = 'random_guest'
-        hotel = Hotel.objects.first()  # In demo mode, associate with the first hotel
+        hotel = Hotel.objects.filter(is_demo=True).first()  # In demo mode, associate with the demo hotel
         # No guest creation for demo
     else:
         # For a generic greeting, determine if user is new, returning, or in-stay.
