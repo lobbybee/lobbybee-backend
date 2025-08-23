@@ -21,16 +21,17 @@ def validate_input(context, user_input):
         if user_input in options:
             return True, ""
         else:
-            options_list = ", ".join([f"'{k}'" for k in options.keys()])
-            return False, f"Invalid option. Please select from: {options_list}"
-    
+            # options_list = ", ".join([f"'{k}'" for k in options.keys()])
+            # return False, f"Invalid option. Please select from: {options_list}"
+            return False, "Invalid option."
+
     return True, "" # No options to validate against
 
 def generate_response(context):
     """Generates a response message for the current flow step with placeholders."""
     step_template = context.current_step.template
     config = HotelFlowConfiguration.objects.filter(hotel=context.hotel, flow_template=step_template.flow_template).first()
-    
+
     message_template = step_template.message_template
     options = step_template.options
 
@@ -44,10 +45,10 @@ def generate_response(context):
 
     # Replace placeholders and add options
     response_message = replace_placeholders(message_template, context)
-    if options:
-        options_text = "\n".join([f"{key}. {value}" for key, value in options.items()])
-        response_message += f"\n{options_text}"
-        
+    # if options:
+    #     options_text = "\n".join([f"{key}. {value}" for key, value in options.items()])
+    #     response_message += f"\n{options_text}"
+
     return response_message
 
 import re
@@ -133,7 +134,7 @@ def update_accumulated_data(context, user_input):
     """
     step_name = context.current_step.template.step_name
     flow_category = context.current_step.template.flow_template.category
-    
+
     # A simple convention: if a step name contains "Collect", store the input
     # using a key derived from the step name.
     if 'collect' in step_name.lower():
@@ -143,10 +144,10 @@ def update_accumulated_data(context, user_input):
             if 'accumulated_data' not in context.context_data:
                 context.context_data['accumulated_data'] = {}
             context.context_data['accumulated_data'][data_key] = user_input
-            
+
             # If this is part of the check-in flow, also store in collected_checkin_data
             if flow_category == 'hotel_checkin':
                  checkin_data = context.context_data.setdefault('collected_checkin_data', {})
                  checkin_data[data_key] = user_input
-                 
+
             context.save()
