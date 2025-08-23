@@ -62,6 +62,15 @@ def process_webhook_message(whatsapp_number, message_body):
 
         # Check for session expiry based on idle time
         if timezone.now() - context.last_activity > SESSION_TIMEOUT:
+            # If the session is for a demo hotel, wipe the user's data completely.
+            if context.hotel and context.hotel.is_demo:
+                user_id = context.user_id
+                reset_user_conversation(user_id)
+                return {
+                    'status': 'success',
+                    'message': 'Your demo session has expired and all associated data has been cleared. Type "demo" to start a new one.'
+                }
+            # Otherwise, for a real hotel, just reset to the main menu.
             return reset_context_to_main_menu(context, 'Your session has expired due to inactivity. Returning to the main menu.')
 
         # Update timestamps and log message *after* the expiry check

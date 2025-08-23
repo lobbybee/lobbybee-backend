@@ -43,12 +43,14 @@ class FlowStepTemplateListView(generics.ListCreateAPIView):
     
     def get_queryset(self):
         """
-        Return all FlowStepTemplate records, optionally filtered by flow_template.
+        Return all FlowStepTemplate records, ordered by the 'order' field,
+        then by ID. Optionally filtered by flow_template.
         """
+        queryset = FlowStepTemplate.objects.all()
         flow_template_id = self.request.query_params.get('flow_template', None)
         if flow_template_id:
-            return FlowStepTemplate.objects.filter(flow_template_id=flow_template_id)
-        return FlowStepTemplate.objects.all()
+            queryset = queryset.filter(flow_template_id=flow_template_id)
+        return queryset.order_by('order', 'id')
 
 class FlowStepTemplateDetailView(generics.RetrieveUpdateDestroyAPIView):
     """

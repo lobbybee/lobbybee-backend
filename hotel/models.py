@@ -46,6 +46,7 @@ class Hotel(models.Model):
     status = models.CharField(max_length=20, choices=HOTEL_STATUS, default='pending')
     is_verified = models.BooleanField(default=False)
     is_active = models.BooleanField(default=True)
+    is_demo = models.BooleanField(default=False)
     registration_date = models.DateTimeField(auto_now_add=True)
     verified_at = models.DateTimeField(null=True, blank=True)
     updated_at = models.DateTimeField(auto_now=True)

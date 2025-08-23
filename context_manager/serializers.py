@@ -29,12 +29,6 @@ class FlowStepSerializer(serializers.ModelSerializer):
         fields = '__all__'
         read_only_fields = ('id',)
 
-    def validate_step_id(self, value):
-        """Ensure step_id is unique"""
-        if FlowStep.objects.filter(step_id=value).exists():
-            raise serializers.ValidationError("A flow step with this step_id already exists.")
-        return value
-
     def validate_options(self, value):
         """Validate that options is a dictionary"""
         if not isinstance(value, dict):
@@ -117,7 +111,7 @@ class HotelFlowDetailSerializer(serializers.ModelSerializer):
         config = HotelFlowConfiguration.objects.filter(hotel=hotel, flow_template=instance).first()
         customizations = config.customization_data.get('step_customizations', {}) if config and config.customization_data else {}
 
-        steps = instance.flowsteptemplate_set.all().order_by('id')
+        steps = instance.step_templates.all().order_by('order', 'id')
 
         # Attach customization data to each step object for the child serializer
         for step in steps:
