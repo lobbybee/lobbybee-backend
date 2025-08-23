@@ -163,10 +163,13 @@ def handle_initial_message(whatsapp_number, message_body):
                 pass
         except (ValueError, Hotel.DoesNotExist):
             return {'status': 'error', 'message': 'Invalid hotel identifier.'}
-    elif message_body.lower() == 'demo':
+    elif message_body.lower().strip() == 'demo':
         # Aligning with seed.sql: 'random_guest' is the correct category for demo/discovery
         flow_category = 'random_guest'
-        hotel = Hotel.objects.filter(is_demo=True).first()  # In demo mode, associate with the demo hotel
+        hotel = Hotel.objects.filter(is_demo=True).first()
+        logger.info(f"Attempting to start demo flow. Found hotel: {hotel.name if hotel else 'None'}")
+        if not hotel:
+            return {'status': 'error', 'message': 'No hotels are configured for the demo.'}
         # No guest creation for demo
     else:
         # For a generic greeting, determine if user is new, returning, or in-stay.
@@ -196,9 +199,6 @@ def handle_initial_message(whatsapp_number, message_body):
             flow_category = 'random_guest'
             hotel = None # Platform level context for unknown users
             # No guest creation for unknown returning/discovery flows
-
-    if not hotel:
-        return {'status': 'error', 'message': 'No hotels are configured for the demo.'}
 
     if not flow_category:
         # This should not be reached with the current logic.

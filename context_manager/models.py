@@ -58,14 +58,14 @@ class FlowStepTemplate(models.Model):
 
 class FlowStep(models.Model):
     template = models.ForeignKey(FlowStepTemplate, on_delete=models.CASCADE)
-    hotel = models.ForeignKey(Hotel, on_delete=models.CASCADE)
+    hotel = models.ForeignKey(Hotel, on_delete=models.CASCADE, null=True, blank=True)
     step_id = models.CharField(max_length=100)
 
     class Meta:
         unique_together = ['template', 'hotel']
 
     def __str__(self):
-        return f"{self.template.step_name} for {self.hotel.name}"
+        return f"{self.template.step_name} for {self.hotel.name if self.hotel else 'Platform'}"
 
 class HotelFlowConfiguration(models.Model):
     hotel = models.ForeignKey(Hotel, on_delete=models.CASCADE)
