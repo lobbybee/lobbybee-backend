@@ -119,18 +119,24 @@ class MessageFormattingTest(TestCase):
         
         messages = response.get('messages', [])
         self.assertEqual(len(messages), 1)
-        self.assertEqual(messages[0].get('type'), 'interactive')
-        self.assertEqual(messages[0].get('interactive', {}).get('type'), 'button')
-        self.assertIn('Welcome!', messages[0].get('interactive', {}).get('body', {}).get('text'))
+        
+        # Extract content from enriched message
+        message_content = messages[0].get('content', {})
+        self.assertEqual(message_content.get('type'), 'interactive')
+        self.assertEqual(message_content.get('interactive', {}).get('type'), 'button')
+        self.assertIn('Welcome!', message_content.get('interactive', {}).get('body', {}).get('text'))
 
         # 2. User selects "Contact Us"
         response = self._send_message(user_id, "contact")
         
         messages = response.get('messages', [])
         self.assertEqual(len(messages), 1)
-        self.assertIn('text', messages[0])
-        self.assertNotIn('type', messages[0])
-        self.assertIn('Contact Information', messages[0].get('text'))
+        
+        # Extract content from enriched message
+        message_content = messages[0].get('content', {})
+        self.assertIn('text', message_content)
+        self.assertNotIn('type', message_content)
+        self.assertIn('Contact Information', message_content.get('text'))
 
     def test_main_menu_command_and_multiple_messages(self):
         """
@@ -148,9 +154,13 @@ class MessageFormattingTest(TestCase):
         messages = response.get('messages', [])
         self.assertEqual(len(messages), 2, "Expected two messages: a notification and the main menu.")
         
-        self.assertIn('text', messages[0])
-        self.assertEqual(messages[0]['text'], 'Returning to the main menu.')
+        # Extract content from enriched messages
+        first_message_content = messages[0].get('content', {})
+        second_message_content = messages[1].get('content', {})
+        
+        self.assertIn('text', first_message_content)
+        self.assertEqual(first_message_content['text'], 'Returning to the main menu.')
 
-        self.assertEqual(messages[1].get('type'), 'interactive')
-        self.assertEqual(messages[1].get('interactive', {}).get('type'), 'button')
-        self.assertIn('Welcome!', messages[1].get('interactive', {}).get('body', {}).get('text'))
+        self.assertEqual(second_message_content.get('type'), 'interactive')
+        self.assertEqual(second_message_content.get('interactive', {}).get('type'), 'button')
+        self.assertIn('Welcome!', second_message_content.get('interactive', {}).get('body', {}).get('text'))

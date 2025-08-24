@@ -7,6 +7,7 @@ from ..services import (
     get_active_context,
 )
 from ..services.message import format_message
+from ..services.message_enricher import enrich_message_with_metadata
 from ..models import WebhookLog
 from django.db import utils as db_utils
 import logging
@@ -67,9 +68,17 @@ class WhatsAppWebhookView(APIView):
             if webhook_log:
                 webhook_log.error_message = error_message
                 webhook_log.save()
+            
+            formatted_error = format_message(error_message)
+            enriched_error = enrich_message_with_metadata(
+                formatted_error,
+                message_type='text',
+                status='error'
+            )
+            
             return Response({
                 'status': 'error',
-                'messages': [format_message(error_message)]
+                'messages': [enriched_error]
             }, status=status.HTTP_400_BAD_REQUEST)
             
         except Exception as e:
@@ -85,7 +94,14 @@ class WhatsAppWebhookView(APIView):
             else:
                 message = "An internal error occurred while processing the webhook."
 
+            formatted_error = format_message(message)
+            enriched_error = enrich_message_with_metadata(
+                formatted_error,
+                message_type='text',
+                status='error'
+            )
+
             return Response({
                 'status': 'error',
-                'messages': [format_message(message)]
+                'messages': [enriched_error]
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

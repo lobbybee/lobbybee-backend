@@ -14,6 +14,7 @@ from .flow import start_flow, transition_to_next_step
 from .message import (
     generate_response, update_accumulated_data, validate_input, format_message)
 from .navigation import handle_navigation, reset_context_to_main_menu
+from .message_enricher import enrich_message_with_metadata, enrich_messages_list
 # Import the new checkin finalizer
 from .checkin_finalizer import finalize_checkin
 
@@ -43,21 +44,39 @@ def process_webhook_message(whatsapp_number, message_body):
             target_user_id = message_body.lower().replace(ADMIN_RESET_COMMAND, '').strip()
             if target_user_id:
                 deleted_count = reset_user_conversation(target_user_id)
+                admin_message = format_message(f'Conversation data for user {target_user_id} reset. Deleted {deleted_count} contexts.')
+                enriched_message = enrich_message_with_metadata(
+                    admin_message,
+                    message_type='text',
+                    status='success'
+                )
                 return {
                     'status': 'success',
-                    'messages': [format_message(f'Conversation data for user {target_user_id} reset. Deleted {deleted_count} contexts.')]
+                    'messages': [enriched_message]
                 }
             else:
+                error_message = format_message(f'Usage: {ADMIN_RESET_COMMAND}<user_id_to_reset>')
+                enriched_error = enrich_message_with_metadata(
+                    error_message,
+                    message_type='text',
+                    status='error'
+                )
                 return {
                     'status': 'error',
-                    'messages': [format_message(f'Usage: {ADMIN_RESET_COMMAND}<user_id_to_reset>')]
+                    'messages': [enriched_error]
                 }
 
         context = get_active_context(whatsapp_number)
         if not context:
+            session_ended_message = format_message('Your session has ended. Please start a new conversation by scanning a QR code or typing "demo".')
+            enriched_message = enrich_message_with_metadata(
+                session_ended_message,
+                message_type='text',
+                status='info'
+            )
             return {
                 'status': 'success',
-                'messages': [format_message('Your session has ended. Please start a new conversation by scanning a QR code or typing "demo".')]
+                'messages': [enriched_message]
             }
 
         # Check for session expiry based on idle time
@@ -66,9 +85,15 @@ def process_webhook_message(whatsapp_number, message_body):
             if context.hotel and context.hotel.is_demo:
                 user_id = context.user_id
                 reset_user_conversation(user_id)
+                demo_expired_message = format_message('Your demo session has expired and all associated data has been cleared. Type "demo" to start a new one.')
+                enriched_message = enrich_message_with_metadata(
+                    demo_expired_message,
+                    message_type='text',
+                    status='info'
+                )
                 return {
                     'status': 'success',
-                    'messages': [format_message('Your demo session has expired and all associated data has been cleared. Type "demo" to start a new one.')]
+                    'messages': [enriched_message]
                 }
             # Otherwise, for a real hotel, just reset to the main menu.
             return reset_context_to_main_menu(context, 'Your session has expired due to inactivity. Returning to the main menu.')
@@ -94,11 +119,24 @@ def process_webhook_message(whatsapp_number, message_body):
             if context.error_count >= 5:
                 context.is_active = False
                 context.save()
+                too_many_errors_message = format_message('Too many consecutive errors. Conversation paused. Please start a new conversation.')
+                enriched_error = enrich_message_with_metadata(
+                    too_many_errors_message,
+                    message_type='text',
+                    status='error'
+                )
                 return {
                     'status': 'error',
-                    'messages': [format_message('Too many consecutive errors. Conversation paused. Please start a new conversation.')]
+                    'messages': [enriched_error]
                 }
-            return {'status': 'success', 'messages': [format_message(error_message)]}
+            
+            invalid_option_message = format_message(error_message)
+            enriched_error = enrich_message_with_metadata(
+                invalid_option_message,
+                message_type='text',
+                status='warning'
+            )
+            return {'status': 'success', 'messages': [enriched_error]}
 
         context.error_count = 0
         context.save()
@@ -126,12 +164,25 @@ def process_webhook_message(whatsapp_number, message_body):
         # Generate and log the response for the new step
         response_message = generate_response(context)
         log_conversation_message(context, response_message, is_from_guest=False)
+        
+        # Enrich the message with metadata
+        enriched_message = enrich_message_with_metadata(
+            format_message(response_message),
+            message_type=context.current_step.template.message_type,
+            status='success'
+        )
 
-        return {'status': 'success', 'messages': [format_message(response_message)]}
+        return {'status': 'success', 'messages': [enriched_message]}
 
     except Exception as e:
         logger.error(f"Error processing webhook message for {whatsapp_number}: {str(e)}", exc_info=True)
-        return {'status': 'error', 'messages': [format_message('An error occurred. Please try again.')]}
+        error_message = format_message('An error occurred. Please try again.')
+        enriched_error = enrich_message_with_metadata(
+            error_message,
+            message_type='text',
+            status='error'
+        )
+        return {'status': 'error', 'messages': [enriched_error]}
 
 
 def handle_initial_message(whatsapp_number, message_body):
@@ -161,14 +212,26 @@ def handle_initial_message(whatsapp_number, message_body):
                 # Store a flag in context_data to indicate this
                 pass
         except (ValueError, Hotel.DoesNotExist):
-            return {'status': 'error', 'messages': [format_message('Invalid hotel identifier.')]}
+            error_message = format_message('Invalid hotel identifier.')
+            enriched_error = enrich_message_with_metadata(
+                error_message,
+                message_type='text',
+                status='error'
+            )
+            return {'status': 'error', 'messages': [enriched_error]}
     elif message_body.lower().strip() == 'demo':
         # Aligning with seed.sql: 'random_guest' is the correct category for demo/discovery
         flow_category = 'random_guest'
         hotel = Hotel.objects.filter(is_demo=True).first()
         logger.info(f"Attempting to start demo flow. Found hotel: {hotel.name if hotel else 'None'}")
         if not hotel:
-            return {'status': 'error', 'messages': [format_message('No hotels are configured for the demo.')]}
+            error_message = format_message('No hotels are configured for the demo.')
+            enriched_error = enrich_message_with_metadata(
+                error_message,
+                message_type='text',
+                status='error'
+            )
+            return {'status': 'error', 'messages': [enriched_error]}
         # No guest creation for demo
     else:
         # For a generic greeting, determine if user is new, returning, or in-stay.
@@ -201,7 +264,13 @@ def handle_initial_message(whatsapp_number, message_body):
 
     if not flow_category:
         # This should not be reached with the current logic.
-        return {'status': 'error', 'messages': [format_message('Could not determine the correct action. Please scan a valid QR code.')]}
+        error_message = format_message('Could not determine the correct action. Please scan a valid QR code.')
+        enriched_error = enrich_message_with_metadata(
+            error_message,
+            message_type='text',
+            status='error'
+        )
+        return {'status': 'error', 'messages': [enriched_error]}
 
     # Get or create the context. Guest is passed but get_or_create_context handles guest=None
     context = get_or_create_context(whatsapp_number, guest, hotel)

@@ -3,6 +3,7 @@ import logging
 from ..models import FlowStep, FlowStepTemplate, FlowTemplate
 from .context import log_conversation_message
 from .message import generate_response, format_message
+from .message_enricher import enrich_message_with_metadata, enrich_messages_list
 # Import the checkin finalizer
 from .checkin_finalizer import finalize_checkin
 
@@ -36,14 +37,34 @@ def start_flow(context, flow_category):
 
         response_message = generate_response(context)
         log_conversation_message(context, response_message, is_from_guest=False)
-        return {'status': 'success', 'messages': [format_message(response_message)]}
+        
+        # Enrich the message with metadata
+        enriched_message = enrich_message_with_metadata(
+            format_message(response_message),
+            message_type=first_step_template.message_type,
+            status='success'
+        )
+        
+        return {'status': 'success', 'messages': [enriched_message]}
 
     except FlowTemplate.DoesNotExist as e:
         logger.error(str(e))
-        return {'status': 'error', 'messages': [format_message('This service is currently unavailable.')]}
+        error_message = format_message('This service is currently unavailable.')
+        enriched_error = enrich_message_with_metadata(
+            error_message,
+            message_type='text',
+            status='error'
+        )
+        return {'status': 'error', 'messages': [enriched_error]}
     except FlowStepTemplate.DoesNotExist as e:
         logger.error(str(e))
-        return {'status': 'error', 'messages': [format_message('This service is not configured correctly.')]}
+        error_message = format_message('This service is not configured correctly.')
+        enriched_error = enrich_message_with_metadata(
+            error_message,
+            message_type='text',
+            status='error'
+        )
+        return {'status': 'error', 'messages': [enriched_error]}
 
 
 def transition_to_next_step(context, user_input):
