@@ -6,6 +6,7 @@ from ..services import (
     handle_initial_message,
     get_active_context,
 )
+from ..services.message import format_message
 from ..models import WebhookLog
 from django.db import utils as db_utils
 import logging
@@ -68,7 +69,7 @@ class WhatsAppWebhookView(APIView):
                 webhook_log.save()
             return Response({
                 'status': 'error',
-                'message': error_message
+                'messages': [format_message(error_message)]
             }, status=status.HTTP_400_BAD_REQUEST)
             
         except Exception as e:
@@ -86,5 +87,5 @@ class WhatsAppWebhookView(APIView):
 
             return Response({
                 'status': 'error',
-                'message': message
+                'messages': [format_message(message)]
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

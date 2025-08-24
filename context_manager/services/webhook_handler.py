@@ -12,7 +12,7 @@ from .context import (
     update_context_activity, reset_user_conversation)
 from .flow import start_flow, transition_to_next_step
 from .message import (
-    generate_response, update_accumulated_data, validate_input)
+    generate_response, update_accumulated_data, validate_input, format_message)
 from .navigation import handle_navigation, reset_context_to_main_menu
 # Import the new checkin finalizer
 from .checkin_finalizer import finalize_checkin
@@ -35,7 +35,7 @@ def process_webhook_message(whatsapp_number, message_body):
         message_body (str): The message content.
 
     Returns:
-        dict: Response with status and message.
+        dict: Response with status and a list of messages.
     """
     try:
         # --- Admin Command Handling ---
@@ -45,19 +45,19 @@ def process_webhook_message(whatsapp_number, message_body):
                 deleted_count = reset_user_conversation(target_user_id)
                 return {
                     'status': 'success',
-                    'message': f'Conversation data for user {target_user_id} reset. Deleted {deleted_count} contexts.'
+                    'messages': [format_message(f'Conversation data for user {target_user_id} reset. Deleted {deleted_count} contexts.')]
                 }
             else:
                 return {
                     'status': 'error',
-                    'message': f'Usage: {ADMIN_RESET_COMMAND}<user_id_to_reset>'
+                    'messages': [format_message(f'Usage: {ADMIN_RESET_COMMAND}<user_id_to_reset>')]
                 }
 
         context = get_active_context(whatsapp_number)
         if not context:
             return {
                 'status': 'success',
-                'message': 'Your session has ended. Please start a new conversation by scanning a QR code or typing "demo".'
+                'messages': [format_message('Your session has ended. Please start a new conversation by scanning a QR code or typing "demo".')]
             }
 
         # Check for session expiry based on idle time
@@ -68,7 +68,7 @@ def process_webhook_message(whatsapp_number, message_body):
                 reset_user_conversation(user_id)
                 return {
                     'status': 'success',
-                    'message': 'Your demo session has expired and all associated data has been cleared. Type "demo" to start a new one.'
+                    'messages': [format_message('Your demo session has expired and all associated data has been cleared. Type "demo" to start a new one.')]
                 }
             # Otherwise, for a real hotel, just reset to the main menu.
             return reset_context_to_main_menu(context, 'Your session has expired due to inactivity. Returning to the main menu.')
@@ -96,9 +96,9 @@ def process_webhook_message(whatsapp_number, message_body):
                 context.save()
                 return {
                     'status': 'error',
-                    'message': 'Too many consecutive errors. Conversation paused. Please start a new conversation.'
+                    'messages': [format_message('Too many consecutive errors. Conversation paused. Please start a new conversation.')]
                 }
-            return {'status': 'success', 'message': error_message}
+            return {'status': 'success', 'messages': [format_message(error_message)]}
 
         context.error_count = 0
         context.save()
@@ -117,22 +117,21 @@ def process_webhook_message(whatsapp_number, message_body):
         # Transition to the next step
         next_step = transition_to_next_step(context, message_body)
         if not next_step:
-            context.is_active = False
-            context.save()
-            return {
-                'status': 'success',
-                'message': 'Thank you. Conversation completed.' # Customizable in FlowStep
-            }
+            # The flow has ended. Send a completion message and then show the main menu.
+            completion_message = 'Thank you. Conversation completed.'
+            # By not deactivating the context and resetting to main menu,
+            # the user can immediately start a new interaction.
+            return reset_context_to_main_menu(context, completion_message)
 
         # Generate and log the response for the new step
         response_message = generate_response(context)
         log_conversation_message(context, response_message, is_from_guest=False)
 
-        return {'status': 'success', 'message': response_message}
+        return {'status': 'success', 'messages': [format_message(response_message)]}
 
     except Exception as e:
         logger.error(f"Error processing webhook message for {whatsapp_number}: {str(e)}", exc_info=True)
-        return {'status': 'error', 'message': 'An error occurred. Please try again.'}
+        return {'status': 'error', 'messages': [format_message('An error occurred. Please try again.')]}
 
 
 def handle_initial_message(whatsapp_number, message_body):
@@ -162,14 +161,14 @@ def handle_initial_message(whatsapp_number, message_body):
                 # Store a flag in context_data to indicate this
                 pass
         except (ValueError, Hotel.DoesNotExist):
-            return {'status': 'error', 'message': 'Invalid hotel identifier.'}
+            return {'status': 'error', 'messages': [format_message('Invalid hotel identifier.')]}
     elif message_body.lower().strip() == 'demo':
         # Aligning with seed.sql: 'random_guest' is the correct category for demo/discovery
         flow_category = 'random_guest'
         hotel = Hotel.objects.filter(is_demo=True).first()
         logger.info(f"Attempting to start demo flow. Found hotel: {hotel.name if hotel else 'None'}")
         if not hotel:
-            return {'status': 'error', 'message': 'No hotels are configured for the demo.'}
+            return {'status': 'error', 'messages': [format_message('No hotels are configured for the demo.')]}
         # No guest creation for demo
     else:
         # For a generic greeting, determine if user is new, returning, or in-stay.
@@ -202,7 +201,7 @@ def handle_initial_message(whatsapp_number, message_body):
 
     if not flow_category:
         # This should not be reached with the current logic.
-        return {'status': 'error', 'message': 'Could not determine the correct action. Please scan a valid QR code.'}
+        return {'status': 'error', 'messages': [format_message('Could not determine the correct action. Please scan a valid QR code.')]}
 
     # Get or create the context. Guest is passed but get_or_create_context handles guest=None
     context = get_or_create_context(whatsapp_number, guest, hotel)

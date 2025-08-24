@@ -1,4 +1,5 @@
 from datetime import timedelta
+import json
 
 from django.db import transaction
 from django.utils import timezone
@@ -66,10 +67,17 @@ def update_context_activity(context, message_body):
 def log_conversation_message(context, content, is_from_guest):
     """
     Logs a single message to the ConversationMessage model.
+    Serializes dictionary content to JSON strings for proper storage.
     """
+    # Serialize dictionary content to JSON string for storage
+    if isinstance(content, dict):
+        message_content = json.dumps(content)
+    else:
+        message_content = content
+        
     ConversationMessage.objects.create(
         context=context,
-        message_content=content,
+        message_content=message_content,
         is_from_guest=is_from_guest
     )
 

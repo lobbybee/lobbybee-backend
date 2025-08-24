@@ -1,153 +1,205 @@
-from ..models import HotelFlowConfiguration, Placeholder
-from guest.models import Guest, Stay
-
-def validate_input(context, user_input):
-    """Validates user input against the current step's requirements."""
-    step_template = context.current_step.template
-    # Get customized options if they exist
-    config = HotelFlowConfiguration.objects.filter(hotel=context.hotel, flow_template=step_template.flow_template).first()
-    options = step_template.options
-    if config and config.customization_data:
-        step_customs = config.customization_data.get('step_customizations', {})
-        # IMPORTANT: Assumes customization is keyed by step_name
-        custom_options = step_customs.get(str(step_template.id), {}).get('options')
-        if custom_options:
-            options = custom_options
-
-    if step_template.allowed_flow_categories and user_input in step_template.allowed_flow_categories:
-        return True, ""
-
-    if options:
-        if user_input in options:
-            return True, ""
-        else:
-            # options_list = ", ".join([f"'{k}'" for k in options.keys()])
-            # return False, f"Invalid option. Please select from: {options_list}"
-            return False, "Invalid option."
-
-    return True, "" # No options to validate against
-
-def generate_response(context):
-    """Generates a response message for the current flow step with placeholders."""
-    step_template = context.current_step.template
-    config = HotelFlowConfiguration.objects.filter(hotel=context.hotel, flow_template=step_template.flow_template).first()
-
-    message_template = step_template.message_template
-    options = step_template.options
-
-    # Apply hotel-specific customizations
-    if config and config.customization_data:
-        step_customs = config.customization_data.get('step_customizations', {})
-        # Use the step template's ID for robust matching
-        customizations = step_customs.get(str(step_template.id), {})
-        message_template = customizations.get('message_template', message_template)
-        options = customizations.get('options', options)
-
-    # Replace placeholders and add options
-    response_message = replace_placeholders(message_template, context)
-    # if options:
-    #     options_text = "\n".join([f"{key}. {value}" for key, value in options.items()])
-    #     response_message += f"\n{options_text}"
-
-    return response_message
-
+import json
 import re
+from copy import deepcopy
 
-def replace_placeholders(template, context):
-    """Replaces placeholders like {guest_name} with actual data.
-    Handles cases where Guest or Hotel object might not exist yet (e.g., during check-in collection or platform-level interactions).
+from guest.models import Guest, Stay
+from ..models import HotelFlowConfiguration, Placeholder
+
+
+def format_message(message_content):
     """
+    Ensures the message is in the correct format for WhatsApp API.
+    - If it's already a properly formatted message dictionary (with 'type' for interactive messages or 'text' for text messages), return as-is
+    - If it's a simple string, wrap it in the standard WhatsApp text message format {'text': 'message'}
+    - If it's any other type of content, convert to string and wrap as text message
+    """
+    if isinstance(message_content, dict):
+        # If it's already a properly formatted message (interactive or text), return as-is
+        if 'type' in message_content or 'text' in message_content:
+            return message_content
+        # For other dictionaries, convert to string and wrap as text message
+        return {"text": str(message_content)}
+    # For simple string messages, wrap them in the standard WhatsApp text message format
+    return {"text": str(message_content)}
+
+
+def _recursive_replace(item, replacements):
+    """
+    Recursively traverses a dictionary or list to replace placeholder strings.
+    """
+    if isinstance(item, dict):
+        # For dictionaries, recurse into each value.
+        return {key: _recursive_replace(value, replacements) for key, value in item.items()}
+    elif isinstance(item, list):
+        # For lists, recurse into each element.
+        return [_recursive_replace(elem, replacements) for elem in item]
+    elif isinstance(item, str):
+        # For strings, perform the placeholder substitution.
+        # Placeholders are in the format {placeholder_name}.
+        def get_replacement(match):
+            placeholder_name = match.group(1)
+            # Return the replacement if found, otherwise return the original placeholder string.
+            return replacements.get(placeholder_name, match.group(0))
+        
+        return re.sub(r'\{([^}]+)\}', get_replacement, item)
+    else:
+        # For all other data types, return the item as is.
+        return item
+
+
+def replace_placeholders(template: dict, context) -> dict:
+    """
+    Replaces all placeholder variables in a message template dictionary with dynamic data.
+    
+    Args:
+        template (dict): The message template, as a Python dictionary.
+        context: The conversation context containing guest, hotel, and other data.
+
+    Returns:
+        dict: The message template with all placeholders resolved.
+    """
+    # 1. Gather all possible data sources for placeholders.
     guest_id = context.context_data.get('guest_id')
     guest = Guest.objects.get(id=guest_id) if guest_id else None
-    # Handle case where context.hotel is None (platform level)
     hotel = context.hotel
-    # Only try to find an active stay if there's a specific hotel context
     stay = None
     if guest and hotel:
         stay = Stay.objects.filter(guest=guest, hotel=hotel, status='active').first()
 
-    # If guest object doesn't exist, try to get data from collected_checkin_data
+    # Use a temporary object for guest data if the guest is not yet created (e.g., during check-in).
     if not guest:
         collected_data = context.context_data.get('collected_checkin_data', {})
-        # Create a temporary object for placeholder replacement
         if collected_data:
-             # Use a simple object or dict to hold collected data for replacement
-            guest = type('TempGuest', (), collected_data)() # Or just use collected_data dict directly
+            # Create a simple object that can be accessed with dot notation.
+            guest = type('TempGuest', (), collected_data)()
 
-    # Build a dictionary of all possible replacement values
-    # Handle hotel being None gracefully
-    replacement_data = {
+    # Consolidate all data into a single dictionary for easier access.
+    replacement_sources = {
         'guest': guest,
-        'hotel': hotel, # This will be None for platform contexts
+        'hotel': hotel,
         'stay': stay,
         **context.context_data.get('accumulated_data', {})
     }
 
-    # Find all unique placeholders in the template
-    placeholders_in_template = set(re.findall(r'\{([^}]+)\}', template))
+    # 2. Find all unique placeholders in the template to avoid redundant database queries.
+    # We serialize the dict to a string to easily find all placeholders.
+    template_str = json.dumps(template)
+    placeholders_in_template = set(re.findall(r'\{([^}]+)\}', template_str))
 
-    # Fetch only the required placeholders from the DB
+    # 3. Query the database for the resolving logic of these placeholders.
     db_placeholders = Placeholder.objects.filter(name__in=placeholders_in_template)
 
+    # 4. Build the final dictionary of placeholder names to their resolved values.
     replacements = {}
     for p in db_placeholders:
         try:
-            parts = p.resolving_logic.split('.')
-            obj_name = parts[0]
-            attr_name = parts[1] if len(parts) > 1 else None
-
-            if obj_name in replacement_data:
-                obj = replacement_data[obj_name]
-                if obj and attr_name:
-                    # Handle potential temporary guest object attributes
-                    # Also handle hotel being None (e.g., obj is None)
-                    value = getattr(obj, attr_name, '') # Default to empty string if attribute missing or obj is None
-                    if hasattr(value, 'strftime'):
-                        value = value.strftime('%d-%m-%Y %H:%M')
-                    replacements[p.name] = str(value)
-                elif obj:
-                    replacements[p.name] = str(obj)
-                # Handle case where obj is None (e.g., hotel is None)
-                # The placeholder will resolve to an empty string
-                else:
-                    replacements[p.name] = ''
-        except (AttributeError, IndexError):
+            # The resolving logic is in the format 'source.attribute', e.g., 'guest.full_name'.
+            obj_name, attr_name = p.resolving_logic.split('.')
+            source_obj = replacement_sources.get(obj_name)
+            if source_obj:
+                # Retrieve the attribute value from the source object.
+                value = getattr(source_obj, attr_name, '')
+                # Format datetimes for display.
+                if hasattr(value, 'strftime'):
+                    value = value.strftime('%d-%m-%Y %H:%M')
+                replacements[p.name] = str(value)
+            else:
+                replacements[p.name] = ''  # Placeholder source not available.
+        except (AttributeError, IndexError, ValueError):
+            # Handle cases where logic is malformed or attribute doesn't exist.
             replacements[p.name] = ''
 
-    # Add accumulated data that might not be in placeholders table
-    for key, value in replacement_data.items():
-        if key not in replacements:
-            replacements[key] = str(value)
+    # Add any simple accumulated data directly to replacements if not already there.
+    for key, value in replacement_sources.items():
+        if isinstance(value, (str, int, float)):
+            replacements.setdefault(key, str(value))
 
-    # Replace all placeholders in one go
-    def get_replacement(match):
-        placeholder_name = match.group(1)
-        return replacements.get(placeholder_name, match.group(0))
+    # 5. Perform the replacement on a deep copy of the template to avoid side effects.
+    template_copy = deepcopy(template)
+    return _recursive_replace(template_copy, replacements)
 
-    return re.sub(r'\{([^}]+)\}', get_replacement, template)
+
+def generate_response(context) -> dict:
+    """
+    Generates a response message for the current flow step, resolving any placeholders.
+    The message template is now expected to be a dictionary from a JSONField.
+    """
+    step_template = context.current_step.template
+    
+    # Start with the default message template from the step.
+    message_template = step_template.message_template
+
+    # Check for hotel-specific customizations and override the template if they exist.
+    config = HotelFlowConfiguration.objects.filter(
+        hotel=context.hotel, 
+        flow_template=step_template.flow_template
+    ).first()
+
+    if config and config.customization_data:
+        step_customs = config.customization_data.get('step_customizations', {})
+        customizations = step_customs.get(str(step_template.id), {})
+        # Use the custom message template if provided, otherwise fall back to the default.
+        message_template = customizations.get('message_template', message_template)
+
+    # The message_template is a dict; pass it to the placeholder replacement function.
+    return replace_placeholders(message_template, context)
+
+
+def validate_input(context, user_input):
+    """
+    Validates user input against the current step's requirements (e.g., button choices).
+    """
+    step_template = context.current_step.template
+    
+    # Check for hotel-specific customizations for options.
+    config = HotelFlowConfiguration.objects.filter(
+        hotel=context.hotel, 
+        flow_template=step_template.flow_template
+    ).first()
+    
+    options = step_template.options
+    if config and config.customization_data:
+        step_customs = config.customization_data.get('step_customizations', {})
+        custom_options = step_customs.get(str(step_template.id), {}).get('options')
+        if custom_options:
+            options = custom_options
+
+    # If the input is a valid flow category transition, it's valid.
+    if step_template.allowed_flow_categories and user_input in step_template.allowed_flow_categories:
+        return True, ""
+
+    # If there are defined options, the input must be one of them.
+    if options:
+        if user_input in options:
+            return True, ""
+        else:
+            # Provide a helpful error message.
+            return False, f"Invalid option. Please choose from the available buttons."
+
+    # If no options are defined, any input is considered valid.
+    return True, ""
+
 
 def update_accumulated_data(context, user_input):
     """
-    Updates the context's accumulated_data based on the current step.
-    This logic can be expanded with more sophisticated rules.
-    For check-in flows, data is also stored in 'collected_checkin_data'.
+    Updates the context's `accumulated_data` or `collected_checkin_data` based on the current step.
+    This is typically used for steps that collect information from the user.
     """
     step_name = context.current_step.template.step_name
     flow_category = context.current_step.template.flow_template.category
 
-    # A simple convention: if a step name contains "Collect", store the input
-    # using a key derived from the step name.
+    # Convention: steps named 'Collect ...' are for data gathering.
     if 'collect' in step_name.lower():
+        # Derive a key for the data from the step name.
         data_key = step_name.lower().replace('collect', '').strip().replace(' ', '_')
         if data_key:
-            # Ensure accumulated_data exists
-            if 'accumulated_data' not in context.context_data:
-                context.context_data['accumulated_data'] = {}
+            # Ensure the data structures exist in context_data.
+            context.context_data.setdefault('accumulated_data', {})
             context.context_data['accumulated_data'][data_key] = user_input
 
-            # If this is part of the check-in flow, also store in collected_checkin_data
+            # If this is part of the check-in flow, also store data specifically for check-in finalization.
             if flow_category == 'hotel_checkin':
                  checkin_data = context.context_data.setdefault('collected_checkin_data', {})
                  checkin_data[data_key] = user_input
 
-            context.save()
+            context.save(update_fields=['context_data'])

@@ -1,7 +1,7 @@
 from ..models import FlowStep
 from .context import log_conversation_message
 from .flow import start_flow
-from .message import generate_response
+from .message import generate_response, format_message
 
 
 def handle_navigation(context, command):
@@ -27,7 +27,7 @@ def handle_navigation(context, command):
 
             response_message = generate_response(context)
             log_conversation_message(context, response_message, is_from_guest=False)
-            return {'status': 'success', 'message': response_message}
+            return {'status': 'success', 'messages': [format_message(response_message)]}
         except FlowStep.DoesNotExist:
             return reset_context_to_main_menu(context, 'Could not navigate back. Returning to main menu.')
 
@@ -43,5 +43,6 @@ def reset_context_to_main_menu(context, message):
     # Aligning with seed.sql: 'random_guest' acts as the main menu/discovery flow
     response = start_flow(context, 'random_guest')
     # Prepend the reason for the reset to the response message
-    response['message'] = f"{message}\n\n{response.get('message', '')}"
+    original_messages = response.get('messages', [])
+    response['messages'] = [format_message(message)] + original_messages
     return response

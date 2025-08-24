@@ -2,7 +2,7 @@ import logging
 
 from ..models import FlowStep, FlowStepTemplate, FlowTemplate
 from .context import log_conversation_message
-from .message import generate_response
+from .message import generate_response, format_message
 # Import the checkin finalizer
 from .checkin_finalizer import finalize_checkin
 
@@ -36,14 +36,14 @@ def start_flow(context, flow_category):
 
         response_message = generate_response(context)
         log_conversation_message(context, response_message, is_from_guest=False)
-        return {'status': 'success', 'message': response_message}
+        return {'status': 'success', 'messages': [format_message(response_message)]}
 
     except FlowTemplate.DoesNotExist as e:
         logger.error(str(e))
-        return {'status': 'error', 'message': 'This service is currently unavailable.'}
+        return {'status': 'error', 'messages': [format_message('This service is currently unavailable.')]}
     except FlowStepTemplate.DoesNotExist as e:
         logger.error(str(e))
-        return {'status': 'error', 'message': 'This service is not configured correctly.'}
+        return {'status': 'error', 'messages': [format_message('This service is not configured correctly.')]}
 
 
 def transition_to_next_step(context, user_input):

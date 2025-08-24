@@ -40,7 +40,7 @@ class FlowStepTemplate(models.Model):
     flow_template = models.ForeignKey(FlowTemplate, on_delete=models.CASCADE, related_name='step_templates')
     step_name = models.CharField(max_length=100)
     order = models.IntegerField(default=0, help_text="Controls the display order of the step in a flow.")
-    message_template = models.TextField()
+    message_template = models.JSONField(default=dict, help_text="The WhatsApp-compatible message object template.")
     message_type = models.CharField(
         max_length=50,
         choices=MESSAGE_TYPE_CHOICES,
