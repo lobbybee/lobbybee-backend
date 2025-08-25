@@ -1,22 +1,41 @@
 from rest_framework import serializers
 from .models import Hotel, HotelDocument, Room, RoomCategory, Department
-
-class HotelSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Hotel
-        fields = '__all__'
-        read_only_fields = ('status', 'is_verified', 'verified_at')
-
-class UserHotelSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Hotel
-        exclude = ('status', 'verified_at')
+from user.serializers import UserSerializer
 
 class HotelDocumentSerializer(serializers.ModelSerializer):
     class Meta:
         model = HotelDocument
         fields = '__all__'
         read_only_fields = ('hotel',)
+
+class HotelSerializer(serializers.ModelSerializer):
+    admin = serializers.SerializerMethodField()
+    documents = HotelDocumentSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = Hotel
+        fields = [
+            'id', 'name', 'description', 'address', 'city', 'state', 'country', 
+            'pincode', 'phone', 'email', 'license_document_url', 
+            'registration_document_url', 'additional_documents', 'latitude', 
+            'longitude', 'qr_code_url', 'unique_qr_code', 'wifi_password', 
+            'check_in_time', 'time_zone', 'status', 'is_verified', 'is_active', 
+            'is_demo', 'verification_notes', 'registration_date', 'verified_at', 
+            'updated_at', 'admin', 'documents'
+        ]
+        read_only_fields = ('status', 'is_verified', 'verified_at')
+
+    def get_admin(self, obj):
+        admin_user = obj.get_admin()
+        if admin_user:
+            return UserSerializer(admin_user).data
+        return None
+
+class UserHotelSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Hotel
+        exclude = ('status', 'verified_at')
+
 
 class RoomCategorySerializer(serializers.ModelSerializer):
     room_count = serializers.ReadOnlyField()

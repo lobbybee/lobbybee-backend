@@ -47,6 +47,7 @@ class Hotel(models.Model):
     is_verified = models.BooleanField(default=False)
     is_active = models.BooleanField(default=True)
     is_demo = models.BooleanField(default=False)
+    verification_notes = models.TextField(blank=True, help_text="Notes for verification process by platform admin.")
     registration_date = models.DateTimeField(auto_now_add=True)
     verified_at = models.DateTimeField(null=True, blank=True)
     updated_at = models.DateTimeField(auto_now=True)

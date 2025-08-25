@@ -9,11 +9,15 @@ from .views import (
     CustomTokenObtainPairView,
     LogoutView,
     UserViewSet, # New import
+    PlatformUserViewSet,
 )
 from rest_framework_simplejwt.views import TokenRefreshView
 
 router = DefaultRouter()
-router.register(r'users', UserViewSet, basename='user') # New router registration
+router.register(r'users', UserViewSet, basename='user') # For hotel staff
+
+admin_router = DefaultRouter()
+admin_router.register(r'users', PlatformUserViewSet, basename='platform-user')
 
 urlpatterns = [
     path('hotel/register/', HotelRegistrationView.as_view(), name='hotel-registration'),
@@ -24,5 +28,6 @@ urlpatterns = [
     path('login/', CustomTokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('login/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('logout/', LogoutView.as_view(), name='logout'),
+    path('admin/', include(admin_router.urls)),
     path('', include(router.urls)), # Include router URLs
 ]

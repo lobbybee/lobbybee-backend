@@ -1,6 +1,19 @@
 from rest_framework import serializers
 from .models import User
 from hotel.models import Hotel
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+
+
+class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
+
+    def validate(self, attrs):
+        data = super().validate(attrs)
+        user_data = UserSerializer(self.user).data
+        if self.user.user_type in ['hotel_admin', 'manager', 'receptionist'] and self.user.hotel:
+            user_data['hotel_id'] = str(self.user.hotel.id)
+        data['user'] = user_data
+        return data
+
 
 class UserSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, required=False) # Make password optional for updates

@@ -6,7 +6,8 @@ import datetime
 
 class User(AbstractUser):
     USER_TYPES = [
-        ('superadmin', 'Super Admin'),
+        ('platform_admin', 'Platform Admin'),
+        ('platform_staff', 'Platform Staff'),
         ('hotel_admin', 'Hotel Admin'),
         ('manager', 'Manager'),
         ('receptionist', 'Receptionist'),
@@ -14,7 +15,7 @@ class User(AbstractUser):
     ]
     
     email = models.EmailField(unique=True)
-    user_type = models.CharField(max_length=20, choices=USER_TYPES)
+    user_type = models.CharField(max_length=20, choices=USER_TYPES, null=True, blank=True)
     phone_number = models.CharField(max_length=15, blank=True)
     is_verified = models.BooleanField(default=False)
     hotel = models.ForeignKey('hotel.Hotel', on_delete=models.CASCADE, null=True, blank=True)

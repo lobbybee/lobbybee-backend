@@ -1,8 +1,10 @@
 from django.http import Http404
+from django.utils import timezone
 from rest_framework import viewsets, permissions, status, generics
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.response import Response
 from rest_framework.decorators import action
+from rest_framework.pagination import PageNumberPagination
 
 from .models import Hotel, HotelDocument, Room, RoomCategory, Department
 from .serializers import (
@@ -14,7 +16,7 @@ from .serializers import (
     DepartmentSerializer,
     BulkCreateRoomSerializer,
 )
-from .permissions import IsHotelAdmin, IsSameHotelUser
+from .permissions import IsHotelAdmin, IsSameHotelUser, CanManagePlatform
 from .filters import RoomFilter
 
 
@@ -51,6 +53,59 @@ class HotelViewSet(viewsets.ModelViewSet):
         if not self.request.user.is_staff and not self.request.user.is_superuser:
             raise PermissionDenied("You do not have permission to create a hotel.")
         serializer.save()
+
+
+class StandardResultsSetPagination(PageNumberPagination):
+    page_size = 10
+    page_size_query_param = 'page_size'
+    max_page_size = 100
+
+class AdminHotelViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    ViewSet for Platform Admins to manage hotels.
+    """
+    queryset = Hotel.objects.filter(is_demo=False).order_by('-registration_date')
+    serializer_class = HotelSerializer
+    permission_classes = [permissions.IsAuthenticated, CanManagePlatform]
+    pagination_class = StandardResultsSetPagination
+    filterset_fields = ['status', 'city', 'country', 'is_verified', 'is_active']
+    search_fields = ['name']
+
+    @action(detail=True, methods=['post'], url_path='verify')
+    def verify(self, request, pk=None):
+        hotel = self.get_object()
+        notes = request.data.get('notes', '')
+        
+        hotel.is_verified = True
+        hotel.status = 'verified'
+        if notes:
+            hotel.verification_notes = notes
+        hotel.verified_at = timezone.now()
+        hotel.save(update_fields=['is_verified', 'status', 'verification_notes', 'verified_at'])
+        
+        return Response({'status': 'hotel verified'}, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=['post'], url_path='toggle-active')
+    def toggle_active(self, request, pk=None):
+        hotel = self.get_object()
+        hotel.is_active = not hotel.is_active
+        hotel.save(update_fields=['is_active'])
+        status_text = 'activated' if hotel.is_active else 'deactivated'
+        return Response({'status': f'hotel {status_text}'}, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=['post'], url_path='reject')
+    def reject(self, request, pk=None):
+        hotel = self.get_object()
+        notes = request.data.get('notes')
+        if not notes:
+            raise ValidationError({"notes": "Rejection notes are required."})
+        
+        hotel.status = 'rejected'
+        hotel.is_verified = False
+        hotel.verification_notes = notes
+        hotel.save(update_fields=['status', 'is_verified', 'verification_notes'])
+        
+        return Response({'status': 'hotel rejected'}, status=status.HTTP_200_OK)
 
 
 class UpdateProfileView(generics.UpdateAPIView):

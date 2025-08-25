@@ -9,26 +9,39 @@ from django.db import transaction
 from .models import User, OTP
 from .serializers import UserSerializer
 from hotel.permissions import IsHotelAdmin, CanCreateReceptionist
+from .permissions import IsSuperUser, IsPlatformAdmin
 from hotel.models import Hotel
 from hotel.serializers import UserHotelSerializer
 import re
 from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework_simplejwt.tokens import RefreshToken
+from .serializers import MyTokenObtainPairSerializer
 
 
 class CustomTokenObtainPairView(TokenObtainPairView):
-    def post(self, request, *args, **kwargs):
-        response = super().post(request, *args, **kwargs)
-        if response.status_code == 200:
-            user = User.objects.get(username=request.data['username'])
-            user_data = UserSerializer(user).data
+    serializer_class = MyTokenObtainPairSerializer
 
-            # Add hotel information for hotel users
-            if user.user_type in ['hotel_admin', 'manager', 'receptionist'] and user.hotel:
-                user_data['hotel_id'] = str(user.hotel.id)
+class PlatformUserViewSet(viewsets.ModelViewSet):
+    serializer_class = UserSerializer
 
-            response.data['user'] = user_data
-        return response
+    def get_queryset(self):
+        return User.objects.filter(user_type__in=['platform_admin', 'platform_staff'])
+
+    def get_permissions(self):
+        if self.action == 'create':
+            self.permission_classes = [IsSuperUser | IsPlatformAdmin]
+        else:
+            self.permission_classes = [IsAuthenticated, IsSuperUser | IsPlatformAdmin]
+        return super().get_permissions()
+
+    def perform_create(self, serializer):
+        user_type = serializer.validated_data.get('user_type')
+        if self.request.user.is_superuser and user_type == 'platform_admin':
+            serializer.save(is_staff=True, created_by=self.request.user)
+        elif self.request.user.user_type == 'platform_admin' and user_type == 'platform_staff':
+            serializer.save(is_staff=True, created_by=self.request.user)
+        else:
+            raise serializers.ValidationError("You do not have permission to create this type of user.")
 
 class LogoutView(views.APIView):
     permission_classes = (IsAuthenticated,)

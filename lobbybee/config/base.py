@@ -58,6 +58,11 @@ INSTALLED_APPS = [
     'django_celery_beat',
 ]
 
+AUTHENTICATION_BACKENDS = [
+    'user.auth_backends.EmailOrUsernameModelBackend',
+    'django.contrib.auth.backends.ModelBackend',
+]
+
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',

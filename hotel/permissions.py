@@ -13,10 +13,15 @@ class IsSameHotelUser(BasePermission):
     def has_object_permission(self, request, view, obj):
         return obj.hotel == request.user.hotel
 
-class IsSuperAdmin(BasePermission):
+class CanManagePlatform(BasePermission):
+    """
+    Allows access to platform-level management features.
+    This includes superusers, platform admins, and platform staff.
+    """
     def has_permission(self, request, view):
-        return (request.user.is_authenticated and 
-                request.user.user_type == 'superadmin')
+        return (request.user.is_authenticated and
+                (request.user.is_superuser or 
+                 request.user.user_type in ['platform_admin', 'platform_staff']))
 
 class CanCreateReceptionist(BasePermission):
     def has_permission(self, request, view):

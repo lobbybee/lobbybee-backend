@@ -7,6 +7,7 @@ from .views import (
     RoomCategoryViewSet,
     RoomViewSet,
     DepartmentViewSet,
+    AdminHotelViewSet,
 )
 
 router = DefaultRouter()
@@ -15,8 +16,12 @@ router.register(r'room-categories', RoomCategoryViewSet, basename='room-category
 router.register(r'rooms', RoomViewSet, basename='room')
 router.register(r'departments', DepartmentViewSet, basename='department')
 
+admin_router = DefaultRouter()
+admin_router.register(r'hotels', AdminHotelViewSet, basename='admin-hotel')
+
 urlpatterns = [
     path('', include(router.urls)),
+    path('admin/', include(admin_router.urls)),
     path('profile/update/', UpdateProfileView.as_view(), name='hotel-profile-update'),
     path('documents/upload/', HotelDocumentUploadView.as_view(), name='hotel-document-upload'),
 ]
