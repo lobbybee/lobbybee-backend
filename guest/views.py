@@ -1,4 +1,4 @@
-from rest_framework import viewsets, permissions, status
+from rest_framework import viewsets, permissions, status, generics
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.db.models import Q
@@ -13,6 +13,10 @@ from .serializers import (
 )
 from hotel.permissions import IsHotelAdmin, IsSameHotelUser, CanCheckInCheckOut
 from django.utils import timezone
+import logging
+from django.conf import settings
+import logging
+from django.conf import settings
 
 
 class GuestViewSet(viewsets.ModelViewSet):
@@ -90,6 +94,34 @@ class GuestIdentityDocumentViewSet(viewsets.ModelViewSet):
         )
 
     def perform_create(self, serializer):
+        # Ensure the document is associated with a guest from the same hotel
+        guest = serializer.validated_data["guest"]
+        if guest.stays.filter(hotel=self.request.user.hotel).exists():
+            serializer.save(verified_by=self.request.user)
+        else:
+            raise permissions.PermissionDenied(
+                "You can only add documents for guests in your hotel."
+            )
+
+
+class GuestIdentityDocumentUploadView(generics.CreateAPIView):
+    """
+    Upload identity documents for a guest.
+    """
+
+    serializer_class = GuestIdentityDocumentSerializer
+    permission_classes = [permissions.IsAuthenticated, IsHotelAdmin]
+
+    def perform_create(self, serializer):
+        logger = logging.getLogger(__name__)
+        # Get the default storage backend from STORAGES setting
+        storages_config = getattr(settings, 'STORAGES', {})
+        default_storage_config = storages_config.get('default', {})
+        backend = default_storage_config.get('BACKEND', 'Not configured')
+        logger.info(f"DEFAULT_FILE_STORAGE: {backend}")
+        logger.info(f"AWS_STORAGE_BUCKET_NAME: {settings.AWS_STORAGE_BUCKET_NAME}")
+        logger.info(f"AWS_S3_REGION_NAME: {settings.AWS_S3_REGION_NAME}")
+        
         # Ensure the document is associated with a guest from the same hotel
         guest = serializer.validated_data["guest"]
         if guest.stays.filter(hotel=self.request.user.hotel).exists():

@@ -1,6 +1,7 @@
 from django.db import models
 from user.models import User
 from hotel.models import Hotel, Room
+from lobbybee.utils.file_url import upload_to_guest_documents
 
 class Guest(models.Model):
     GUEST_STATUS = [
@@ -44,7 +45,7 @@ class GuestIdentityDocument(models.Model):
     guest = models.ForeignKey(Guest, on_delete=models.CASCADE, related_name='identity_documents')
     document_type = models.CharField(max_length=20, choices=DOCUMENT_TYPES)
     document_number = models.CharField(max_length=50, blank=True)
-    document_file = models.FileField(upload_to='guest_documents/')
+    document_file = models.FileField(upload_to=upload_to_guest_documents)
     is_primary = models.BooleanField(default=False)  # Primary document for verification
     is_verified = models.BooleanField(default=False)
     uploaded_at = models.DateTimeField(auto_now_add=True)
