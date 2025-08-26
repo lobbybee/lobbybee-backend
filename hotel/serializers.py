@@ -3,10 +3,20 @@ from .models import Hotel, HotelDocument, Room, RoomCategory, Department
 from user.serializers import UserSerializer
 
 class HotelDocumentSerializer(serializers.ModelSerializer):
+    document_file_url = serializers.SerializerMethodField()
+
     class Meta:
         model = HotelDocument
-        fields = '__all__'
+        fields = ('id', 'hotel', 'document_type', 'document_file', 'document_file_url', 'uploaded_at')
         read_only_fields = ('hotel',)
+        extra_kwargs = {
+            'document_file': {'write_only': True}
+        }
+
+    def get_document_file_url(self, obj):
+        if obj.document_file:
+            return obj.document_file.url
+        return None
 
 class HotelSerializer(serializers.ModelSerializer):
     admin = serializers.SerializerMethodField()
@@ -16,8 +26,7 @@ class HotelSerializer(serializers.ModelSerializer):
         model = Hotel
         fields = [
             'id', 'name', 'description', 'address', 'city', 'state', 'country', 
-            'pincode', 'phone', 'email', 'license_document_url', 
-            'registration_document_url', 'additional_documents', 'latitude', 
+            'pincode', 'phone', 'email', 'latitude', 
             'longitude', 'qr_code_url', 'unique_qr_code', 'wifi_password', 
             'check_in_time', 'time_zone', 'status', 'is_verified', 'is_active', 
             'is_demo', 'verification_notes', 'registration_date', 'verified_at', 

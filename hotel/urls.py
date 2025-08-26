@@ -4,6 +4,7 @@ from .views import (
     HotelViewSet,
     UpdateProfileView,
     HotelDocumentUploadView,
+    HotelDocumentUpdateView,
     RoomCategoryViewSet,
     RoomViewSet,
     DepartmentViewSet,
@@ -24,4 +25,5 @@ urlpatterns = [
     path('admin/', include(admin_router.urls)),
     path('profile/update/', UpdateProfileView.as_view(), name='hotel-profile-update'),
     path('documents/upload/', HotelDocumentUploadView.as_view(), name='hotel-document-upload'),
+    path('documents/<uuid:pk>/update/', HotelDocumentUpdateView.as_view(), name='hotel-document-update'),
 ]

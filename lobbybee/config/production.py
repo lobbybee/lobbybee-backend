@@ -39,9 +39,17 @@ AWS_S3_OBJECT_PARAMETERS = {
 AWS_S3_FILE_OVERWRITE = False
 AWS_QUERYSTRING_AUTH = False
 
-# Static and media files
-STATICFILES_STORAGE = 'lobbybee.utils.storage_backends.StaticStorage'
-DEFAULT_FILE_STORAGE = 'lobbybee.utils.storage_backends.MediaStorage'
+# Static and media files (Django 5.2+ format)
+STORAGES = {
+    "default": {
+        "BACKEND": "lobbybee.utils.storage_backends.MediaStorage",
+    },
+    "staticfiles": {
+        "BACKEND": "lobbybee.utils.storage_backends.StaticStorage",
+    },
+}
+
+# URLs for static and media files
 STATIC_URL = f'https://{AWS_S3_CUSTOM_DOMAIN}/static/'
 MEDIA_URL = f'https://{AWS_S3_CUSTOM_DOMAIN}/media/'
 

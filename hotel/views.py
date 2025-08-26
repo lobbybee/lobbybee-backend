@@ -5,6 +5,8 @@ from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.response import Response
 from rest_framework.decorators import action
 from rest_framework.pagination import PageNumberPagination
+import logging
+from django.conf import settings
 
 from .models import Hotel, HotelDocument, Room, RoomCategory, Department
 from .serializers import (
@@ -36,16 +38,16 @@ class HotelViewSet(viewsets.ModelViewSet):
     ordering_fields = ['name', 'registration_date']
 
     def get_serializer_class(self):
-        if self.request.user.is_staff or self.request.user.is_superuser:
+        if self.request.user.is_staff or self.request.user.is_superuser or self.request.user.user_type == 'hotel_admin':
             return HotelSerializer
         return UserHotelSerializer
 
     def get_queryset(self):
         user = self.request.user
         if user.is_staff or user.is_superuser:
-            return Hotel.objects.all()
+            return Hotel.objects.all().prefetch_related('documents')
         if hasattr(user, "hotel") and user.hotel:
-            return Hotel.objects.filter(pk=user.hotel.pk)
+            return Hotel.objects.filter(pk=user.hotel.pk).prefetch_related('documents')
         return Hotel.objects.none()
 
     def perform_create(self, serializer):
@@ -64,7 +66,7 @@ class AdminHotelViewSet(viewsets.ReadOnlyModelViewSet):
     """
     ViewSet for Platform Admins to manage hotels.
     """
-    queryset = Hotel.objects.filter(is_demo=False).order_by('-registration_date')
+    queryset = Hotel.objects.filter(is_demo=False).prefetch_related('documents').order_by('-registration_date')
     serializer_class = HotelSerializer
     permission_classes = [permissions.IsAuthenticated, CanManagePlatform]
     pagination_class = StandardResultsSetPagination
@@ -134,11 +136,35 @@ class HotelDocumentUploadView(generics.CreateAPIView):
     permission_classes = [permissions.IsAuthenticated, IsHotelAdmin]
 
     def perform_create(self, serializer):
+        logger = logging.getLogger(__name__)
+        # Get the default storage backend from STORAGES setting
+        storages_config = getattr(settings, 'STORAGES', {})
+        default_storage_config = storages_config.get('default', {})
+        backend = default_storage_config.get('BACKEND', 'Not configured')
+        logger.info(f"DEFAULT_FILE_STORAGE: {backend}")
+        logger.info(f"AWS_STORAGE_BUCKET_NAME: {settings.AWS_STORAGE_BUCKET_NAME}")
+        logger.info(f"AWS_S3_REGION_NAME: {settings.AWS_S3_REGION_NAME}")
         # Associate the document with the user's hotel
         hotel = getattr(self.request.user, "hotel", None)
         if hotel is None:
             raise ValidationError("User has no hotel associated.")
         serializer.save(hotel=hotel)
+
+
+class HotelDocumentUpdateView(generics.UpdateAPIView):
+    """
+    Update verification documents for a hotel.
+    """
+
+    serializer_class = HotelDocumentSerializer
+    permission_classes = [permissions.IsAuthenticated, IsHotelAdmin]
+    
+    def get_queryset(self):
+        # Only allow users to update documents for their own hotel
+        user = self.request.user
+        if hasattr(user, "hotel") and user.hotel:
+            return HotelDocument.objects.filter(hotel=user.hotel)
+        return HotelDocument.objects.none()
 
 
 class RoomCategoryViewSet(viewsets.ModelViewSet):

@@ -15,8 +15,15 @@ AWS_S3_FILE_OVERWRITE = False
 AWS_QUERYSTRING_AUTH = True
 AWS_QUERYSTRING_EXPIRE = 3600
 
-# Use S3 for file uploads only
-DEFAULT_FILE_STORAGE = 'lobbybee.utils.storage_backends.MediaStorage'
+# Use S3 for file uploads only (Django 5.2+ format)
+STORAGES = {
+    "default": {
+        "BACKEND": "lobbybee.utils.storage_backends.MediaStorage",
+    },
+    "staticfiles": {
+        "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
+    },
+}
 
 # File Upload Settings
 FILE_UPLOAD_MAX_MEMORY_SIZE = 5242880  # 5MB

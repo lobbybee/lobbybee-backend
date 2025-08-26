@@ -28,9 +28,6 @@ class Hotel(models.Model):
     email = models.EmailField(blank=True)
 
     # Documents (CDN URLs)
-    license_document_url = models.URLField(null=True, blank=True)
-    registration_document_url = models.URLField(null=True, blank=True)
-    additional_documents = models.JSONField(default=list)
 
     # Location & QR
     latitude = models.DecimalField(max_digits=10, decimal_places=7, null=True, blank=True)
