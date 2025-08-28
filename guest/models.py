@@ -1,7 +1,32 @@
 from django.db import models
+from django.db import transaction
 from user.models import User
 from hotel.models import Hotel, Room
 from lobbybee.utils.file_url import upload_to_guest_documents
+
+class Booking(models.Model):
+    BOOKING_STATUS = [
+        ('pending', 'Pending'),
+        ('confirmed', 'Confirmed'),
+        ('cancelled', 'Cancelled'),
+    ]
+    
+    hotel = models.ForeignKey(Hotel, on_delete=models.CASCADE, related_name='bookings')
+    primary_guest = models.ForeignKey('Guest', on_delete=models.CASCADE, related_name='bookings')
+    
+    booking_date = models.DateTimeField(auto_now_add=True)
+    check_in_date = models.DateTimeField()
+    check_out_date = models.DateTimeField()
+    
+    total_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    status = models.CharField(max_length=20, choices=BOOKING_STATUS, default='pending')
+    
+    # This field will store the list of guests for the entire booking
+    guest_names = models.JSONField(default=list)
+
+    def __str__(self):
+        return f"Booking for {self.primary_guest.full_name} at {self.hotel.name}"
+
 
 class Guest(models.Model):
     GUEST_STATUS = [
@@ -66,6 +91,7 @@ class Stay(models.Model):
         ('cancelled', 'Cancelled'),
     ]
     
+    booking = models.ForeignKey(Booking, on_delete=models.CASCADE, related_name='stays', null=True, blank=True)
     hotel = models.ForeignKey(Hotel, on_delete=models.CASCADE, related_name='stays')
     guest = models.ForeignKey(Guest, on_delete=models.CASCADE, related_name='stays')
     room = models.ForeignKey(Room, on_delete=models.CASCADE, related_name='stays')

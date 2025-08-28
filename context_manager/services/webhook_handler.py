@@ -101,6 +101,14 @@ def process_webhook_message(whatsapp_number, message_body):
         # Update timestamps and log message *after* the expiry check
         update_context_activity(context, message_body)
 
+        # Handle global commands that can interrupt a flow
+        if message_body.lower().startswith('start-'):
+            # Deactivate the current context to allow a new one to be created/re-activated.
+            context.is_active = False
+            context.save()
+            # Let handle_initial_message create the new context and start the flow.
+            return handle_initial_message(whatsapp_number, message_body)
+
         # Handle navigation commands first
         if message_body.lower() in ['back', 'main menu']:
             return handle_navigation(context, message_body.lower())

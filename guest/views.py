@@ -3,13 +3,14 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.db.models import Q
 from context_manager.models import ConversationContext
-from .models import Guest, GuestIdentityDocument, Stay
+from .models import Guest, GuestIdentityDocument, Stay, Booking
 from .serializers import (
     GuestSerializer,
     GuestIdentityDocumentSerializer,
     StaySerializer,
     CheckInSerializer,
     CheckOutSerializer,
+    BookingSerializer
 )
 from hotel.permissions import IsHotelAdmin, IsSameHotelUser, CanCheckInCheckOut
 from django.utils import timezone
@@ -17,6 +18,20 @@ import logging
 from django.conf import settings
 import logging
 from django.conf import settings
+
+class BookingViewSet(viewsets.ModelViewSet):
+    queryset = Booking.objects.all()
+    serializer_class = BookingSerializer
+    permission_classes = [permissions.IsAuthenticated, IsHotelAdmin]
+
+    def get_queryset(self):
+        # Only show bookings for the user's hotel
+        return Booking.objects.filter(hotel=self.request.user.hotel)
+
+    def perform_create(self, serializer):
+        # The serializer's create method already handles hotel assignment
+        serializer.save()
+
 
 
 class GuestViewSet(viewsets.ModelViewSet):
