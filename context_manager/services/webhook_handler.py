@@ -209,7 +209,7 @@ def handle_initial_message(whatsapp_number, message_body):
         try:
             hotel_id_str = message_body.lower().replace('start-', '')
             hotel = Hotel.objects.get(id=uuid.UUID(hotel_id_str))
-            flow_category = 'guest_checkin'
+            flow_category = 'hotel_checkin'
             # For checkin, check if guest already exists, but don't create yet
             try:
                 guest = Guest.objects.get(whatsapp_number=whatsapp_number)
@@ -255,7 +255,7 @@ def handle_initial_message(whatsapp_number, message_body):
 
             if active_stay:
                 hotel = active_stay.hotel
-                flow_category = 'in_stay_services'
+                flow_category = 'hotel_services'
             else:
                 # Known guest, but no active stay. This is a returning guest.
                 flow_category = 'returning_guest'
@@ -284,7 +284,7 @@ def handle_initial_message(whatsapp_number, message_body):
     context = get_or_create_context(whatsapp_number, guest, hotel)
     
     # Store additional flags in context_data based on the flow initiation logic
-    if flow_category == 'guest_checkin':
+    if flow_category == 'hotel_checkin':
         if guest:
              # Existing guest, flag for potential update
             context.context_data['is_temp_guest'] = False
