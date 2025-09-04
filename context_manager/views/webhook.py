@@ -33,26 +33,44 @@ class WhatsAppWebhookView(APIView):
                 processed_successfully=False
             )
             # 1. Extract data from the webhook payload
+            from_no = None
+            message_body = None
+            message_type = 'text'
+
             # This handles various formats, e.g., Twilio, generic
-            if 'From' in request.data and 'Body' in request.data:
+            if 'From' in request.data:  # Twilio-like
                 from_no = request.data.get('From', '').replace('whatsapp:', '')
                 message_body = request.data.get('Body', '')
-            else:
-                from_no = request.data.get('from_no')
-                message_body = request.data.get('message', '')
+                if 'MediaUrl0' in request.data:
+                    message_type = request.data.get('MediaContentType0', 'media').split('/')[0]
+                    if message_type == 'audio':
+                        message_type = 'voice'
+                    message_body = request.data.get('MediaUrl0')
 
-            if not from_no or not message_body:
-                raise ValueError("Missing 'from_no' or 'message' in payload")
+            else:  # Generic format
+                from_no = request.data.get('from_no')
+                message_type = request.data.get('type', 'text')
+                if message_type == 'text':
+                    message_body = request.data.get('message', '')
+                else:
+                    # For image, voice, etc., we expect a media_id
+                    message_body = request.data.get('media_id')
+
+            if not from_no:
+                raise ValueError("Missing 'from_no' or 'From' in payload")
+
+            if not message_body:
+                raise ValueError("Missing 'message' or 'media_id' in payload")
 
             # 2. Determine if there's an active conversation context.
             context = get_active_context(from_no)
 
             if not context:
                 # No active context, treat as an initial message.
-                result = handle_initial_message(from_no, message_body)
+                result = handle_initial_message(from_no, message_body, message_type)
             else:
                 # Active context exists, process as part of an ongoing conversation.
-                result = process_webhook_message(from_no, message_body)
+                result = process_webhook_message(from_no, message_body, message_type)
 
             # 3. Log success and return the response
             if webhook_log:

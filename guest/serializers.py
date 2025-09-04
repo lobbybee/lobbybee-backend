@@ -63,8 +63,6 @@ class GuestSerializer(serializers.ModelSerializer):
 
 
 class StaySerializer(serializers.ModelSerializer):
-    guest = GuestSerializer(read_only=True)
-
     class Meta:
         model = Stay
         fields = "__all__"
@@ -74,6 +72,7 @@ class StaySerializer(serializers.ModelSerializer):
         from hotel.serializers import RoomSerializer
 
         representation = super().to_representation(instance)
+        representation["guest"] = GuestSerializer(instance.guest).data
         representation["room"] = RoomSerializer(instance.room).data
         return representation
 

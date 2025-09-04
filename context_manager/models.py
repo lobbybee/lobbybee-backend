@@ -1,5 +1,20 @@
 from django.db import models
 from hotel.models import Hotel
+import uuid
+
+def upload_to_whatsapp_media(instance, filename):
+    return f'whatsapp_media/{instance.id}/{filename}'
+
+class WhatsappMedia(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    whatsapp_media_id = models.CharField(max_length=255, unique=True)
+    mime_type = models.CharField(max_length=100)
+    file_size = models.BigIntegerField()
+    file = models.FileField(upload_to=upload_to_whatsapp_media)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.whatsapp_media_id
 
 class FlowTemplate(models.Model):
     name = models.CharField(max_length=100)
@@ -46,6 +61,7 @@ class FlowStepTemplate(models.Model):
         choices=MESSAGE_TYPE_CHOICES,
         default='text'
     )
+    should_store_media = models.BooleanField(default=False, help_text="If true, any incoming media for this step will be stored.")
     options = models.JSONField(default=dict, null=True, blank=True)
     actions = models.ManyToManyField(FlowAction, blank=True)
     next_step_template = models.ForeignKey('self', null=True, blank=True, on_delete=models.SET_NULL)
@@ -89,14 +105,20 @@ class WebhookLog(models.Model):
         return f"Webhook log {self.timestamp}"
 
 class ConversationMessage(models.Model):
-    context = models.ForeignKey('ConversationContext', on_delete=models.CASCADE)
+    context = models.ForeignKey('ConversationContext', on_delete=models.CASCADE, related_name='messages')
     message_content = models.TextField()
     is_from_guest = models.BooleanField()
     timestamp = models.DateTimeField(auto_now_add=True)
+    message_type = models.CharField(
+        max_length=20, 
+        default='text', 
+        help_text="Type of message: text, image, voice, etc."
+    )
+    media = models.ForeignKey(WhatsappMedia, on_delete=models.SET_NULL, null=True, blank=True)
 
     def __str__(self):
         sender = "Guest" if self.is_from_guest else "System"
-        return f"{sender}: {self.message_content[:50]}..."
+        return f"({self.message_type}) {sender}: {self.message_content[:50]}..."
 
 class ConversationContext(models.Model):
     user_id = models.CharField(max_length=20)  # Typically a phone number

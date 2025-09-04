@@ -109,10 +109,18 @@ class GuestIdentityDocumentViewSet(viewsets.ModelViewSet):
         )
 
     def perform_create(self, serializer):
+        from rest_framework import serializers
+        guest_id = self.request.data.get('guest')
+        if not guest_id:
+            raise serializers.ValidationError({'guest': 'This field is required.'})
+        try:
+            guest = Guest.objects.get(id=guest_id)
+        except (Guest.DoesNotExist, ValueError):
+            raise serializers.ValidationError({'guest': 'Invalid guest.'})
+
         # Ensure the document is associated with a guest from the same hotel
-        guest = serializer.validated_data["guest"]
         if guest.stays.filter(hotel=self.request.user.hotel).exists():
-            serializer.save(verified_by=self.request.user)
+            serializer.save(guest=guest, verified_by=self.request.user)
         else:
             raise permissions.PermissionDenied(
                 "You can only add documents for guests in your hotel."
@@ -128,6 +136,7 @@ class GuestIdentityDocumentUploadView(generics.CreateAPIView):
     permission_classes = [permissions.IsAuthenticated, IsHotelAdmin]
 
     def perform_create(self, serializer):
+        from rest_framework import serializers
         logger = logging.getLogger(__name__)
         # Get the default storage backend from STORAGES setting
         storages_config = getattr(settings, 'STORAGES', {})
@@ -137,10 +146,17 @@ class GuestIdentityDocumentUploadView(generics.CreateAPIView):
         logger.info(f"AWS_STORAGE_BUCKET_NAME: {settings.AWS_STORAGE_BUCKET_NAME}")
         logger.info(f"AWS_S3_REGION_NAME: {settings.AWS_S3_REGION_NAME}")
         
+        guest_id = self.request.data.get('guest')
+        if not guest_id:
+            raise serializers.ValidationError({'guest': 'This field is required.'})
+        try:
+            guest = Guest.objects.get(id=guest_id)
+        except (Guest.DoesNotExist, ValueError):
+            raise serializers.ValidationError({'guest': 'Invalid guest.'})
+
         # Ensure the document is associated with a guest from the same hotel
-        guest = serializer.validated_data["guest"]
         if guest.stays.filter(hotel=self.request.user.hotel).exists():
-            serializer.save(verified_by=self.request.user)
+            serializer.save(guest=guest, verified_by=self.request.user)
         else:
             raise permissions.PermissionDenied(
                 "You can only add documents for guests in your hotel."

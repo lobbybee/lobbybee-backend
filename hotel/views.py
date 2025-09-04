@@ -220,6 +220,14 @@ class RoomViewSet(viewsets.ModelViewSet):
         except ValidationError as e:
             return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
+    @action(detail=False, methods=['get'], url_path='floors')
+    def floors(self, request):
+        """
+        Get all floors for the hotel.
+        """
+        floors = Room.objects.get_floors_for_hotel(request.user.hotel)
+        return Response({"floors": list(floors)}, status=status.HTTP_200_OK)
+
 
 class DepartmentViewSet(viewsets.ModelViewSet):
     serializer_class = DepartmentSerializer

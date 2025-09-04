@@ -7,6 +7,7 @@ from django.utils import timezone
 from guest.models import Guest, Stay
 from hotel.models import Hotel
 
+from ..utils.whatsapp import download_whatsapp_media
 from .context import (
     get_active_context, get_or_create_context, log_conversation_message,
     update_context_activity, reset_user_conversation)
@@ -27,13 +28,14 @@ SESSION_TIMEOUT = timedelta(hours=5)
 ADMIN_RESET_COMMAND = "admin_reset_user:"
 FROM_NO_ADMIN = os.environ.get('FROM_NO_ADMIN')
 
-def process_webhook_message(whatsapp_number, message_body):
+def process_webhook_message(whatsapp_number, message_body, message_type='text'):
     """
     Process an incoming message for an ongoing conversation.
 
     Args:
         whatsapp_number (str): The guest's WhatsApp number.
         message_body (str): The message content.
+        message_type (str): The type of message ('text', 'image', 'voice', etc.).
 
     Returns:
         dict: Response with status and a list of messages.
@@ -98,8 +100,17 @@ def process_webhook_message(whatsapp_number, message_body):
             # Otherwise, for a real hotel, just reset to the main menu.
             return reset_context_to_main_menu(context, 'Your session has expired due to inactivity. Returning to the main menu.')
 
+        media_instance = None
+        if message_type != 'text' and context.current_step and context.current_step.template.should_store_media:
+            try:
+                media_id = message_body
+                media_instance = download_whatsapp_media(media_id)
+                logger.info(f"Successfully downloaded media {media_id} for step {context.current_step.template.step_name}")
+            except Exception as e:
+                logger.error(f"Failed to download media for step {context.current_step.template.step_name}: {e}")
+
         # Update timestamps and log message *after* the expiry check
-        update_context_activity(context, message_body)
+        update_context_activity(context, message_body, message_type, media=media_instance)
 
         # Handle global commands that can interrupt a flow
         if message_body.lower().startswith('start-'):
@@ -107,7 +118,7 @@ def process_webhook_message(whatsapp_number, message_body):
             context.is_active = False
             context.save()
             # Let handle_initial_message create the new context and start the flow.
-            return handle_initial_message(whatsapp_number, message_body)
+            return handle_initial_message(whatsapp_number, message_body, message_type)
 
         # Handle navigation commands first
         if message_body.lower() in ['back', 'main menu']:
@@ -120,7 +131,7 @@ def process_webhook_message(whatsapp_number, message_body):
             return reset_context_to_main_menu(context, 'Your conversation state is invalid. Returning to the main menu.')
 
         # Validate input against the current step's requirements
-        is_valid, error_message = validate_input(context, message_body)
+        is_valid, error_message = validate_input(context, message_body, message_type)
         if not is_valid:
             context.error_count += 1
             context.save()
@@ -157,7 +168,7 @@ def process_webhook_message(whatsapp_number, message_body):
             return start_flow(context, message_body)
 
         # Update accumulated data and execute actions for the current step
-        update_accumulated_data(context, message_body)
+        update_accumulated_data(context, message_body, message_type)
         # execute_step_actions(context) # Placeholder for future action execution
 
         # Transition to the next step
@@ -193,7 +204,7 @@ def process_webhook_message(whatsapp_number, message_body):
         return {'status': 'error', 'messages': [enriched_error]}
 
 
-def handle_initial_message(whatsapp_number, message_body):
+def handle_initial_message(whatsapp_number, message_body, message_type='text'):
     """
     Handles the first message from a user, which starts a new flow.
     (e.g., from a QR code scan, typing "demo", or a generic greeting).
@@ -294,7 +305,7 @@ def handle_initial_message(whatsapp_number, message_body):
             context.context_data['temp_whatsapp_number'] = whatsapp_number
         context.save(update_fields=['context_data']) # Save the flags
         
-    update_context_activity(context, message_body)
+    update_context_activity(context, message_body, message_type)
 
     # Start the determined flow
     return start_flow(context, flow_category)

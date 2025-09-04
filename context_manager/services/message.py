@@ -145,11 +145,23 @@ def generate_response(context) -> dict:
     return replace_placeholders(message_template, context)
 
 
-def validate_input(context, user_input):
+def validate_input(context, user_input, message_type='text'):
     """
     Validates user input against the current step's requirements (e.g., button choices).
     """
     step_template = context.current_step.template
+
+    # --- Step-specific validation ---
+    # For ID Photo Upload, we only want an image.
+    if step_template.step_name == 'ID Photo Upload':
+        if message_type == 'image':
+            return True, ""
+        else:
+            return False, "Please upload an image of your ID. Other file types are not accepted."
+
+    # If the step expects generic media and the user sent a supported media type, input is valid.
+    if step_template.message_type == 'media' and message_type in ['image', 'voice', 'video', 'document', 'audio']:
+        return True, ""
     
     # Check for hotel-specific customizations for options.
     config = HotelFlowConfiguration.objects.filter(
@@ -180,7 +192,7 @@ def validate_input(context, user_input):
     return True, ""
 
 
-def update_accumulated_data(context, user_input):
+def update_accumulated_data(context, user_input, message_type='text'):
     """
     Updates the context's `accumulated_data` or `collected_checkin_data` based on the current step.
     This is typically used for steps that collect information from the user.
@@ -188,10 +200,13 @@ def update_accumulated_data(context, user_input):
     step_name = context.current_step.template.step_name
     flow_category = context.current_step.template.flow_template.category
 
-    # Convention: steps named 'Collect ...' are for data gathering.
-    if 'collect' in step_name.lower():
+    # Convention: steps named 'Collect ...' or steps expecting media are for data gathering.
+    if 'collect' in step_name.lower() or context.current_step.template.message_type == 'media':
         # Derive a key for the data from the step name.
         data_key = step_name.lower().replace('collect', '').strip().replace(' ', '_')
+        if context.current_step.template.message_type == 'media':
+            data_key = f"{data_key}_media_id"
+
         if data_key:
             # Ensure the data structures exist in context_data.
             context.context_data.setdefault('accumulated_data', {})

@@ -4,23 +4,29 @@ FROM python:3.12-slim
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE 1
 ENV PYTHONUNBUFFERED 1
+ENV POETRY_NO_INTERACTION=1 
+POETRY_VIRTUALENVS_CREATE=false 
+POETRY_CACHE_DIR='/var/cache/pypoetry'
 
 # Set work directory
 WORKDIR /app
 
-# Install system dependencies
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
-        build-essential \
-        libpq-dev \
-    && rm -rf /var/lib/apt/lists/*
+# Install system dependencies, including poetry and zbar
+RUN apt-get update 
+    && apt-get install -y --no-install-recommends 
+        build-essential 
+        libpq-dev 
+        zbar-tools 
+    && rm -rf /var/lib/apt/lists/* 
+    && pip install poetry
 
-# Copy requirements file
-COPY requirements.txt .
+# Copy poetry dependency files
+COPY poetry.lock pyproject.toml ./
 
-# Install dependencies
-RUN pip install --no-cache-dir -r requirements.txt \
-    && pip install gunicorn
+# Install dependencies using poetry
+# --no-root: Do not install the project itself, only dependencies.
+# --no-dev: Do not install development dependencies.
+RUN poetry install --no-root --no-dev
 
 # Copy project files
 COPY . .

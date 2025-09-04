@@ -53,18 +53,18 @@ def get_active_context(whatsapp_number):
     """
     return ConversationContext.objects.select_for_update().filter(user_id=whatsapp_number, is_active=True).first()
 
-def update_context_activity(context, message_body):
+def update_context_activity(context, message_body, message_type='text', media=None):
     """
     Updates activity timestamps and logs the incoming message.
     """
     context.last_guest_message_at = timezone.now()
     context.last_activity = timezone.now()
     context.save()
-    log_conversation_message(context, message_body, is_from_guest=True)
+    log_conversation_message(context, message_body, is_from_guest=True, message_type=message_type, media=media)
     # Trigger async task to handle pending messages within the 24-hour window
     send_pending_messages.delay(context.user_id)
 
-def log_conversation_message(context, content, is_from_guest):
+def log_conversation_message(context, content, is_from_guest, message_type='text', media=None):
     """
     Logs a single message to the ConversationMessage model.
     Serializes dictionary content to JSON strings for proper storage.
@@ -78,7 +78,9 @@ def log_conversation_message(context, content, is_from_guest):
     ConversationMessage.objects.create(
         context=context,
         message_content=message_content,
-        is_from_guest=is_from_guest
+        is_from_guest=is_from_guest,
+        message_type=message_type,
+        media=media
     )
 
 @transaction.atomic
