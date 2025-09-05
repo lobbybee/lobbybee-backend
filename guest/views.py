@@ -179,6 +179,53 @@ class StayViewSet(viewsets.ModelViewSet):
     @action(
         detail=True,  # Acts on a specific stay instance
         methods=["post"],
+        url_path="verify-and-check-in",
+        permission_classes=[CanCheckInCheckOut], # Or a more specific permission
+    )
+    def verify_and_check_in(self, request, pk=None):
+        """
+        Verifies a guest's identity documents and checks them in.
+        """
+        stay = self.get_object()
+
+        if stay.status != "pending":
+            return Response(
+                {"detail": f"Stay is already {stay.status}."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Mark all documents as verified for this guest
+        stay.guest.identity_documents.update(is_verified=True, verified_by=request.user)
+
+        # Mark the stay as identity verified
+        stay.identity_verified = True
+        stay.save()
+
+        room = stay.room
+        if room.status != "available":
+            return Response(
+                {"detail": f"Room is not available. Current status: {room.status}"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Update statuses
+        stay.status = "active"
+        stay.actual_check_in = timezone.now()
+        stay.save()
+
+        room.status = "occupied"
+        room.current_guest = stay.guest
+        room.save()
+
+        guest = stay.guest
+        guest.status = "checked_in"
+        guest.save()
+
+        return Response(StaySerializer(stay).data, status=status.HTTP_200_OK)
+
+    @action(
+        detail=True,  # Acts on a specific stay instance
+        methods=["post"],
         url_path="initiate-checkin",
         permission_classes=[IsHotelAdmin], # Or a more specific permission
     )
@@ -196,7 +243,7 @@ class StayViewSet(viewsets.ModelViewSet):
 
         if stay.status != "pending":
             return Response(
-                {"detail": f"Check-in cannot be initiated. Stay status is ''{stay.status}'' instead of ''pending''."},
+                {"detail": f"Check-in cannot be initiated. Stay status is '{stay.status}' instead of 'pending'."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 

@@ -15,7 +15,7 @@ class BookingSerializer(serializers.ModelSerializer):
     class Meta:
         model = Booking
         fields = [
-            'id', 'primary_guest', 'check_in_date', 'check_out_date', 
+            'id', 'primary_guest', 'check_in_date', 'check_out_date',
             'guest_names', 'room_ids', 'status', 'total_amount'
         ]
         read_only_fields = ['id', 'status', 'total_amount']
@@ -23,7 +23,7 @@ class BookingSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         room_ids = validated_data.pop('room_ids')
         hotel = self.context['request'].user.hotel
-        
+
         # Use a transaction to ensure all stays are created or none are
         with transaction.atomic():
             # Create the main booking record
@@ -45,7 +45,7 @@ class BookingSerializer(serializers.ModelSerializer):
                 except Room.DoesNotExist:
                     # Handle case where a room might not exist or belong to the hotel
                     raise serializers.ValidationError(f"Room with ID {room_id} not found in this hotel.")
-        
+
         return booking
 
 
@@ -57,6 +57,7 @@ class GuestSerializer(serializers.ModelSerializer):
             "full_name",
             "email",
             "whatsapp_number",
+            "date_of_birth",
             "nationality",
             "status",
         ]
@@ -72,7 +73,9 @@ class StaySerializer(serializers.ModelSerializer):
         from hotel.serializers import RoomSerializer
 
         representation = super().to_representation(instance)
-        representation["guest"] = GuestSerializer(instance.guest).data
+        guest_data = GuestSerializer(instance.guest).data
+        guest_data['identity_documents'] = GuestIdentityDocumentSerializer(instance.guest.identity_documents.all(), many=True).data
+        representation["guest"] = guest_data
         representation["room"] = RoomSerializer(instance.room).data
         return representation
 
