@@ -96,6 +96,26 @@ class GuestIdentityDocumentSerializer(serializers.ModelSerializer):
             return obj.document_file.url
         return None
 
+    def create(self, validated_data):
+        guest = validated_data.get('guest')
+        is_primary = validated_data.get('is_primary', False)
+        
+        # If this document is marked as primary, unset the primary flag on any existing primary document for this guest
+        if is_primary and guest:
+            GuestIdentityDocument.objects.filter(guest=guest, is_primary=True).update(is_primary=False)
+        
+        return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        guest = instance.guest
+        is_primary = validated_data.get('is_primary', instance.is_primary)
+        
+        # If this document is being updated to primary, unset the primary flag on any existing primary document for this guest
+        if is_primary and guest:
+            GuestIdentityDocument.objects.filter(guest=guest, is_primary=True).exclude(pk=instance.pk).update(is_primary=False)
+        
+        return super().update(instance, validated_data)
+
 
 class CheckInSerializer(serializers.Serializer):
     stay_id = serializers.IntegerField()

@@ -110,6 +110,7 @@ class GuestIdentityDocumentViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         from rest_framework import serializers
+        from rest_framework.exceptions import PermissionDenied
         guest_id = self.request.data.get('guest')
         if not guest_id:
             raise serializers.ValidationError({'guest': 'This field is required.'})
@@ -118,12 +119,14 @@ class GuestIdentityDocumentViewSet(viewsets.ModelViewSet):
         except (Guest.DoesNotExist, ValueError):
             raise serializers.ValidationError({'guest': 'Invalid guest.'})
 
-        # Ensure the document is associated with a guest from the same hotel
-        if guest.stays.filter(hotel=self.request.user.hotel).exists():
+        # Ensure the document is associated with a guest
+        # We allow uploading documents for any existing guest in the system
+        # This supports pre-registration scenarios where documents are uploaded before stay creation
+        if guest.id:  # Just verify the guest exists
             serializer.save(guest=guest, verified_by=self.request.user)
         else:
-            raise permissions.PermissionDenied(
-                "You can only add documents for guests in your hotel."
+            raise PermissionDenied(
+                "You can only add documents for valid guests."
             )
 
 
@@ -154,12 +157,20 @@ class GuestIdentityDocumentUploadView(generics.CreateAPIView):
         except (Guest.DoesNotExist, ValueError):
             raise serializers.ValidationError({'guest': 'Invalid guest.'})
 
-        # Ensure the document is associated with a guest from the same hotel
-        if guest.stays.filter(hotel=self.request.user.hotel).exists():
+        # If this document is marked as primary, unset the primary flag on any existing primary document for this guest
+        is_primary = self.request.data.get('is_primary', False)
+        if is_primary:
+            GuestIdentityDocument.objects.filter(guest=guest, is_primary=True).update(is_primary=False)
+
+        # Ensure the document is associated with a guest
+        # We allow uploading documents for any existing guest in the system
+        # This supports pre-registration scenarios where documents are uploaded before stay creation
+        if guest.id:  # Just verify the guest exists
             serializer.save(guest=guest, verified_by=self.request.user)
         else:
-            raise permissions.PermissionDenied(
-                "You can only add documents for guests in your hotel."
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied(
+                "You can only add documents for valid guests."
             )
 
 

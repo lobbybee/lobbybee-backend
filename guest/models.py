@@ -72,16 +72,25 @@ class GuestIdentityDocument(models.Model):
     document_number = models.CharField(max_length=50, blank=True)
     document_file = models.FileField(upload_to=upload_to_guest_documents)
     is_primary = models.BooleanField(default=False)  # Primary document for verification
+    is_accompanying_guest = models.BooleanField(default=False)  # Document for non-primary guest
     is_verified = models.BooleanField(default=False)
     uploaded_at = models.DateTimeField(auto_now_add=True)
     verified_at = models.DateTimeField(null=True, blank=True)
     verified_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
     
     class Meta:
-        unique_together = ['guest', 'is_primary']  # Only one primary document per guest
+        # Only one primary document per guest, but multiple non-primary documents allowed
+        constraints = [
+            models.UniqueConstraint(
+                fields=['guest'], 
+                condition=models.Q(is_primary=True),
+                name='unique_primary_document_per_guest'
+            )
+        ]
 
     def __str__(self):
-        return f"{self.get_document_type_display()} for {self.guest.full_name}"
+        guest_type = "accompanying guest" if self.is_accompanying_guest else "primary guest"
+        return f"{self.get_document_type_display()} for {self.guest.full_name} ({guest_type})"
 
 class Stay(models.Model):
     STAY_STATUS = [
