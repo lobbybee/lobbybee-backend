@@ -51,6 +51,39 @@ def upload_whatsapp_media(file_field):
         raise
 
 
+def get_whatsapp_media_info(media_id: str):
+    """
+    Retrieves media information from WhatsApp to check if the ID is still valid.
+
+    Args:
+        media_id: The WhatsApp Media ID to validate.
+
+    Returns:
+        A dictionary containing media info if the ID is valid, otherwise None.
+    """
+    access_token = settings.WHATSAPP_ACCESS_KEY
+    url = f"https://graph.facebook.com/v20.0/{media_id}"
+    headers = {"Authorization": f"Bearer {access_token}"}
+
+    try:
+        response = requests.get(url, headers=headers)
+        # A 404 Not Found error indicates the media ID has expired or is invalid.
+        if response.status_code == 404:
+            logger.info(f"WhatsApp Media ID {media_id} is expired or invalid.")
+            return None
+        
+        response.raise_for_status() # Raise an exception for other bad responses (4xx or 5xx)
+        
+        media_info = response.json()
+        logger.info(f"Successfully validated WhatsApp Media ID {media_id}.")
+        return media_info
+
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Error validating WhatsApp media ID {media_id}: {e}")
+        # Don't re-raise, just return None to indicate failure.
+        return None
+
+
 def send_whatsapp_template_message(recipient_number: str, template_name: str, components: list = None, language_code: str = "en_US"):
     """
     Sends a WhatsApp message using a pre-approved template.

@@ -4,7 +4,7 @@ from copy import deepcopy
 
 from guest.models import Guest, Stay
 from ..models import Placeholder
-from ..utils.whatsapp import upload_whatsapp_media
+from ..utils.whatsapp import upload_whatsapp_media, get_whatsapp_media_info
 import logging
 
 logger = logging.getLogger(__name__)
@@ -125,59 +125,55 @@ def replace_placeholders(template: dict, context) -> dict:
 
 def generate_response(context) -> dict:
     """
-    Generates a response for the current step, handling both media and text/interactive messages.
-    It prioritizes hotel-specific customizations from the FlowStep.
+    Generates a response for the current step, handling media (with expiration checks)
+    and text/interactive messages. It prioritizes hotel-specific customizations.
     """
     flow_step = context.current_step
 
-    # Determine the effective media and message template to use
     effective_media = flow_step.media or flow_step.template.media
     effective_message_template = flow_step.message_template or flow_step.template.message_template
 
     # --- Media Message Handling ---
     if effective_media:
         try:
-            # If the media hasn't been uploaded to WhatsApp yet, upload it now.
-            if not effective_media.whatsapp_media_id:
-                # This is a blocking call. For high-volume systems, this could be optimized
-                # by pre-uploading or using a background task.
+            wa_media_id = effective_media.whatsapp_media_id
+            
+            # 1. Check if the existing media ID is still valid
+            if wa_media_id:
+                media_info = get_whatsapp_media_info(wa_media_id)
+                if not media_info: # The ID has expired
+                    wa_media_id = None # Unset to trigger re-upload
+
+            # 2. If there is no valid ID, upload the file from S3
+            if not wa_media_id:
+                logger.info(f"No valid WhatsApp Media ID for media {effective_media.id}. Uploading from S3.")
                 wa_media_id = upload_whatsapp_media(effective_media.file)
-                # Cache the ID to avoid re-uploading the same file.
+                # Cache the new, valid ID to the database
                 effective_media.whatsapp_media_id = wa_media_id
                 effective_media.save()
-            else:
-                wa_media_id = effective_media.whatsapp_media_id
 
-            # Determine the WhatsApp media type from the MIME type
+            # 3. Construct the media message payload
             media_type = effective_media.mime_type.split('/')[0]
             if media_type not in ['image', 'video', 'audio', 'document']:
                 logger.warning(f"Unsupported media MIME type: {effective_media.mime_type}. Falling back to text.")
-                # Fallback to text message if media type is not supported by WhatsApp
                 return replace_placeholders(effective_message_template, context)
 
-            # Construct the media message payload
             message_payload = {
                 "type": media_type,
-                media_type: {
-                    "id": wa_media_id
-                }
+                media_type: {"id": wa_media_id}
             }
 
-            # Add a caption if one is defined in the message template
             caption = effective_message_template.get('caption')
             if caption:
                 message_payload[media_type]['caption'] = caption
             
-            # Run placeholder replacement on the final payload (for the caption)
             return replace_placeholders(message_payload, context)
 
         except Exception as e:
-            logger.error(f"Failed to process media for FlowStep {flow_step.id}: {e}")
-            # Fallback to the text message in case of a media processing error
+            logger.error(f"Failed to process media for FlowStep {flow_step.id}: {e}", exc_info=True)
             return replace_placeholders(effective_message_template, context)
 
     # --- Text/Interactive Message Handling ---
-    # If there is no media, proceed with the standard message template.
     return replace_placeholders(effective_message_template, context)
 
 
