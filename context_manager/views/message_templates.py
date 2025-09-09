@@ -5,54 +5,45 @@ from rest_framework.exceptions import ValidationError
 from ..models import ScheduledMessageTemplate
 from ..serializers import ScheduledMessageTemplateSerializer
 from hotel.models import Hotel
+from hotel.permissions import IsHotelAdmin  # Import hotel admin permission
 import logging
 
 logger = logging.getLogger(__name__)
 
 class ScheduledMessageTemplateListView(generics.ListCreateAPIView):
     """
-    View for listing and creating ScheduledMessageTemplate records.
+    View for listing and creating ScheduledMessageTemplate records for the authenticated user's hotel.
     """
     serializer_class = ScheduledMessageTemplateSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsHotelAdmin]  # Add IsHotelAdmin permission
     
     def get_queryset(self):
         """
-        Filter ScheduledMessageTemplate records by hotel_id from URL parameter.
+        Filter ScheduledMessageTemplate records by the authenticated user's hotel.
         """
-        hotel_id = self.kwargs['hotel_id']
-        return ScheduledMessageTemplate.objects.filter(hotel_id=hotel_id)
+        # Use the hotel from the authenticated user
+        return ScheduledMessageTemplate.objects.filter(hotel=self.request.user.hotel)
     
     def perform_create(self, serializer):
         """
-        Create a new ScheduledMessageTemplate record with the hotel from URL parameter.
+        Create a new ScheduledMessageTemplate record with the authenticated user's hotel.
         """
-        hotel_id = self.kwargs['hotel_id']
-        try:
-            hotel = Hotel.objects.get(id=hotel_id)
-            serializer.save(hotel=hotel)
-        except Hotel.DoesNotExist:
-            logger.error(f"Hotel with id {hotel_id} does not exist")
-            raise ValidationError("Invalid hotel ID")
+        # Use the hotel from the authenticated user
+        serializer.save(hotel=self.request.user.hotel)
     
     def create(self, request, *args, **kwargs):
         """
         Handle POST request to create a new ScheduledMessageTemplate.
         """
-        hotel_id = self.kwargs['hotel_id']
-        try:
-            hotel = Hotel.objects.get(id=hotel_id)
-        except Hotel.DoesNotExist:
+        # Check if user has a hotel assigned
+        if not self.request.user.hotel:
             return Response(
-                {'error': 'Hotel not found'}, 
-                status=status.HTTP_404_NOT_FOUND
+                {'error': 'User is not associated with a hotel.'},
+                status=status.HTTP_400_BAD_REQUEST
             )
         
-        # Add hotel to request data
-        request_data = request.data.copy()
-        request_data['hotel'] = str(hotel_id)
-        
-        serializer = self.get_serializer(data=request_data)
+        # No need to add hotel to request data anymore
+        serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         self.perform_create(serializer)
         headers = self.get_success_headers(serializer.data)
@@ -60,23 +51,30 @@ class ScheduledMessageTemplateListView(generics.ListCreateAPIView):
 
 class ScheduledMessageTemplateDetailView(generics.RetrieveUpdateDestroyAPIView):
     """
-    View for retrieving, updating, and deleting a specific ScheduledMessageTemplate record.
+    View for retrieving, updating, and deleting a specific ScheduledMessageTemplate record for the authenticated user's hotel.
     """
     serializer_class = ScheduledMessageTemplateSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsHotelAdmin]  # Add IsHotelAdmin permission
     lookup_field = 'pk'
     
     def get_queryset(self):
         """
-        Filter ScheduledMessageTemplate records by hotel_id from URL parameter.
+        Filter ScheduledMessageTemplate records by the authenticated user's hotel.
         """
-        hotel_id = self.kwargs['hotel_id']
-        return ScheduledMessageTemplate.objects.filter(hotel_id=hotel_id)
+        # Use the hotel from the authenticated user
+        return ScheduledMessageTemplate.objects.filter(hotel=self.request.user.hotel)
     
     def update(self, request, *args, **kwargs):
         """
         Handle PUT request to update a ScheduledMessageTemplate.
         """
+        # Check if user has a hotel assigned
+        if not self.request.user.hotel:
+            return Response(
+                {'error': 'User is not associated with a hotel.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
         partial = kwargs.pop('partial', False)
         instance = self.get_object()
         serializer = self.get_serializer(instance, data=request.data, partial=partial)
@@ -94,6 +92,13 @@ class ScheduledMessageTemplateDetailView(generics.RetrieveUpdateDestroyAPIView):
         """
         Handle DELETE request to remove a ScheduledMessageTemplate.
         """
+        # Check if user has a hotel assigned
+        if not self.request.user.hotel:
+            return Response(
+                {'error': 'User is not associated with a hotel.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
         instance = self.get_object()
         self.perform_destroy(instance)
         return Response(status=status.HTTP_204_NO_CONTENT)

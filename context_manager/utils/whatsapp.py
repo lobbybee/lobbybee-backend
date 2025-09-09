@@ -3,7 +3,53 @@ import requests
 from django.conf import settings
 import logging
 
+
 logger = logging.getLogger(__name__)
+
+def upload_whatsapp_media(file_field):
+    """
+    Uploads a media file from a Django FileField to the WhatsApp API.
+    This can be used for any file stored via Django's storage system (e.g., S3).
+
+    Args:
+        file_field: A Django FileField object (e.g., from a model instance).
+
+    Returns:
+        The WhatsApp media ID string, or None if the upload fails.
+    """
+    phone_number_id = settings.PHONE_NUMBER_ID
+    access_token = settings.WHATSAPP_ACCESS_KEY
+    url = f"https://graph.facebook.com/v20.0/{phone_number_id}/media"
+
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+    }
+
+    payload = {
+        'messaging_product': 'whatsapp'
+    }
+
+    try:
+        # Open the file in binary mode to read its content
+        with file_field.open('rb') as f:
+            files = {
+                'file': (file_field.name, f.read(), mimetypes.guess_type(file_field.name)[0])
+            }
+            response = requests.post(url, headers=headers, data=payload, files=files)
+            response.raise_for_status()
+            
+            media_id = response.json().get('id')
+            logger.info(f"Successfully uploaded media {file_field.name} to WhatsApp. Media ID: {media_id}")
+            return media_id
+
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Error uploading media to WhatsApp: {e}")
+        logger.error(f"Response body: {e.response.text if e.response else 'No response'}")
+        raise
+    except Exception as e:
+        logger.error(f"An unexpected error occurred during WhatsApp media upload: {e}")
+        raise
+
 
 def send_whatsapp_template_message(recipient_number: str, template_name: str, components: list = None, language_code: str = "en_US"):
     """

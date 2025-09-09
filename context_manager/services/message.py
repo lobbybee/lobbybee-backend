@@ -3,7 +3,11 @@ import re
 from copy import deepcopy
 
 from guest.models import Guest, Stay
-from ..models import HotelFlowConfiguration, Placeholder
+from ..models import Placeholder
+from ..utils.whatsapp import upload_whatsapp_media
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def format_message(message_content):
@@ -121,35 +125,69 @@ def replace_placeholders(template: dict, context) -> dict:
 
 def generate_response(context) -> dict:
     """
-    Generates a response message for the current flow step, resolving any placeholders.
-    The message template is now expected to be a dictionary from a JSONField.
+    Generates a response for the current step, handling both media and text/interactive messages.
+    It prioritizes hotel-specific customizations from the FlowStep.
     """
-    step_template = context.current_step.template
-    
-    # Start with the default message template from the step.
-    message_template = step_template.message_template
+    flow_step = context.current_step
 
-    # Check for hotel-specific customizations and override the template if they exist.
-    config = HotelFlowConfiguration.objects.filter(
-        hotel=context.hotel, 
-        flow_template=step_template.flow_template
-    ).first()
+    # Determine the effective media and message template to use
+    effective_media = flow_step.media or flow_step.template.media
+    effective_message_template = flow_step.message_template or flow_step.template.message_template
 
-    if config and config.customization_data:
-        step_customs = config.customization_data.get('step_customizations', {})
-        customizations = step_customs.get(str(step_template.id), {})
-        # Use the custom message template if provided, otherwise fall back to the default.
-        message_template = customizations.get('message_template', message_template)
+    # --- Media Message Handling ---
+    if effective_media:
+        try:
+            # If the media hasn't been uploaded to WhatsApp yet, upload it now.
+            if not effective_media.whatsapp_media_id:
+                # This is a blocking call. For high-volume systems, this could be optimized
+                # by pre-uploading or using a background task.
+                wa_media_id = upload_whatsapp_media(effective_media.file)
+                # Cache the ID to avoid re-uploading the same file.
+                effective_media.whatsapp_media_id = wa_media_id
+                effective_media.save()
+            else:
+                wa_media_id = effective_media.whatsapp_media_id
 
-    # The message_template is a dict; pass it to the placeholder replacement function.
-    return replace_placeholders(message_template, context)
+            # Determine the WhatsApp media type from the MIME type
+            media_type = effective_media.mime_type.split('/')[0]
+            if media_type not in ['image', 'video', 'audio', 'document']:
+                logger.warning(f"Unsupported media MIME type: {effective_media.mime_type}. Falling back to text.")
+                # Fallback to text message if media type is not supported by WhatsApp
+                return replace_placeholders(effective_message_template, context)
+
+            # Construct the media message payload
+            message_payload = {
+                "type": media_type,
+                media_type: {
+                    "id": wa_media_id
+                }
+            }
+
+            # Add a caption if one is defined in the message template
+            caption = effective_message_template.get('caption')
+            if caption:
+                message_payload[media_type]['caption'] = caption
+            
+            # Run placeholder replacement on the final payload (for the caption)
+            return replace_placeholders(message_payload, context)
+
+        except Exception as e:
+            logger.error(f"Failed to process media for FlowStep {flow_step.id}: {e}")
+            # Fallback to the text message in case of a media processing error
+            return replace_placeholders(effective_message_template, context)
+
+    # --- Text/Interactive Message Handling ---
+    # If there is no media, proceed with the standard message template.
+    return replace_placeholders(effective_message_template, context)
 
 
 def validate_input(context, user_input, message_type='text'):
     """
     Validates user input against the current step's requirements (e.g., button choices).
+    It prioritizes the hotel's custom options from the FlowStep, falling back to the template.
     """
-    step_template = context.current_step.template
+    flow_step = context.current_step
+    step_template = flow_step.template
 
     # --- Step-specific validation ---
     # For ID Photo Upload, we only want an image.
@@ -160,21 +198,13 @@ def validate_input(context, user_input, message_type='text'):
             return False, "Please upload an image of your ID. Other file types are not accepted."
 
     # If the step expects generic media and the user sent a supported media type, input is valid.
-    if step_template.message_type == 'media' and message_type in ['image', 'voice', 'video', 'document', 'audio']:
+    # Use the effective message_type (custom or from template)
+    effective_message_type = flow_step.message_type or step_template.message_type
+    if effective_message_type == 'media' and message_type in ['image', 'voice', 'video', 'document', 'audio']:
         return True, ""
     
-    # Check for hotel-specific customizations for options.
-    config = HotelFlowConfiguration.objects.filter(
-        hotel=context.hotel, 
-        flow_template=step_template.flow_template
-    ).first()
-    
-    options = step_template.options
-    if config and config.customization_data:
-        step_customs = config.customization_data.get('step_customizations', {})
-        custom_options = step_customs.get(str(step_template.id), {}).get('options')
-        if custom_options:
-            options = custom_options
+    # Use the hotel-specific options if they exist, otherwise use the template's default.
+    options = flow_step.options or step_template.options
 
     # If the input is a valid flow category transition, it's valid.
     if step_template.allowed_flow_categories and user_input in step_template.allowed_flow_categories:

@@ -10,12 +10,12 @@ from .admin_api import (
     FlowStepTemplateDetailView,
     FlowActionListView,
     FlowActionDetailView,
-    HotelFlowConfigurationListView as AdminHotelFlowConfigurationListView,
 )
 from .hotel_api import (
-    HotelFlowConfigurationListView,
-    HotelFlowCustomizeView,
-    HotelFlowDetailView,
+    CustomizableStepTemplateListView,
+)
+from .media_api import (
+    WhatsappMediaUploadView,
 )
 
 __all__ = [
@@ -30,8 +30,6 @@ __all__ = [
     'FlowStepTemplateDetailView',
     'FlowActionListView',
     'FlowActionDetailView',
-    'AdminHotelFlowConfigurationListView',
-    'HotelFlowConfigurationListView',
-    'HotelFlowCustomizeView',
-    'HotelFlowDetailView',
+    'CustomizableStepTemplateListView',
+    'WhatsappMediaUploadView',
 ]

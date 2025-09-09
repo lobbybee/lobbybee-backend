@@ -1,8 +1,8 @@
 from rest_framework import generics, status
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
-from ..models import FlowTemplate, FlowStepTemplate, FlowAction, HotelFlowConfiguration
-from ..serializers import FlowTemplateSerializer, FlowStepTemplateSerializer, FlowActionSerializer, HotelFlowConfigurationSerializer
+from ..models import FlowTemplate, FlowStepTemplate, FlowAction
+from ..serializers import FlowTemplateSerializer, FlowStepTemplateSerializer, FlowActionSerializer
 import logging
 
 logger = logging.getLogger(__name__)
@@ -93,32 +93,3 @@ class FlowActionDetailView(generics.RetrieveUpdateDestroyAPIView):
         """
         return FlowAction.objects.all()
 
-class HotelFlowConfigurationListView(generics.ListCreateAPIView):
-    """
-    View for listing and creating HotelFlowConfiguration records.
-    """
-    serializer_class = HotelFlowConfigurationSerializer
-    permission_classes = [IsAuthenticated]
-    
-    def get_queryset(self):
-        """
-        Return all HotelFlowConfiguration records, optionally filtered by hotel.
-        """
-        hotel_id = self.request.query_params.get('hotel', None)
-        if hotel_id:
-            return HotelFlowConfiguration.objects.filter(hotel_id=hotel_id)
-        return HotelFlowConfiguration.objects.all()
-
-class HotelFlowConfigurationDetailView(generics.RetrieveUpdateDestroyAPIView):
-    """
-    View for retrieving, updating, and deleting a specific HotelFlowConfiguration record.
-    """
-    serializer_class = HotelFlowConfigurationSerializer
-    permission_classes = [IsAuthenticated]
-    lookup_field = 'id'
-    
-    def get_queryset(self):
-        """
-        Return all HotelFlowConfiguration records.
-        """
-        return HotelFlowConfiguration.objects.all()

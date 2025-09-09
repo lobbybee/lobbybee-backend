@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import FlowStep, ConversationContext, ScheduledMessageTemplate, MessageQueue, FlowTemplate, FlowStepTemplate, FlowAction, HotelFlowConfiguration, WebhookLog, ConversationMessage
+from .models import FlowStep, ConversationContext, ScheduledMessageTemplate, MessageQueue, FlowTemplate, FlowStepTemplate, FlowAction, WebhookLog, ConversationMessage
 
 @admin.register(FlowTemplate)
 class FlowTemplateAdmin(admin.ModelAdmin):
@@ -25,10 +25,7 @@ class FlowStepAdmin(admin.ModelAdmin):
     list_filter = ('hotel',)
     search_fields = ('step_id', 'template__step_name')
 
-@admin.register(HotelFlowConfiguration)
-class HotelFlowConfigurationAdmin(admin.ModelAdmin):
-    list_display = ('hotel', 'flow_template', 'is_enabled')
-    list_filter = ('hotel', 'flow_template', 'is_enabled')
+
 
 @admin.register(ConversationContext)
 class ConversationContextAdmin(admin.ModelAdmin):

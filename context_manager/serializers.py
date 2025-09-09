@@ -1,5 +1,28 @@
 from rest_framework import serializers
-from .models import FlowStep, ScheduledMessageTemplate, FlowTemplate, FlowStepTemplate, FlowAction, HotelFlowConfiguration
+from .models import FlowStep, ScheduledMessageTemplate, FlowTemplate, FlowStepTemplate, FlowAction, WhatsappMedia
+
+
+class WhatsappMediaSerializer(serializers.ModelSerializer):
+    file_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = WhatsappMedia
+        fields = ['id', 'mime_type', 'file_size', 'file', 'file_url', 'created_at']
+        read_only_fields = ['id', 'mime_type', 'file_size', 'file_url', 'created_at']
+        extra_kwargs = {
+            'file': {'write_only': True, 'required': True}
+        }
+
+    def get_file_url(self, obj):
+        if obj.file:
+            return obj.file.url
+        return None
+
+    def create(self, validated_data):
+        uploaded_file = validated_data.get('file')
+        validated_data['mime_type'] = uploaded_file.content_type
+        validated_data['file_size'] = uploaded_file.size
+        return super().create(validated_data)
 
 
 class FlowTemplateSerializer(serializers.ModelSerializer):
@@ -42,83 +65,6 @@ class FlowStepUpdateSerializer(serializers.ModelSerializer):
         model = FlowStep
         fields = '__all__'
         read_only_fields = ('id', 'step_id')
-
-
-class HotelFlowConfigurationSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = HotelFlowConfiguration
-        fields = '__all__'
-        read_only_fields = ('id',)
-
-
-class HotelFlowStepDetailSerializer(serializers.ModelSerializer):
-    """
-    Serializer for individual flow steps, combining template data with
-    hotel-specific customizations.
-    """
-    customized_message_template = serializers.SerializerMethodField()
-    customized_options = serializers.SerializerMethodField()
-
-    class Meta:
-        model = FlowStepTemplate
-        fields = (
-            'id',
-            'step_name',
-            'message_template',
-            'message_type',
-            'options',
-            'customized_message_template',
-            'customized_options',
-        )
-
-    def get_customized_message_template(self, obj):
-        """
-        Gets the customized message from the 'customizations' attribute
-        attached by the parent serializer.
-        """
-        return getattr(obj, 'customizations', {}).get('message_template', '')
-
-    def get_customized_options(self, obj):
-        """
-        Gets the customized options from the 'customizations' attribute
-        attached by the parent serializer.
-        """
-        return getattr(obj, 'customizations', {}).get('options')
-
-
-class HotelFlowDetailSerializer(serializers.ModelSerializer):
-    """
-    Provides a detailed view of a FlowTemplate, including its steps with
-    any hotel-specific customizations applied.
-    """
-    steps = serializers.SerializerMethodField()
-
-    class Meta:
-        model = FlowTemplate
-        fields = (
-            'id',
-            'name',
-            'description',
-            'category',
-            'steps',
-        )
-
-    def get_steps(self, instance):
-        hotel = self.context.get('hotel')
-        if not hotel:
-            return []
-
-        config = HotelFlowConfiguration.objects.filter(hotel=hotel, flow_template=instance).first()
-        customizations = config.customization_data.get('step_customizations', {}) if config and config.customization_data else {}
-
-        steps = instance.step_templates.all().order_by('order', 'id')
-
-        # Attach customization data to each step object for the child serializer
-        for step in steps:
-            step.customizations = customizations.get(str(step.id), {})
-
-        serializer = HotelFlowStepDetailSerializer(steps, many=True, context=self.context)
-        return serializer.data
 
 
 class ScheduledMessageTemplateSerializer(serializers.ModelSerializer):

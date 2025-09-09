@@ -12,11 +12,9 @@ from .views import (
     FlowStepTemplateDetailView,
     FlowActionListView,
     FlowActionDetailView,
-    AdminHotelFlowConfigurationListView,
     # Hotel API views
-    HotelFlowConfigurationListView,
-    HotelFlowDetailView,
-    HotelFlowCustomizeView,
+    CustomizableStepTemplateListView,
+    WhatsappMediaUploadView,
 )
 
 urlpatterns = [
@@ -29,18 +27,16 @@ urlpatterns = [
     path('admin/flow-step-templates/<int:id>/', FlowStepTemplateDetailView.as_view(), name='flow-step-template-detail'),
     path('admin/flow-actions/', FlowActionListView.as_view(), name='flow-action-list'),
     path('admin/flow-actions/<int:id>/', FlowActionDetailView.as_view(), name='flow-action-detail'),
-    path('admin/hotel-configurations/', AdminHotelFlowConfigurationListView.as_view(), name='admin-hotel-flow-config-list'),
     
-    # Hotel API endpoints for flow configuration
-    path('hotels/<uuid:hotel_id>/flow-configurations/', HotelFlowConfigurationListView.as_view(), name='hotel-flow-config-list'),
-    path('hotels/<uuid:hotel_id>/flows/<int:template_id>/', HotelFlowDetailView.as_view(), name='hotel-flow-detail'),
-    path('hotels/<uuid:hotel_id>/flows/<int:template_id>/customize/', HotelFlowCustomizeView.as_view(), name='hotel-flow-customize'),
+    # Hotel API endpoints for flow configuration (hotel ID derived from authenticated user)
+    path('hotel/customizable-step-templates/', CustomizableStepTemplateListView.as_view(), name='customizable-step-template-list'),
+    path('hotel/media/upload/', WhatsappMediaUploadView.as_view(), name='whatsapp-media-upload'),
     
-    # FlowStep endpoints
-    path('hotels/<uuid:hotel_id>/flow-steps/', FlowStepListView.as_view(), name='flow-step-list'),
-    path('hotels/<uuid:hotel_id>/flow-steps/<str:step_id>/', FlowStepDetailView.as_view(), name='flow-step-detail'),
+    # FlowStep endpoints (hotel ID derived from authenticated user)
+    path('hotel/flow-steps/', FlowStepListView.as_view(), name='flow-step-list'),
+    path('hotel/flow-steps/<str:step_id>/', FlowStepDetailView.as_view(), name='flow-step-detail'),
     
-    # ScheduledMessageTemplate endpoints
-    path('hotels/<uuid:hotel_id>/message-templates/', ScheduledMessageTemplateListView.as_view(), name='message-template-list'),
-    path('hotels/<uuid:hotel_id>/message-templates/<int:template_id>/', ScheduledMessageTemplateDetailView.as_view(), name='message-template-detail'),
+    # ScheduledMessageTemplate endpoints (hotel ID derived from authenticated user)
+    path('hotel/message-templates/', ScheduledMessageTemplateListView.as_view(), name='message-template-list'),
+    path('hotel/message-templates/<int:template_id>/', ScheduledMessageTemplateDetailView.as_view(), name='message-template-detail'),
 ]
