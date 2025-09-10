@@ -36,7 +36,7 @@ urlpatterns = [
     
     # FlowStep endpoints (hotel ID derived from authenticated user)
     path('hotel/flow-steps/', FlowStepListView.as_view(), name='flow-step-list'),
-    path('hotel/flow-steps/<str:step_id>/', FlowStepDetailView.as_view(), name='flow-step-detail'),
+    path('hotel/flow-steps/<int:pk>/', FlowStepDetailView.as_view(), name='flow-step-detail'),
     
     # ScheduledMessageTemplate endpoints (hotel ID derived from authenticated user)
     path('hotel/message-templates/', ScheduledMessageTemplateListView.as_view(), name='message-template-list'),
