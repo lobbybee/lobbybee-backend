@@ -242,6 +242,13 @@ class UserViewSet(viewsets.ModelViewSet):
             return User.objects.filter(hotel=user.hotel)
         return User.objects.none() # Superadmins can see all users, but for now, only hotel admins can see their hotel's users.
 
+    def perform_create(self, serializer):
+        serializer.save(
+            hotel=self.request.user.hotel,
+            created_by=self.request.user,
+            is_verified=True
+        )
+
     def get_permissions(self):
         if self.action == 'create':
             # Check if the request is to create a 'receptionist'

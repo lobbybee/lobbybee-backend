@@ -15,10 +15,11 @@ from .serializers import (
     HotelDocumentSerializer,
     RoomCategorySerializer,
     RoomSerializer,
+    RoomStatusUpdateSerializer,
     DepartmentSerializer,
     BulkCreateRoomSerializer,
 )
-from .permissions import IsHotelAdmin, IsSameHotelUser, CanManagePlatform
+from .permissions import IsHotelAdmin, IsSameHotelUser, CanManagePlatform, IsHotelStaffReadOnlyOrAdmin, RoomPermissions
 from .filters import RoomFilter
 
 
@@ -169,7 +170,7 @@ class HotelDocumentUpdateView(generics.UpdateAPIView):
 
 class RoomCategoryViewSet(viewsets.ModelViewSet):
     serializer_class = RoomCategorySerializer
-    permission_classes = [permissions.IsAuthenticated, IsHotelAdmin, IsSameHotelUser]
+    permission_classes = [permissions.IsAuthenticated, IsSameHotelUser, IsHotelStaffReadOnlyOrAdmin]
     filterset_fields = ['name']
     ordering_fields = ['name', 'base_price']
     search_fields = ['name']
@@ -183,9 +184,14 @@ class RoomCategoryViewSet(viewsets.ModelViewSet):
 
 class RoomViewSet(viewsets.ModelViewSet):
     serializer_class = RoomSerializer
-    permission_classes = [permissions.IsAuthenticated, IsHotelAdmin, IsSameHotelUser]
+    permission_classes = [permissions.IsAuthenticated, IsSameHotelUser, RoomPermissions]
     filterset_class = RoomFilter
     ordering_fields = ['room_number', 'floor']
+
+    def get_serializer_class(self):
+        if self.action == 'partial_update' and self.request.user.user_type in ['receptionist', 'manager']:
+            return RoomStatusUpdateSerializer
+        return self.serializer_class
 
     def get_queryset(self):
         return Room.objects.filter(hotel=self.request.user.hotel)

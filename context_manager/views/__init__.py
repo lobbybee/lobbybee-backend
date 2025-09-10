@@ -13,6 +13,7 @@ from .admin_api import (
 )
 from .hotel_api import (
     CustomizableStepTemplateListView,
+    FlowStepTemplateDropdownListView,
 )
 from .media_api import (
     WhatsappMediaUploadView,
@@ -31,5 +32,6 @@ __all__ = [
     'FlowActionListView',
     'FlowActionDetailView',
     'CustomizableStepTemplateListView',
+    'FlowStepTemplateDropdownListView',
     'WhatsappMediaUploadView',
 ]

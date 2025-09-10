@@ -70,6 +70,13 @@ class RoomSerializer(serializers.ModelSerializer):
             representation['current_guest'] = GuestSerializer(instance.current_guest).data
         return representation
 
+
+class RoomStatusUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Room
+        fields = ('status',)
+
+
 class DepartmentSerializer(serializers.ModelSerializer):
     class Meta:
         model = Department

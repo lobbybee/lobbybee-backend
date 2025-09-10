@@ -14,6 +14,7 @@ from .views import (
     FlowActionDetailView,
     # Hotel API views
     CustomizableStepTemplateListView,
+    FlowStepTemplateDropdownListView,
     WhatsappMediaUploadView,
 )
 
@@ -30,6 +31,7 @@ urlpatterns = [
     
     # Hotel API endpoints for flow configuration (hotel ID derived from authenticated user)
     path('hotel/customizable-step-templates/', CustomizableStepTemplateListView.as_view(), name='customizable-step-template-list'),
+    path('hotel/flow-step-templates/dropdown/', FlowStepTemplateDropdownListView.as_view(), name='flow-step-template-dropdown-list'),
     path('hotel/media/upload/', WhatsappMediaUploadView.as_view(), name='whatsapp-media-upload'),
     
     # FlowStep endpoints (hotel ID derived from authenticated user)

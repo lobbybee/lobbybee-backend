@@ -12,7 +12,8 @@ from .serializers import (
     CheckOutSerializer,
     BookingSerializer
 )
-from hotel.permissions import IsHotelAdmin, IsSameHotelUser, CanCheckInCheckOut
+from hotel.permissions import IsHotelAdmin, IsSameHotelUser, CanCheckInCheckOut, IsHotelStaff, IsHotelStaffReadOnlyOrAdmin
+from .permissions import CanManageGuests, CanViewAndManageStays
 from django.utils import timezone
 import logging
 from django.conf import settings
@@ -22,7 +23,7 @@ from django.conf import settings
 class BookingViewSet(viewsets.ModelViewSet):
     queryset = Booking.objects.all()
     serializer_class = BookingSerializer
-    permission_classes = [permissions.IsAuthenticated, IsHotelAdmin]
+    permission_classes = [permissions.IsAuthenticated, IsHotelStaff, IsSameHotelUser]
 
     def get_queryset(self):
         # Only show bookings for the user's hotel
@@ -37,7 +38,7 @@ class BookingViewSet(viewsets.ModelViewSet):
 class GuestViewSet(viewsets.ModelViewSet):
     queryset = Guest.objects.all()
     serializer_class = GuestSerializer
-    permission_classes = [permissions.IsAuthenticated, IsHotelAdmin]
+    permission_classes = [permissions.IsAuthenticated, CanManageGuests, IsSameHotelUser]
     filterset_fields = ['status', 'nationality']
     ordering_fields = ['full_name', 'first_contact_date']
 
@@ -99,7 +100,7 @@ class GuestViewSet(viewsets.ModelViewSet):
 class GuestIdentityDocumentViewSet(viewsets.ModelViewSet):
     queryset = GuestIdentityDocument.objects.all()
     serializer_class = GuestIdentityDocumentSerializer
-    permission_classes = [permissions.IsAuthenticated, IsHotelAdmin]
+    permission_classes = [permissions.IsAuthenticated, CanCheckInCheckOut, IsSameHotelUser]
     filterset_fields = ['document_type', 'is_verified']
     ordering_fields = ['uploaded_at']
 
@@ -136,7 +137,7 @@ class GuestIdentityDocumentUploadView(generics.CreateAPIView):
     """
 
     serializer_class = GuestIdentityDocumentSerializer
-    permission_classes = [permissions.IsAuthenticated, IsHotelAdmin]
+    permission_classes = [permissions.IsAuthenticated, CanCheckInCheckOut, IsSameHotelUser]
 
     def perform_create(self, serializer):
         from rest_framework import serializers
@@ -177,7 +178,7 @@ class GuestIdentityDocumentUploadView(generics.CreateAPIView):
 class StayViewSet(viewsets.ModelViewSet):
     queryset = Stay.objects.all()
     serializer_class = StaySerializer
-    permission_classes = [permissions.IsAuthenticated, IsHotelAdmin, IsSameHotelUser]
+    permission_classes = [permissions.IsAuthenticated, CanViewAndManageStays, IsSameHotelUser]
     filterset_fields = ['status', 'check_in_date']
     ordering_fields = ['check_in_date', 'check_out_date']
 
@@ -238,7 +239,7 @@ class StayViewSet(viewsets.ModelViewSet):
         detail=True,  # Acts on a specific stay instance
         methods=["post"],
         url_path="initiate-checkin",
-        permission_classes=[IsHotelAdmin], # Or a more specific permission
+        permission_classes=[CanCheckInCheckOut], # Allow receptionists to initiate check-in
     )
     def initiate_checkin(self, request, pk=None):
         """

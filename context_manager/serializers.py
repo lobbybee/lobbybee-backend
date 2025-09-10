@@ -46,6 +46,12 @@ class FlowStepTemplateSerializer(serializers.ModelSerializer):
         read_only_fields = ('id',)
 
 
+class FlowStepTemplateDropdownSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = FlowStepTemplate
+        fields = ['id', 'step_name']
+
+
 class FlowStepSerializer(serializers.ModelSerializer):
     class Meta:
         model = FlowStep

@@ -1,4 +1,5 @@
 from rest_framework.permissions import BasePermission
+from rest_framework import permissions
 
 class IsHotelAdmin(BasePermission):
     def has_permission(self, request, view):
@@ -35,4 +36,65 @@ class CanCheckInCheckOut(BasePermission):
         return (
             request.user.is_authenticated
             and request.user.user_type in ["hotel_admin", "receptionist"]
+        )
+
+class IsHotelStaffReadOnlyOrAdmin(BasePermission):
+    """
+    Allows read-only access to hotel staff (manager, receptionist), 
+    and full access to hotel admins.
+    """
+    def has_permission(self, request, view):
+        is_hotel_staff = (
+            request.user.is_authenticated and
+            request.user.user_type in ['hotel_admin', 'manager', 'receptionist'] and
+            request.user.hotel is not None
+        )
+        if not is_hotel_staff:
+            return False
+
+        if request.method in permissions.SAFE_METHODS:
+            return True
+
+        return request.user.user_type == 'hotel_admin'
+
+class RoomPermissions(BasePermission):
+    """
+    Custom permissions for the Room viewset.
+    - All staff can list/retrieve rooms.
+    - All staff can partially update (for status changes).
+    - Only admins can create, full update, or delete.
+    """
+    def has_permission(self, request, view):
+        is_hotel_staff = (
+            request.user.is_authenticated and
+            request.user.user_type in ['hotel_admin', 'manager', 'receptionist'] and
+            request.user.hotel is not None
+        )
+        if not is_hotel_staff:
+            return False
+
+        # Read access for all hotel staff
+        if view.action in ['list', 'retrieve', 'floors']:
+            return True
+        
+        # Allow partial_update for status changes by any staff
+        if view.action == 'partial_update':
+            return True
+
+        # Only admin can do other actions
+        if view.action in ['create', 'update', 'destroy', 'bulk_create']:
+            return request.user.user_type == 'hotel_admin'
+            
+        return False
+
+class IsHotelStaff(BasePermission):
+    """
+    Allows access to users who are staff members of a hotel.
+    (hotel_admin, manager, receptionist)
+    """
+    def has_permission(self, request, view):
+        return (
+            request.user.is_authenticated and
+            request.user.user_type in ['hotel_admin', 'manager', 'receptionist'] and
+            request.user.hotel is not None
         )
