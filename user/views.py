@@ -6,6 +6,8 @@ from django.conf import settings
 from django.utils.crypto import get_random_string
 from django.utils import timezone
 from django.db import transaction
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError
 from .models import User, OTP
 from .serializers import UserSerializer
 from hotel.permissions import IsHotelAdmin, CanCreateReceptionist
@@ -15,7 +17,7 @@ from hotel.serializers import UserHotelSerializer
 import re
 from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework_simplejwt.tokens import RefreshToken
-from .serializers import MyTokenObtainPairSerializer
+from .serializers import MyTokenObtainPairSerializer, ChangePasswordSerializer
 
 
 class CustomTokenObtainPairView(TokenObtainPairView):
@@ -230,6 +232,93 @@ class ResendOTPView(views.APIView):
                 {'error': 'An unexpected error occurred. Could not resend OTP.'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+
+class PasswordResetRequestView(views.APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request, *args, **kwargs):
+        email = request.data.get('email')
+        if not email:
+            return Response({'error': 'Email is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            user = User.objects.get(email=email)
+        except User.DoesNotExist:
+            # Don't reveal that the user doesn't exist to prevent user enumeration attacks
+            return Response({'message': 'If an account with that email exists, a password reset OTP has been sent.'}, status=status.HTTP_200_OK)
+
+        otp_code = get_random_string(length=6, allowed_chars='1234567890')
+        
+        # Use update_or_create to handle existing OTP for a user
+        otp, created = OTP.objects.update_or_create(
+            user=user,
+            defaults={'otp': otp_code, 'created_at': timezone.now(), 'resend_attempts': 0}
+        )
+
+        try:
+            send_mail(
+                'Your Password Reset OTP for LobbyBee',
+                f'Your password reset OTP is: {otp_code}',
+                settings.DEFAULT_FROM_EMAIL,
+                [user.email],
+                fail_silently=False,
+            )
+        except Exception as e:
+            print(f"Failed to send password reset OTP: {e}")
+            return Response(
+                {'error': 'An unexpected error occurred. Could not send OTP.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+        return Response({'message': 'If an account with that email exists, a password reset OTP has been sent.'}, status=status.HTTP_200_OK)
+
+
+class PasswordResetConfirmView(views.APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request, *args, **kwargs):
+        email = request.data.get('email')
+        otp_code = request.data.get('otp')
+        new_password = request.data.get('new_password')
+
+        if not all([email, otp_code, new_password]):
+            return Response({'error': 'Email, OTP, and new password are required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            user = User.objects.get(email=email)
+            otp = OTP.objects.get(user=user, otp=otp_code)
+
+            if otp.is_expired():
+                return Response({'error': 'OTP has expired.'}, status=status.HTTP_400_BAD_REQUEST)
+            
+            try:
+                validate_password(new_password, user)
+            except ValidationError as e:
+                return Response({'error': list(e.messages)}, status=status.HTTP_400_BAD_REQUEST)
+
+            user.set_password(new_password)
+            user.save()
+            otp.delete()
+
+            return Response({'message': 'Password has been reset successfully.'}, status=status.HTTP_200_OK)
+
+        except User.DoesNotExist:
+            return Response({'error': 'Invalid email or OTP.'}, status=status.HTTP_400_BAD_REQUEST)
+        except OTP.DoesNotExist:
+            return Response({'error': 'Invalid email or OTP.'}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class ChangePasswordView(views.APIView):
+    permission_classes = [IsAuthenticated, IsHotelAdmin]
+
+    def post(self, request, *args, **kwargs):
+        serializer = ChangePasswordSerializer(data=request.data, context={'request': request})
+        serializer.is_valid(raise_exception=True)
+        request.user.set_password(serializer.validated_data['new_password'])
+        request.user.save()
+        return Response({"message": "Password updated successfully"}, status=status.HTTP_200_OK)
+
 
 class UserViewSet(viewsets.ModelViewSet):
     queryset = User.objects.all()

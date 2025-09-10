@@ -189,7 +189,7 @@ class RoomViewSet(viewsets.ModelViewSet):
     ordering_fields = ['room_number', 'floor']
 
     def get_serializer_class(self):
-        if self.action == 'partial_update' and self.request.user.user_type in ['receptionist', 'manager']:
+        if self.action in ['partial_update', 'update'] and self.request.user.user_type in ['receptionist', 'manager']:
             return RoomStatusUpdateSerializer
         return self.serializer_class
 

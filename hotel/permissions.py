@@ -62,7 +62,8 @@ class RoomPermissions(BasePermission):
     Custom permissions for the Room viewset.
     - All staff can list/retrieve rooms.
     - All staff can partially update (for status changes).
-    - Only admins can create, full update, or delete.
+    - Receptionists and managers can update room status.
+    - Only admins can create, fully update details, or delete.
     """
     def has_permission(self, request, view):
         is_hotel_staff = (
@@ -77,12 +78,12 @@ class RoomPermissions(BasePermission):
         if view.action in ['list', 'retrieve', 'floors']:
             return True
         
-        # Allow partial_update for status changes by any staff
-        if view.action == 'partial_update':
+        # Allow partial_update and update for status changes by staff
+        if view.action in ['partial_update', 'update']:
             return True
 
         # Only admin can do other actions
-        if view.action in ['create', 'update', 'destroy', 'bulk_create']:
+        if view.action in ['create', 'destroy', 'bulk_create']:
             return request.user.user_type == 'hotel_admin'
             
         return False
