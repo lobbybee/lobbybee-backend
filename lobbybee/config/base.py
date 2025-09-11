@@ -56,6 +56,7 @@ INSTALLED_APPS = [
     'django_filters',
     'context_manager',
     'django_celery_beat',
+    'payments',
 ]
 
 AUTHENTICATION_BACKENDS = [

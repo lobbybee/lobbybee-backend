@@ -58,6 +58,17 @@ class Hotel(models.Model):
 
     def get_admin(self):
         return self.user_set.filter(user_type='hotel_admin').first()
+    
+    def is_subscribed(self):
+        """
+        Check if the hotel has an active subscription
+        """
+        try:
+            from payments.utils import is_hotel_subscribed
+            return is_hotel_subscribed(self)
+        except ImportError:
+            # If payments app is not available, return False
+            return False
 
 class HotelDocument(models.Model):
     """
