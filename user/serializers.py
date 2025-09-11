@@ -12,7 +12,7 @@ class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
     def validate(self, attrs):
         data = super().validate(attrs)
 
-        if not self.user.is_verified:
+        if not self.user.is_superuser and not self.user.is_verified:
             raise AuthenticationFailed(
                 'User account is not verified. Please verify your email before logging in.',
                 code='account_not_verified'
