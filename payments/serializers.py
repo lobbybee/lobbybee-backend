@@ -43,3 +43,19 @@ class HotelSubscriptionDetailSerializer(serializers.ModelSerializer):
         model = HotelSubscription
         fields = '__all__'
         read_only_fields = ('id', 'created_at', 'updated_at', 'is_expired', 'days_until_expiry')
+
+
+class SubscribeToPlanSerializer(serializers.Serializer):
+    plan = serializers.UUIDField()
+    
+    def validate_plan(self, value):
+        try:
+            SubscriptionPlan.objects.get(id=value)
+        except SubscriptionPlan.DoesNotExist:
+            raise serializers.ValidationError("Plan not found")
+        return value
+
+
+class ProcessPaymentSerializer(serializers.Serializer):
+    transaction_id = serializers.UUIDField()
+    payment_details = serializers.DictField(required=False)
