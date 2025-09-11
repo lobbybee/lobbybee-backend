@@ -11,7 +11,7 @@ from django.core.exceptions import ValidationError
 from .models import User, OTP
 from .serializers import UserSerializer
 from hotel.permissions import IsHotelAdmin, CanCreateReceptionist
-from .permissions import IsSuperUser, IsPlatformAdmin
+from .permissions import IsSuperUser, IsPlatformAdmin, IsPlatformStaff
 from hotel.models import Hotel
 from hotel.serializers import UserHotelSerializer
 import re
@@ -147,6 +147,50 @@ class HotelRegistrationView(generics.CreateAPIView):
             )
 
         return Response({'message': 'Hotel registration initiated. Please verify your email.'}, status=status.HTTP_201_CREATED)
+
+class PlatformCreateHotelView(generics.CreateAPIView):
+    """
+    An endpoint for platform users (superusers, admins, staff) to create a new hotel and its admin user.
+    This skips the OTP verification process.
+    """
+    permission_classes = [IsAuthenticated, IsSuperUser | IsPlatformAdmin | IsPlatformStaff]
+    serializer_class = UserSerializer
+
+    def create(self, request, *args, **kwargs):
+        request.data['user_type'] = 'hotel_admin'
+        hotel_name = request.data.get('hotel_name')
+        if not hotel_name:
+            return Response({'error': 'Hotel name is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        try:
+            with transaction.atomic():
+                hotel = Hotel.objects.create(
+                    name=hotel_name,
+                    email=request.data.get('email'),
+                    phone=request.data.get('phone_number', '')
+                )
+                # Set is_verified to True directly, skipping OTP
+                user = serializer.save(hotel=hotel, is_verified=True, created_by=request.user)
+
+        except Exception as e:
+            # It's good practice to log the exception
+            print(f"Failed during platform hotel creation: {e}")
+            return Response(
+                {'error': 'An unexpected error occurred during hotel creation.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+        user_data = serializer.data
+        user_data['hotel_id'] = hotel.id
+        user_data['hotel_name'] = hotel.name
+
+        return Response({
+            'message': 'Hotel and admin user created successfully.',
+            'data': user_data
+        }, status=status.HTTP_201_CREATED)
 
 class HotelStaffRegistrationView(generics.CreateAPIView):
     permission_classes = [IsAuthenticated, IsHotelAdmin]

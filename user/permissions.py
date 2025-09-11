@@ -13,3 +13,10 @@ class IsPlatformAdmin(BasePermission):
     """
     def has_permission(self, request, view):
         return request.user and request.user.user_type == 'platform_admin'
+
+class IsPlatformStaff(BasePermission):
+    """
+    Allows access only to platform staff.
+    """
+    def has_permission(self, request, view):
+        return request.user and request.user.user_type == 'platform_staff'

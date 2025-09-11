@@ -13,6 +13,7 @@ from .views import (
     ChangePasswordView,
     UserViewSet, # New import
     PlatformUserViewSet,
+    PlatformCreateHotelView,
 )
 from rest_framework_simplejwt.views import TokenRefreshView
 
@@ -34,6 +35,7 @@ urlpatterns = [
     path('password-reset/request/', PasswordResetRequestView.as_view(), name='password-reset-request'),
     path('password-reset/confirm/', PasswordResetConfirmView.as_view(), name='password-reset-confirm'),
     path('change-password/', ChangePasswordView.as_view(), name='change-password'),
+    path('admin/create-hotel/', PlatformCreateHotelView.as_view(), name='platform-create-hotel'),
     path('admin/', include(admin_router.urls)),
     path('', include(router.urls)), # Include router URLs
 ]
