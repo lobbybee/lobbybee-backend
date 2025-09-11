@@ -170,7 +170,10 @@ class PlatformCreateHotelView(generics.CreateAPIView):
                 hotel = Hotel.objects.create(
                     name=hotel_name,
                     email=request.data.get('email'),
-                    phone=request.data.get('phone_number', '')
+                    phone=request.data.get('phone_number', ''),
+                    is_verified=True,
+                    status='verified',
+                    verified_at=timezone.now()
                 )
                 # Set is_verified to True directly, skipping OTP
                 user = serializer.save(hotel=hotel, is_verified=True, created_by=request.user)

@@ -4,12 +4,20 @@ from hotel.models import Hotel
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
+from rest_framework.exceptions import AuthenticationFailed
 
 
 class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
 
     def validate(self, attrs):
         data = super().validate(attrs)
+
+        if not self.user.is_verified:
+            raise AuthenticationFailed(
+                'User account is not verified. Please verify your email before logging in.',
+                code='account_not_verified'
+            )
+
         user_data = UserSerializer(self.user).data
         if self.user.user_type in ['hotel_admin', 'manager', 'receptionist'] and self.user.hotel:
             user_data['hotel_id'] = str(self.user.hotel.id)
