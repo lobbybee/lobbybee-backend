@@ -104,6 +104,7 @@ class Stay(models.Model):
     hotel = models.ForeignKey(Hotel, on_delete=models.CASCADE, related_name='stays')
     guest = models.ForeignKey(Guest, on_delete=models.CASCADE, related_name='stays')
     room = models.ForeignKey(Room, on_delete=models.CASCADE, related_name='stays')
+    register_number = models.CharField(max_length=50, blank=True, null=True)
     
     check_in_date = models.DateTimeField()
     check_out_date = models.DateTimeField()

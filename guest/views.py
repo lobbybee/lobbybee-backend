@@ -54,9 +54,10 @@ class GuestViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # Get guests that have a stay record in the current user's hotel
+        # Get guests that have a stay or booking record in the current user's hotel
         hotel_guests = Guest.objects.filter(
-            stays__hotel=request.user.hotel
+            Q(stays__hotel=request.user.hotel) |
+            Q(bookings__hotel=request.user.hotel)
         ).distinct()
 
         # Apply the search query on the filtered guests
@@ -197,6 +198,7 @@ class StayViewSet(viewsets.ModelViewSet):
     def verify_and_check_in(self, request, pk=None):
         """
         Verifies a guest's identity documents and checks them in.
+        An optional `register_number` can be provided.
         """
         stay = self.get_object()
 
@@ -211,6 +213,11 @@ class StayViewSet(viewsets.ModelViewSet):
 
         # Mark the stay as identity verified
         stay.identity_verified = True
+
+        register_number = request.data.get("register_number")
+        if register_number:
+            stay.register_number = register_number
+
         stay.save()
 
         room = stay.room
