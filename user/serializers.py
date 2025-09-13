@@ -30,8 +30,8 @@ class UserSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ['id', 'username', 'email', 'user_type', 'phone_number', 'password', 'hotel', 'created_by', 'is_active_hotel_user']
-        read_only_fields = ['hotel', 'created_by', 'is_active_hotel_user'] # These fields are set by the system, not directly by the user
+        fields = ['id', 'username', 'email', 'user_type', 'phone_number', 'password', 'hotel', 'created_by', 'is_active_hotel_user', 'is_verified']
+        read_only_fields = ['hotel', 'created_by', 'is_active_hotel_user', 'is_verified'] # These fields are set by the system, not directly by the user
 
     def create(self, validated_data):
         # For staff creation, hotel and created_by are passed directly to serializer.save()
@@ -43,7 +43,8 @@ class UserSerializer(serializers.ModelSerializer):
             phone_number=validated_data.get('phone_number', ''),
             hotel=validated_data.get('hotel'), # Added hotel
             created_by=validated_data.get('created_by'), # Added created_by
-            is_active_hotel_user=validated_data.get('is_active_hotel_user', True) # Added is_active_hotel_user
+            is_active_hotel_user=validated_data.get('is_active_hotel_user', True), # Added is_active_hotel_user
+            is_verified=validated_data.get('is_verified', False)
         )
         return user
 

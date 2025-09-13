@@ -150,8 +150,9 @@ class HotelRegistrationView(generics.CreateAPIView):
 
 class PlatformCreateHotelView(generics.CreateAPIView):
     """
-    An endpoint for platform users (superusers, admins, staff) to create a new hotel and its admin user.
-    This skips the OTP verification process.
+    An endpoint for platform users to create a new hotel and its admin user.
+    The hotel is created with is_verified=True but status='pending'.
+    The admin user is created as verified, skipping OTP.
     """
     permission_classes = [IsAuthenticated, IsSuperUser | IsPlatformAdmin | IsPlatformStaff]
     serializer_class = UserSerializer
@@ -167,15 +168,15 @@ class PlatformCreateHotelView(generics.CreateAPIView):
 
         try:
             with transaction.atomic():
+                # Create the hotel with is_verified=True but status='pending'
                 hotel = Hotel.objects.create(
                     name=hotel_name,
                     email=request.data.get('email'),
                     phone=request.data.get('phone_number', ''),
                     is_verified=True,
-                    status='verified',
-                    verified_at=timezone.now()
+                    status='pending'
                 )
-                # Set is_verified to True directly, skipping OTP
+                # Create the user and mark them as verified, skipping OTP
                 user = serializer.save(hotel=hotel, is_verified=True, created_by=request.user)
 
         except Exception as e:
