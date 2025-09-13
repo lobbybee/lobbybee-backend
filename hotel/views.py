@@ -1,6 +1,6 @@
 from django.http import Http404
 from django.utils import timezone
-from rest_framework import viewsets, permissions, status, generics
+from rest_framework import viewsets, permissions, status, generics, filters
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.response import Response
 from rest_framework.decorators import action
@@ -20,6 +20,7 @@ from .serializers import (
     BulkCreateRoomSerializer,
 )
 from .permissions import IsHotelAdmin, IsSameHotelUser, CanManagePlatform, IsHotelStaffReadOnlyOrAdmin, RoomPermissions
+from django_filters.rest_framework import DjangoFilterBackend
 from .filters import RoomFilter
 
 
@@ -187,6 +188,8 @@ class RoomViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated, IsSameHotelUser, RoomPermissions]
     filterset_class = RoomFilter
     ordering_fields = ['room_number', 'floor']
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter]
+    search_fields = ['room_number']
 
     def get_serializer_class(self):
         if self.action in ['partial_update', 'update'] and self.request.user.user_type in ['receptionist', 'manager']:
