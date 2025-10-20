@@ -12,6 +12,15 @@ class User(AbstractUser):
         ('manager', 'Manager'),
         ('receptionist', 'Receptionist'),
         ('department_staff', 'Department Staff'),
+        ('other_staff', 'Other Staff'),
+    ]
+
+    DEPARTMENT_CHOICES = [
+        ('Reception', 'Reception'),
+        ('Housekeeping', 'Housekeeping'),
+        ('Room Service', 'Room Service'),
+        ('Café', 'Café'),
+        ('Management', 'Management'),
     ]
     
     email = models.EmailField(unique=True)
@@ -22,6 +31,7 @@ class User(AbstractUser):
     created_by = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True)
     is_active_hotel_user = models.BooleanField(default=True)  # For hotel-level user management
     created_at = models.DateTimeField(auto_now_add=True)
+    department = models.JSONField(null=True, blank=True)
 
 class OTP(models.Model):
     user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)

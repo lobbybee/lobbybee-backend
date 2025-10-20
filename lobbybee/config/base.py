@@ -49,15 +49,29 @@ INSTALLED_APPS = [
     'rest_framework_simplejwt',
     'rest_framework_simplejwt.token_blacklist',
     'corsheaders',
+    'channels',
     'hotel',
     'user',
     'guest',
     'hotelstat',
     'django_filters',
-    'context_manager',
+    # 'context_manager',
     'django_celery_beat',
     'payments',
+    'chat'
+    # 'message_manager',
 ]
+
+ASGI_APPLICATION = 'lobbybee.asgi.application'
+
+CHANNEL_LAYERS = {
+    'default': {
+        'BACKEND': 'channels_redis.core.RedisChannelLayer',
+        'CONFIG': {
+            "hosts": [('127.0.0.1', 6379)],
+        },
+    },
+}
 
 AUTHENTICATION_BACKENDS = [
     'user.auth_backends.EmailOrUsernameModelBackend',
@@ -93,6 +107,8 @@ CORS_ALLOWED_ORIGINS = [
     "http://127.0.0.1:3000",
 ]
 
+CORS_ALLOW_CREDENTIALS = True
+
 ROOT_URLCONF = 'lobbybee.urls'
 
 TEMPLATES = [
@@ -102,6 +118,7 @@ TEMPLATES = [
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
+                'django.template.context_processors.debug',
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',

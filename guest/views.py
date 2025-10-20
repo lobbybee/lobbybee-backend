@@ -2,7 +2,7 @@ from rest_framework import viewsets, permissions, status, generics
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.db.models import Q
-from context_manager.models import ConversationContext
+# Removed context_manager import as app is no longer used
 from .models import Guest, GuestIdentityDocument, Stay, Booking
 from .serializers import (
     GuestSerializer,
@@ -130,6 +130,23 @@ class GuestIdentityDocumentViewSet(viewsets.ModelViewSet):
             raise PermissionDenied(
                 "You can only add documents for valid guests."
             )
+
+    @action(detail=True, methods=['post'], url_path='upload-back')
+    def upload_back(self, request, pk=None):
+        document = self.get_object()
+        file = request.data.get('document_file_back')
+
+        if not file:
+            return Response(
+                {"detail": "No file provided."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        document.document_file_back = file
+        document.save()
+
+        serializer = self.get_serializer(document)
+        return Response(serializer.data)
 
 
 class GuestIdentityDocumentUploadView(generics.CreateAPIView):
@@ -273,26 +290,8 @@ class StayViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # Create or update the conversation context for the guest
-        context, created = ConversationContext.objects.update_or_create(
-            user_id=guest.whatsapp_number,
-            hotel=request.user.hotel,
-            defaults={
-                'context_data': {
-                    'current_flow': 'guest_checkin',
-                    'current_step': 'start',
-                    'stay_id': stay.id,
-                    'guest_id': guest.id,
-                    'accumulated_data': {},
-                    'navigation_stack': ['start'],
-                    'error_count': 0,
-                },
-                'is_active': True,
-            }
-        )
-
-        # TODO: Trigger a message to the user via a Celery task
-        # For now, we just confirm the context is created.
+        # TODO: Implement WhatsApp check-in flow without context_manager
+        # This would need to be reimplemented using a different approach
         
         return Response(
             {"detail": "WhatsApp check-in flow initiated successfully."},

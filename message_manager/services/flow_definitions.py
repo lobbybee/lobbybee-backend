@@ -11,6 +11,18 @@ DEMO_FLOW = {
             '2': 'demo_housekeeping',
             '3': 'demo_reception'
         }
+    },
+    'demo_room_service': {
+        'message': 'Room Service: What would you like to order?',
+        'action': 'start_relay_to_department'
+    },
+    'demo_housekeeping': {
+        'message': 'Housekeeping: How can we help with your room?',
+        'action': 'start_relay_to_department'
+    },
+    'demo_reception': {
+        'message': 'Reception: How can we assist you at the front desk?',
+        'action': 'start_relay_to_department'
     }
 }
 
@@ -36,5 +48,21 @@ SERVICES_FLOW = {
             '3': 'start_relay_reception',
             '4': 'start_relay_other'
         }
+    },
+    'start_relay_room_service': {
+        'message': 'Connecting you to Room Service...',
+        'action': 'start_relay_to_department'
+    },
+    'start_relay_housekeeping': {
+        'message': 'Connecting you to Housekeeping...',
+        'action': 'start_relay_to_department'
+    },
+    'start_relay_reception': {
+        'message': 'Connecting you to Reception...',
+        'action': 'start_relay_to_department'
+    },
+    'start_relay_other': {
+        'message': 'Connecting you to our team...',
+        'action': 'start_relay_to_department'
     }
 }

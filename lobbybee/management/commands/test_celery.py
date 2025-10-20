@@ -1,19 +1,13 @@
 from django.core.management.base import BaseCommand
-from context_manager.tasks import send_notification_email
+# Removed context_manager import as app is no longer used
 
 class Command(BaseCommand):
     help = 'Test Celery by sending a test email'
 
     def handle(self, *args, **options):
-        # Send a test email asynchronously
-        result = send_notification_email.delay(
-            subject='Test Email',
-            message='This is a test email sent via Celery',
-            recipient_list=['test@example.com']
-        )
-        
+        # TODO: Implement test email functionality without context_manager
         self.stdout.write(
-            self.style.SUCCESS(
-                f'Successfully sent test email task with ID: {result.id}'
+            self.style.WARNING(
+                'Test email functionality disabled - context_manager app removed'
             )
         )

@@ -1,34 +1,35 @@
 from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
-from hotel.models import Department
+from user.models import User
 
 
 def notify_department_new_conversation(conversation):
-    """Send WebSocket notification to department when a new conversation is created.
+    """Send WebSocket notification to staff when a new conversation is created.
     
-    This function sends a notification to all staff members in the department
+    This function sends a notification to all active staff members
     that a new conversation has been initiated and requires their attention.
     """
-    if not conversation.department:
-        return
-        
     # Get the channel layer
     channel_layer = get_channel_layer()
     
-    # Get all staff members in the department
-    department_staff = Department.objects.filter(
-        id=conversation.department.id
-    ).first()
+    # Get all active staff members
+    staff_users = User.objects.filter(
+        is_active=True
+    )
     
-    if department_staff:
-        # Send notification to department group
+    # Only notify if conversation has a stay (skip demo conversations)
+    if not conversation.stay:
+        return
+    
+    # Send notification to each staff member
+    for staff_user in staff_users:
         async_to_sync(channel_layer.group_send)(
-            f"department_{conversation.department.id}",
+            f"staff_{staff_user.id}",
             {
                 "type": "new_conversation",
-                "stay_id": str(conversation.stay.id) if conversation.stay else None,
+                "stay_id": str(conversation.stay.id),
                 "conversation_id": str(conversation.id),
-                "message": "New conversation initiated",
+                "message": f"New conversation initiated",
                 "timestamp": conversation.created_at.isoformat()
             }
         )

@@ -26,7 +26,8 @@ urlpatterns = [
     path('api/', include('guest.urls')),
     path('api/', include('hotelstat.urls')),
     path('api/', include('payments.urls')),
-    path('api/context/', include('context_manager.urls')),
+    # path('api/context/', include('context_manager.urls')),
+    # path('api/message_manager/', include('message_manager.urls')),
 ]
 
 # Serve media files in development

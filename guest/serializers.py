@@ -82,18 +82,25 @@ class StaySerializer(serializers.ModelSerializer):
 
 class GuestIdentityDocumentSerializer(serializers.ModelSerializer):
     document_file_url = serializers.SerializerMethodField()
+    document_file_back_url = serializers.SerializerMethodField()
 
     class Meta:
         model = GuestIdentityDocument
         fields = "__all__"
         read_only_fields = ("guest", "verified_by")
         extra_kwargs = {
-            'document_file': {'write_only': True}
+            'document_file': {'write_only': True},
+            'document_file_back': {'write_only': True}
         }
 
     def get_document_file_url(self, obj):
         if obj.document_file:
             return obj.document_file.url
+        return None
+
+    def get_document_file_back_url(self, obj):
+        if obj.document_file_back:
+            return obj.document_file_back.url
         return None
 
     def create(self, validated_data):

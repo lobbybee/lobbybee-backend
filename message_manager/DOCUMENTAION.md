@@ -5,17 +5,25 @@ This documentation provides comprehensive information on how to use both the Web
 ## Table of Contents
 
 1. [Overview](#overview)
-2. [REST API Interface](#rest-api-interface)
+2. [Department Structure](#department-structure)
+3. [REST API Interface](#rest-api-interface)
    - [Authentication](#authentication)
    - [Conversation Endpoints](#conversation-endpoints)
    - [Message Endpoints](#message-endpoints)
-3. [WebSocket Interface](#websocket-interface)
+4. [Webhook Interface](#webhook-interface)
+   - [Webhook Endpoint](#webhook-endpoint)
+   - [Payload Format](#payload-format)
+   - [Processing Logic](#processing-logic)
+   - [Setup and Usage](#setup-and-usage)
+   - [Initiating a Conversation](#initiating-a-conversation)
+5. [WebSocket Interface](#websocket-interface)
    - [Connection](#connection)
    - [WebSocket Commands](#websocket-commands)
    - [WebSocket Events](#websocket-events)
-4. [Integration Guide](#integration-guide)
+6. [Migration Notes](#migration-notes)
+7. [Integration Guide](#integration-guide)
    - [Building a Chat Interface](#building-a-chat-interface)
-5. [Models Reference](#models-reference)
+8. [Models Reference](#models-reference)
 
 ## Overview
 
@@ -24,7 +32,47 @@ The message_manager provides two primary interfaces for interacting with convers
 1. **REST API**: For fetching conversation lists, messages, and sending new messages
 2. **WebSocket**: For real-time communication and notifications
 
-Both interfaces are protected by authentication and provide department-based access control.
+Both interfaces are protected by authentication and provide department-based access control using hardcoded department assignments.
+
+## Department Structure
+
+The message_manager uses a hardcoded department system that aligns with the User model's department assignments. Staff users are assigned departments via the `user.department` JSON field, which can contain multiple department names.
+
+### Available Departments
+
+```python
+DEPARTMENT_CHOICES = [
+    ('Reception', 'Reception'),
+    ('Housekeeping', 'Housekeeping'),
+    ('Room Service', 'Room Service'),
+    ('Café', 'Café'),
+    ('Management', 'Management'),
+]
+```
+
+### User Department Assignment
+
+Staff users can be assigned to multiple departments:
+
+```json
+{
+  "department": ["Reception", "Housekeeping"]
+}
+```
+
+### Conversation Routing
+
+When guests select services:
+1. System maps service numbers to department names
+2. Sets conversation status to 'relay'
+3. Assigns department name to conversation (currently not implemented in actions; status is set to 'relay' for all)
+4. Notifies all active staff users
+
+### Real-time Notifications
+
+WebSocket notifications are sent to all active staff users when a new conversation enters 'relay' status:
+- Uses `staff_{user_id}` group naming convention
+- Each active staff user receives notifications for all relayed conversations
 
 ## REST API Interface
 
@@ -179,6 +227,218 @@ POST /api/message_manager/conversations/{id}/end_relay/
 }
 ```
 
+## Webhook Interface
+
+The webhook interface handles incoming messages from external services, primarily WhatsApp, to process guest messages and trigger conversation flows. It integrates with the message handler to manage conversation states, flow steps, and relay to staff.
+
+### Webhook Endpoint
+
+**URL:** `POST /api/message_manager/webhook/whatsapp/`
+
+This endpoint receives webhook payloads from WhatsApp's Business API when a guest sends a message. It is not protected by authentication (as it's called by external services), but it should be secured via other means like IP whitelisting or API keys in production. The endpoint processes the payload, updates conversations, and may send automated responses back to the guest via WhatsApp.
+
+### Payload Format
+
+The webhook expects a JSON payload from WhatsApp's Business API. The exact format depends on the message type, but a typical text message payload looks like this:
+
+```json
+{
+  "object": "whatsapp_business_account",
+  "entry": [
+    {
+      "id": "your_business_account_id",
+      "changes": [
+        {
+          "value": {
+            "messaging_product": "whatsapp",
+            "metadata": {
+              "display_phone_number": "your_business_phone_number",
+              "phone_number_id": "your_phone_number_id"
+            },
+            "contacts": [
+              {
+                "profile": {
+                  "name": "John Doe"
+                },
+                "wa_id": "1234567890"
+              }
+            ],
+            "messages": [
+              {
+                "id": "wamid.HBgLMTY0MDk5NTIwMDAwE...",
+                "from": "1234567890",
+                "timestamp": "1640995200",
+                "text": {
+                  "body": "Hello, I need help with my room."
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "field": "messages"
+        }
+      ]
+    }
+  ]
+}
+```
+
+For media messages (e.g., images), the payload includes additional fields:
+
+```json
+{
+  "object": "whatsapp_business_account",
+  "entry": [
+    {
+      "id": "your_business_account_id",
+      "changes": [
+        {
+          "value": {
+            "messaging_product": "whatsapp",
+            "metadata": {
+              "display_phone_number": "your_business_phone_number",
+              "phone_number_id": "your_phone_number_id"
+            },
+            "contacts": [
+              {
+                "profile": {
+                  "name": "Jane Smith"
+                },
+                "wa_id": "0987654321"
+              }
+            ],
+            "messages": [
+              {
+                "id": "wamid.HBgLMTY0MDk5NTIwMDAwE...",
+                "from": "0987654321",
+                "timestamp": "1640995300",
+                "image": {
+                  "mime_type": "image/jpeg",
+                  "sha256": "hash_value",
+                  "id": "media_id",
+                  "caption": "My ID document"
+                },
+                "type": "image"
+              }
+            ]
+          },
+          "field": "messages"
+        }
+      ]
+    }
+  ]
+}
+```
+
+### Processing Logic
+
+When a webhook payload is received:
+
+1. **Extract Phone Number**: Parses the guest's WhatsApp number from `entry[0].changes[0].value.messages[0].from` (currently placeholder implementation returns dummy data).
+2. **Extract Message Content**: Retrieves the message text from `entry[0].changes[0].value.messages[0].text.body` for text messages, or handles media types accordingly (currently placeholder returns dummy data).
+3. **Process Message**: Calls `MessageHandler.process_message()` with the phone number and content.
+   - This finds or creates a conversation based on the guest's stay or creates a demo conversation.
+   - Saves the incoming message as a guest message.
+   - If the conversation is in 'relay' status, logs the relay (no further action in current implementation).
+   - Otherwise, processes the message through predefined flows (e.g., DEMO_FLOW, CHECKIN_FLOW, SERVICES_FLOW) to determine the next step, execute actions (like validating guest name or starting relay), and generate a response.
+4. **Execute Actions**: Actions such as `start_relay_to_department` set the conversation to 'relay' status and notify all active staff via WebSocket.
+5. **Send Response**: If the processing returns a response message, sends it back to the guest via WhatsApp API (placeholder implementation logs the message).
+6. **Log and Respond**: Returns a JSON response indicating success (`{'status': 'processed'}`), ignored (`{'status': 'ignored'}`), or error (`{'status': 'error'}`).
+
+The webhook handles errors gracefully, logging issues for debugging. For demo conversations (non-guests), it uses a simplified flow.
+
+### Setup and Usage
+
+To use the webhook:
+
+1. **Configure WhatsApp Business API**:
+   - Set up a WhatsApp Business Account and obtain API credentials (access token, phone number ID).
+   - Configure the webhook URL in your WhatsApp Business API settings to point to `/api/message_manager/webhook/whatsapp/`.
+   - Ensure the webhook is verified (WhatsApp sends a verification request; implement a GET handler if needed).
+
+2. **Secure the Endpoint**:
+   - In production, implement security measures like verifying webhook signatures using the WhatsApp app secret, restricting access to known IPs, or using API keys.
+   - The current implementation does not include authentication, so ensure external protection.
+
+3. **Handle Different Message Types**:
+   - The webhook currently supports text messages. Extend `extract_message_content()` in `WhatsAppWebhookView` for media (e.g., download images using WhatsApp API and store via `context_manager.utils.whatsapp`).
+   - For media, parse fields like `image.id` to fetch and process the media.
+
+4. **Testing**:
+   - Use WhatsApp's webhook testing tools or send test messages to trigger the endpoint.
+   - Monitor logs for processing details. For development, the code includes placeholders that return dummy data; replace with actual parsing.
+
+5. **Integration with Flows**:
+   - Incoming messages drive conversation flows defined in `flow_definitions.py` (e.g., check-in, services).
+   - Flows use triggers (e.g., "services" or "1") to advance steps and execute actions like relaying to staff.
+   - Ensure flows are defined for proper routing; customize `MessageHandler` for additional logic.
+
+6. **Examples**:
+   - **Demo Flow Initiation**: A non-guest sends any message. The system creates a demo conversation, responds with "Welcome to our hotel demo! Type "services" to explore.", and sets current_step to 'start'.
+   - **Services Trigger**: In demo or active flow, guest sends "services". Matches trigger in SERVICES_FLOW, responds with "How can we assist you today? 1. Room Service 2. Housekeeping 3. Reception 4. Other", and waits for selection.
+   - **Relay Initiation**: Guest selects "1" for Room Service. Advances to 'start_relay_room_service', executes `start_relay_to_department`, sets status to 'relay', notifies all active staff via WebSocket, and responds with "Connecting you to Room Service...".
+   - **Check-in Flow**: For a pending stay, system prompts for name in 'start' step. Guest replies with name, executes `validate_guest_name`, stores name in context_data, advances to 'collect_documents', responds with "Please upload a photo of your ID document.".
+   - **Document Upload**: Guest sends media (placeholder). Executes `save_document`, logs action, advances to 'finalize_checkin' (but flow ends; customize for actual check-in completion).
+   - **Relay Message Handling**: In 'relay' status, incoming messages are logged as relayed, no automated response generated.
+
+If a message cannot be processed (e.g., invalid payload), the webhook returns `{'status': 'ignored'}` or `{'status': 'error'}`.
+
+### Initiating a Conversation
+
+To initiate a conversation, a guest must send a message via WhatsApp to your business number. This triggers the webhook with a payload containing the message details.
+
+**Endpoint:** `POST /api/message_manager/webhook/whatsapp/`
+
+**Example Payload (Text Message to Initiate Demo Conversation):**
+```json
+{
+  "object": "whatsapp_business_account",
+  "entry": [
+    {
+      "id": "your_business_account_id",
+      "changes": [
+        {
+          "value": {
+            "messaging_product": "whatsapp",
+            "metadata": {
+              "display_phone_number": "your_business_phone_number",
+              "phone_number_id": "your_phone_number_id"
+            },
+            "contacts": [
+              {
+                "profile": {
+                  "name": "John Doe"
+                },
+                "wa_id": "1234567890"
+              }
+            ],
+            "messages": [
+              {
+                "id": "wamid.HBgLMTY0MDk5NTIwMDAwE...",
+                "from": "1234567890",
+                "timestamp": "1640995200",
+                "text": {
+                  "body": "Hello"
+                },
+                "type": "text"
+              }
+            ]
+          },
+          "field": "messages"
+        }
+      ]
+    }
+  ]
+}
+```
+
+Upon receiving this payload:
+- If the phone number matches a guest with an active or pending stay, it initiates the appropriate flow (check-in or services).
+- If no matching guest is found, it creates a demo conversation and responds with the demo welcome message.
+- The system processes the message, saves it, and sends an automated response back via WhatsApp.
+
+For testing, you can simulate sending this payload to the endpoint using tools like Postman or curl. In production, WhatsApp automatically sends this payload when a guest messages your business.
+
 ## WebSocket Interface
 
 ### Connection
@@ -245,6 +505,45 @@ Events are received as JSON objects with a `type` field.
   "timestamp": "2025-09-23T10:45:00Z"
 }
 ```
+
+## Migration Notes
+
+### Changes from hotel.Department to Hardcoded Departments
+
+The message_manager has been migrated from using `hotel.Department` model objects to a hardcoded department system. This change provides several benefits:
+
+- **Simplified Architecture**: No dependency on separate department management
+- **Better Performance**: No database joins for department lookups
+- **Easier Maintenance**: Departments are defined in code, not database
+- **Consistent Structure**: Aligns with User model department assignments
+
+### What Changed
+
+1. **Model Fields**: 
+   - `conversation.department` changed from `ForeignKey('hotel.Department')` to `CharField` with choices
+   - `messagetemplate.department` changed from `ForeignKey` to `CharField` with choices
+
+2. **API Responses**: 
+   - `department_name` field now contains the department name directly instead of accessing `department.name`
+
+3. **WebSocket Notifications**: 
+   - Notifications now go to all active staff users instead of department groups
+
+4. **User Assignment**: 
+   - Staff users are assigned departments via `user.department` JSON field
+   - Users can be assigned to multiple departments
+
+### Impact on Existing Code
+
+If you have existing integrations, you may need to update:
+
+1. **API Consumers**: Update any code that expects department objects to handle department names as strings
+2. **WebSocket Clients**: Update notification handling to work with user-based groups
+3. **Database Migrations**: Run Django migrations to update the database schema
+
+### Backward Compatibility
+
+The API responses maintain the same structure, but the `department_name` field now contains the department name directly rather than accessing a related object's name field.
 
 ## Integration Guide
 
@@ -350,7 +649,7 @@ async function fetchMessages(conversationId) {
 | stay | OneToOneField | Related stay (nullable for demo conversations) |
 | status | CharField | Conversation status (demo, checkin, active, relay, closed) |
 | current_step | CharField | Current step in the conversation flow |
-| department | ForeignKey | Department handling the conversation (nullable) |
+| department | CharField | Department handling the conversation (nullable) - one of: Reception, Housekeeping, Room Service, Café, Management |
 | context_data | JSONField | Context data for flow state |
 | created_at | DateTimeField | Creation timestamp |
 | updated_at | DateTimeField | Last update timestamp |
@@ -374,5 +673,5 @@ async function fetchMessages(conversationId) {
 | id | BigAutoField | Primary key |
 | name | CharField | Template name |
 | content | TextField | Template content |
-| department | ForeignKey | Department (nullable) |
+| department | CharField | Department (nullable) - one of: Reception, Housekeeping, Room Service, Café, Management |
 | template_type | CharField | Template type (default: text) |

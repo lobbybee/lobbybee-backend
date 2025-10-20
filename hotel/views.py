@@ -186,6 +186,7 @@ class RoomCategoryViewSet(viewsets.ModelViewSet):
 class RoomViewSet(viewsets.ModelViewSet):
     serializer_class = RoomSerializer
     permission_classes = [permissions.IsAuthenticated, IsSameHotelUser, RoomPermissions]
+    pagination_class = StandardResultsSetPagination
     filterset_class = RoomFilter
     ordering_fields = ['room_number', 'floor']
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]

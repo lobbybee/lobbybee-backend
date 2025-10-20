@@ -1,4 +1,5 @@
 from django.db import models
+import uuid
 
 
 class Conversation(models.Model):
@@ -10,20 +11,29 @@ class Conversation(models.Model):
         ('closed', 'Closed'),
     ]
 
+    DEPARTMENT_CHOICES = [
+        ('Reception', 'Reception'),
+        ('Housekeeping', 'Housekeeping'),
+        ('Room Service', 'Room Service'),
+        ('Café', 'Café'),
+        ('Management', 'Management'),
+    ]
+
     id = models.BigAutoField(primary_key=True)
     stay = models.OneToOneField('guest.Stay', on_delete=models.CASCADE, null=True, blank=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='demo')
     current_step = models.CharField(max_length=50, default='start')
-    department = models.ForeignKey('hotel.Department', on_delete=models.SET_NULL, null=True, blank=True)
+    department = models.CharField(max_length=20, choices=DEPARTMENT_CHOICES, blank=True, null=True)  # Added to store department for relay
+
     context_data = models.JSONField(default=dict)  # For flow state
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
         if self.stay:
-            return f"Conversation for stay {self.stay.id}"
+            return f"Conversation for stay {str(self.stay.id)}"
         else:
-            return f"Demo conversation {self.id}"
+            return f"Demo conversation {str(self.id)}"
 
 
 class Message(models.Model):
@@ -33,6 +43,7 @@ class Message(models.Model):
         ('system', 'System'),
     ]
 
+    id = models.BigAutoField(primary_key=True)
     conversation = models.ForeignKey(Conversation, on_delete=models.CASCADE, related_name='messages')
     content = models.TextField()
     sender_type = models.CharField(max_length=10, choices=SENDER_TYPES)
@@ -41,13 +52,15 @@ class Message(models.Model):
     whatsapp_message_id = models.CharField(max_length=100, blank=True)
 
     def __str__(self):
-        return f"Message in conversation {self.conversation.stay.id} at {self.timestamp}"
+        if self.conversation.stay:
+            return f"Message in conversation {str(self.conversation.stay.id)} at {self.timestamp}"
+        else:
+            return f"Message in demo conversation {str(self.conversation.id)} at {self.timestamp}"
 
 
 class MessageTemplate(models.Model):
     name = models.CharField(max_length=100, unique=True)
     content = models.TextField()
-    department = models.ForeignKey('hotel.Department', on_delete=models.CASCADE, null=True, blank=True)
     template_type = models.CharField(max_length=20, default='text')
 
     def __str__(self):

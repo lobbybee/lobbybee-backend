@@ -13,7 +13,7 @@ from django.core.wsgi import get_wsgi_application
 # Get the environment from an environment variable
 env = os.environ.get('DJANGO_ENV', 'development')
 
-# Set the settings module based on the environment
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', f'lobbybee.config.{env}')
+# Set the settings module to use the settings switcher
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'lobbybee.settings')
 
 application = get_wsgi_application()

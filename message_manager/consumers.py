@@ -73,13 +73,17 @@ class StaffConsumer(AsyncJsonWebsocketConsumer):
     def save_staff_message(self, stay_id, message_text):
         try:
             conversation = Conversation.objects.get(stay__id=stay_id)
-            Message.objects.create(
-                conversation=conversation,
-                content=message_text,
-                sender_type='staff',
-                staff_sender=self.scope['user']
-            )
-            return True
+            try:
+                Message.objects.create(
+                    conversation=conversation,
+                    content=message_text,
+                    sender_type='staff',
+                    staff_sender=self.scope['user']
+                )
+                return True
+            except Exception as e:
+                logger.error(f"Error creating staff message: {str(e)}")
+                return False
         except Conversation.DoesNotExist:
             logger.error(f"Conversation for stay {stay_id} does not exist")
             return False

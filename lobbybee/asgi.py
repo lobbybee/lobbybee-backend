@@ -8,12 +8,15 @@ https://docs.djangoproject.com/en/5.2/howto/deployment/asgi/
 '''
 
 import os
+
+# Set the settings module to use the settings switcher
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'lobbybee.settings')
+
+# Import Django and set up the application after environment is configured
+import django
 from django.core.asgi import get_asgi_application
 
-# Get the environment from an environment variable
-env = os.environ.get('DJANGO_ENV', 'development')
+django.setup()
 
-# Set the settings module based on the environment
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', f'lobbybee.config.{env}')
-
-application = get_asgi_application()
+from channels.routing import ProtocolTypeRouter, URLRouter
+from channels.auth import AuthMiddlewareStack

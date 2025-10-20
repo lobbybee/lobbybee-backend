@@ -66,6 +66,11 @@ class RoomSerializer(serializers.ModelSerializer):
     def to_representation(self, instance):
         from guest.serializers import GuestSerializer
         representation = super().to_representation(instance)
+        if instance.category:
+            representation['category'] = {
+                'id': instance.category.id,
+                'name': instance.category.name
+            }
         if instance.current_guest:
             representation['current_guest'] = GuestSerializer(instance.current_guest).data
         return representation
