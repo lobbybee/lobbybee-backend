@@ -1,0 +1,24 @@
+meta {
+  name: webhook trigger
+  type: http
+  seq: 4
+}
+
+post {
+  url: http://127.0.0.1:8000/api/chat/guest-webhook/
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "whatsapp_number": "918589878253",
+    "message": "I need a towlels",
+    "department":"Restaurant"
+  }
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

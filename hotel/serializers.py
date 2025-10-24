@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Hotel, HotelDocument, Room, RoomCategory, Department
+from .models import Hotel, HotelDocument, Room, RoomCategory
 from user.serializers import UserSerializer
 
 class HotelDocumentSerializer(serializers.ModelSerializer):
@@ -82,11 +82,7 @@ class RoomStatusUpdateSerializer(serializers.ModelSerializer):
         fields = ('status',)
 
 
-class DepartmentSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Department
-        fields = '__all__'
-        read_only_fields = ('hotel',)
+
 
 class BulkCreateRoomSerializer(serializers.Serializer):
     category = serializers.IntegerField()

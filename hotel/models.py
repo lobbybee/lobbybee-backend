@@ -58,7 +58,7 @@ class Hotel(models.Model):
 
     def get_admin(self):
         return self.user_set.filter(user_type='hotel_admin').first()
-    
+
     def is_subscribed(self):
         """
         Check if the hotel has an active subscription
@@ -113,7 +113,7 @@ class RoomManager(models.Manager):
         match_start = re.match(r'([a-zA-Z]*)(\d+)', start_number_str)
         if not match_start:
             raise ValidationError("Invalid start room number format. Expected format like 'H101' or '101'.")
-        
+
         prefix = match_start.group(1)
         start_num = int(match_start.group(2))
 
@@ -146,7 +146,7 @@ class RoomManager(models.Manager):
                 floor=floor,
                 status='available'
             ))
-        
+
         if not rooms_to_create:
             raise ValidationError("No new rooms to create. They may already exist.")
 
@@ -189,36 +189,3 @@ class Room(models.Model):
 
     def get_status_display_name(self):
         return dict(self.ROOM_STATUS).get(self.status, self.status)
-
-
-# Department Management
-class Department(models.Model):
-    DEPARTMENT_TYPES = [
-        ('reception', 'Reception'),
-        ('housekeeping', 'Housekeeping'),
-        ('room_service', 'Room Service'),
-        ('maintenance', 'Maintenance'),
-        ('concierge', 'Concierge'),
-        ('restaurant', 'Restaurant'),
-        ('spa', 'Spa & Wellness'),
-        ('laundry', 'Laundry'),
-        ('transport', 'Transport'),
-        ('other', 'Other'),
-    ]
-
-    hotel = models.ForeignKey(Hotel, on_delete=models.CASCADE, related_name='departments')
-    name = models.CharField(max_length=100)
-    department_type = models.CharField(max_length=20, choices=DEPARTMENT_TYPES)
-    whatsapp_number = models.CharField(max_length=15, unique=True, null=True, blank=True)
-    whatsapp_number2 = models.CharField(max_length=15, null=True, blank=True)
-    whatsapp_number3 = models.CharField(max_length=15, null=True, blank=True)
-    is_active = models.BooleanField(default=True)
-    operating_hours_start = models.TimeField()
-    operating_hours_end = models.TimeField()
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        unique_together = ['hotel', 'department_type']
-
-    def __str__(self):
-        return f"{self.get_department_type_display()} ({self.hotel.name})"

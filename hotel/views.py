@@ -8,7 +8,7 @@ from rest_framework.pagination import PageNumberPagination
 import logging
 from django.conf import settings
 
-from .models import Hotel, HotelDocument, Room, RoomCategory, Department
+from .models import Hotel, HotelDocument, Room, RoomCategory
 from .serializers import (
     HotelSerializer,
     UserHotelSerializer,
@@ -16,7 +16,6 @@ from .serializers import (
     RoomCategorySerializer,
     RoomSerializer,
     RoomStatusUpdateSerializer,
-    DepartmentSerializer,
     BulkCreateRoomSerializer,
 )
 from .permissions import IsHotelAdmin, IsSameHotelUser, CanManagePlatform, IsHotelStaffReadOnlyOrAdmin, RoomPermissions
@@ -239,14 +238,3 @@ class RoomViewSet(viewsets.ModelViewSet):
         return Response({"floors": list(floors)}, status=status.HTTP_200_OK)
 
 
-class DepartmentViewSet(viewsets.ModelViewSet):
-    serializer_class = DepartmentSerializer
-    permission_classes = [permissions.IsAuthenticated, IsHotelAdmin, IsSameHotelUser]
-    filterset_fields = ['department_type', 'is_active']
-    ordering_fields = ['name']
-
-    def get_queryset(self):
-        return Department.objects.filter(hotel=self.request.user.hotel)
-
-    def perform_create(self, serializer):
-        serializer.save(hotel=self.request.user.hotel)

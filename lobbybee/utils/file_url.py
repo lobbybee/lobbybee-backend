@@ -18,3 +18,10 @@ def upload_to_customer_documents(instance, filename):
     ext = filename.split('.')[-1]
     filename = f"{uuid.uuid4()}.{ext}"
     return f"customers/{instance.customer.id}/documents/{filename}"
+
+
+def upload_to_chat_media(instance, filename):
+    """Generate upload path for chat media files"""
+    ext = filename.split('.')[-1]
+    filename = f"{uuid.uuid4()}.{ext}"
+    return f"chat/hotel_{instance.conversation.hotel.id}/conversation_{instance.conversation.id}/{filename}"

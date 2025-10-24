@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Hotel, Room, RoomCategory, Department, HotelDocument
+from .models import Hotel, Room, RoomCategory, HotelDocument
 
 @admin.register(Hotel)
 class HotelAdmin(admin.ModelAdmin):
@@ -17,4 +17,3 @@ class HotelDocumentAdmin(admin.ModelAdmin):
 
 admin.site.register(Room)
 admin.site.register(RoomCategory)
-admin.site.register(Department)

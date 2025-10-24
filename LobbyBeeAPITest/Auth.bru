@@ -1,0 +1,23 @@
+meta {
+  name: Auth
+  type: http
+  seq: 1
+}
+
+post {
+  url: http://127.0.0.1:8000/api/login/
+  body: json
+  auth: inherit
+}
+
+body:json {
+  {
+    "username":"chef_grand",
+    "password":"test@123"
+  }
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

@@ -1,0 +1,27 @@
+meta {
+  name: Get Conversation
+  type: http
+  seq: 4
+}
+
+get {
+  url: http://127.0.0.1:8000/api/chat/conversations/
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0b2tlbl90eXBlIjoiYWNjZXNzIiwiZXhwIjoxNzYxMTMzNzY3LCJpYXQiOjE3NjEwNDczNjcsImp0aSI6IjEwZTVmZDUzZDc4YTQ1MGVhMDBhMDAxZTJiNmY2NTFiIiwidXNlcl9pZCI6IjEwIn0.5wSi_zSysVuR9jfPkrg7wZYzXvlRTZq5CefbqUFXHY0
+}
+
+body:json {
+  {
+    "username":"chef_grand",
+    "password":"test@123"
+  }
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

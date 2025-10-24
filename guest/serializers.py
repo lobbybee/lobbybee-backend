@@ -54,12 +54,20 @@ class GuestSerializer(serializers.ModelSerializer):
         model = Guest
         fields = [
             "id",
+            "whatsapp_number",
+            "register_number",
             "full_name",
             "email",
-            "whatsapp_number",
             "date_of_birth",
             "nationality",
+            "is_primary_guest",
             "status",
+            "first_contact_date",
+            "last_activity",
+            "preferred_language",
+            "is_whatsapp_active",
+            "loyalty_points",
+            "notes",
         ]
 
 

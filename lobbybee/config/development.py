@@ -41,3 +41,8 @@ DATA_UPLOAD_MAX_MEMORY_SIZE = 5242880   # 5MB
 # Celery Configuration for development
 CELERY_TASK_ALWAYS_EAGER = True
 CELERY_TASK_EAGER_PROPAGATES = True
+
+
+# Whatsapp
+
+PHONE_NUMBER_ID = env('PHONE_NUMBER_ID_DEV')

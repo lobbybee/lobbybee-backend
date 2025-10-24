@@ -63,3 +63,6 @@ CELERY_TIMEZONE = 'UTC'
 
 # Email backend for production (using SMTP)
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+
+# Whatsapp
+PHONE_NUMBER_ID = env('PHONE_NUMBER_ID_PROD')

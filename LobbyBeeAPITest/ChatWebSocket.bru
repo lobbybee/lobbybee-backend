@@ -1,0 +1,27 @@
+meta {
+  name: ChatWebSocket
+  type: ws
+  seq: 2
+}
+
+ws {
+  url: ws://localhost:8000/ws/chat/Restaurant/
+  body: ws
+  auth: bearer
+}
+
+auth:bearer {
+  token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0b2tlbl90eXBlIjoiYWNjZXNzIiwiZXhwIjoxNzYxMTQyMjMxLCJpYXQiOjE3NjEwNTU4MzEsImp0aSI6ImZjZDY4NzhmNzNiZTRjMmI5MzRhODFjMTk4NjZjNTc1IiwidXNlcl9pZCI6IjEwIn0.ODrG1ToKz4sx4jPA6Aki_ShuaW2IS2fOIdcJbO1dT0o
+}
+
+body:ws {
+  name: message 1
+  type: json
+  content: '''
+    {
+      "type": "text",
+      "conversation_id": 2,
+      "content": "What would you like to order sir"
+    }
+  '''
+}

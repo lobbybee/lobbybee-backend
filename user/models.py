@@ -19,10 +19,10 @@ class User(AbstractUser):
         ('Reception', 'Reception'),
         ('Housekeeping', 'Housekeeping'),
         ('Room Service', 'Room Service'),
-        ('Café', 'Café'),
+        ('Restaurant', 'Restaurant'),
         ('Management', 'Management'),
     ]
-    
+
     email = models.EmailField(unique=True)
     user_type = models.CharField(max_length=20, choices=USER_TYPES, null=True, blank=True)
     phone_number = models.CharField(max_length=15, blank=True)
