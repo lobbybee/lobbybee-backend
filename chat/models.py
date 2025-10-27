@@ -74,6 +74,8 @@ class Message(models.Model):
         ('text', 'Text'),
         ('image', 'Image'),
         ('document', 'Document'),
+        ('video', 'Video'),
+        ('audio', 'Audio'),
         ('system', 'System'),
     ]
 

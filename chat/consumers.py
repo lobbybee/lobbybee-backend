@@ -6,6 +6,7 @@ from django.core.exceptions import ObjectDoesNotExist
 from django.utils import timezone
 from .models import Conversation, Message, ConversationParticipant
 from .utils.phone_utils import normalize_phone_number, get_guest_group_name
+from .utils.whatsapp_utils import send_whatsapp_message_with_media, send_whatsapp_media_with_link
 import logging
 
 User = get_user_model()
@@ -117,6 +118,8 @@ class ChatConsumer(AsyncWebsocketConsumer):
 
             if message_type == 'text':
                 await self.handle_text_message(data)
+            elif message_type == 'media':
+                await self.handle_media_message(data)
             elif message_type == 'mark_read':
                 await self.handle_mark_read(data)
             elif message_type == 'typing':
@@ -167,6 +170,10 @@ class ChatConsumer(AsyncWebsocketConsumer):
         # Serialize message
         message_data = await self.serialize_message(message)
 
+        # Send WhatsApp message for 'service' conversation types
+        if conversation.conversation_type == 'service':
+            await self.send_whatsapp_message(conversation, content, 'text')
+
         # Broadcast to relevant department group based on conversation department
         conversation_department = message_data.get('department_name', conversation.department.lower())
         relevant_group = f"department_{conversation_department}"
@@ -209,15 +216,133 @@ class ChatConsumer(AsyncWebsocketConsumer):
             }
         )
 
+        # Send acknowledgment to the sender
+        await self.send_acknowledgment(message_data, 'received')
+
+    async def handle_media_message(self, data):
+        """Handle media message from staff"""
+        conversation_id = data.get('conversation_id')
+        file_url = data.get('file_url')
+        filename = data.get('filename')
+        file_type = data.get('file_type')
+        caption = data.get('caption', '')
+
+        if not conversation_id:
+            await self.send_error('Conversation ID is required for media messages')
+            return
+
+        if not file_url:
+            await self.send_error('File URL is required for media messages')
+            return
+
+        if not filename:
+            await self.send_error('Filename is required for media messages')
+            return
+
+        if not file_type:
+            await self.send_error('File type is required for media messages')
+            return
+
+        # Validate conversation and permissions
+        conversation = await self.get_conversation(conversation_id)
+        if not conversation:
+            await self.send_error('Conversation not found')
+            return
+
+        if not await self.validate_conversation_access(conversation):
+            await self.send_error('Access denied to this conversation')
+            return
+
+        # Validate message type
+        valid_types = ['image', 'document', 'video', 'audio']
+        if file_type not in valid_types:
+            await self.send_error(f'Invalid file type. Must be one of: {valid_types}')
+            return
+
+        # Create message with media file from URL
+        message_content = caption or filename
+        message = await self.create_media_message(conversation, message_content, file_type, file_url, filename)
+
+        # Add user as participant if not already
+        await self.add_participant(conversation)
+
+        # Serialize message
+        message_data = await self.serialize_message(message)
+
+        # Send WhatsApp message for 'service' conversation types using direct link
+        if conversation.conversation_type == 'service':
+            await self.send_whatsapp_media_with_link(conversation, message_content, file_type, file_url, filename)
+
+        # Broadcast to relevant department group based on conversation department
+        conversation_department = message_data.get('department_name', conversation.department.lower())
+        relevant_group = f"department_{conversation_department}"
+            
+        await self.channel_layer.group_send(
+            relevant_group,
+            {
+                'type': 'chat_message',
+                'message': message_data
+            }
+        )
+
+        # Also send conversation update notification to department members
+        # who are not subscribed to this specific conversation
+        await self.channel_layer.group_send(
+            relevant_group,
+            {
+                'type': 'conversation_notification',
+                'notification': {
+                    'type': 'new_message',
+                    'data': {
+                        'conversation_id': conversation_id,
+                        'guest_name': message_data['guest_info']['name'],
+                        'department': conversation_department,
+                        'last_message_preview': f"[{file_type.upper()}] {filename[:30]}",
+                        'last_message_at': message_data['created_at'],
+                        'message_from': message_data['sender_name']
+                    }
+                }
+            }
+        )
+
+        # Broadcast to guest group (use normalized number for consistency)
+        guest_group_name = get_guest_group_name(conversation.guest.whatsapp_number)
+        await self.channel_layer.group_send(
+            guest_group_name,
+            {
+                'type': 'chat_message',
+                'message': message_data
+            }
+        )
+
+        # Send acknowledgment to the sender
+        await self.send_acknowledgment(message_data, 'received')
+
     async def handle_mark_read(self, data):
         """Handle mark as read request"""
         conversation_id = data.get('conversation_id')
         if not conversation_id:
+            await self.send_error('Conversation ID is required for mark_read')
             return
 
         conversation = await self.get_conversation(conversation_id)
-        if conversation and await self.validate_conversation_access(conversation):
-            await self.mark_conversation_read(conversation)
+        if not conversation:
+            await self.send_error('Conversation not found')
+            return
+
+        if not await self.validate_conversation_access(conversation):
+            await self.send_error('Access denied to this conversation')
+            return
+
+        await self.mark_conversation_read(conversation)
+        
+        # Send acknowledgment for successful mark as read
+        await self.send(text_data=json.dumps({
+            'type': 'acknowledgment',
+            'status': 'marked_read',
+            'conversation_id': conversation_id,
+            'timestamp': timezone.now().isoformat()
+        }))
 
     async def handle_typing_indicator(self, data):
         """Handle typing indicator"""
@@ -293,6 +418,16 @@ class ChatConsumer(AsyncWebsocketConsumer):
             'message': error_message
         }))
 
+    async def send_acknowledgment(self, message_data, status='received'):
+        """Send acknowledgment message to client"""
+        await self.send(text_data=json.dumps({
+            'type': 'acknowledgment',
+            'status': status,
+            'message_id': message_data['id'],
+            'timestamp': message_data['created_at'],
+            'conversation_id': message_data['conversation_id']
+        }))
+
     async def handle_subscribe_conversation(self, data):
         """Handle subscription to a specific conversation"""
         conversation_id = data.get('conversation_id')
@@ -316,13 +451,12 @@ class ChatConsumer(AsyncWebsocketConsumer):
             self.channel_name
         )
 
-        # Send confirmation
+        # Send acknowledgment for successful subscription
         await self.send(text_data=json.dumps({
-            'type': 'subscribed',
-            'data': {
-                'conversation_id': conversation_id,
-                'message': 'Successfully subscribed to conversation'
-            }
+            'type': 'acknowledgment',
+            'status': 'subscribed',
+            'conversation_id': conversation_id,
+            'timestamp': timezone.now().isoformat()
         }))
 
     async def handle_unsubscribe_conversation(self, data):
@@ -338,13 +472,12 @@ class ChatConsumer(AsyncWebsocketConsumer):
             self.channel_name
         )
 
-        # Send confirmation
+        # Send acknowledgment for successful unsubscription
         await self.send(text_data=json.dumps({
-            'type': 'unsubscribed',
-            'data': {
-                'conversation_id': conversation_id,
-                'message': 'Successfully unsubscribed from conversation'
-            }
+            'type': 'acknowledgment',
+            'status': 'unsubscribed',
+            'conversation_id': conversation_id,
+            'timestamp': timezone.now().isoformat()
         }))
 
     async def handle_close_conversation(self, data):
@@ -383,14 +516,13 @@ class ChatConsumer(AsyncWebsocketConsumer):
                     }
                 }
             )
-
-            # Send confirmation to the user who closed it
+            
+            # Send acknowledgment to the user who closed the conversation
             await self.send(text_data=json.dumps({
-                'type': 'conversation_closed',
-                'data': {
-                    'conversation_id': conversation_id,
-                    'message': 'Conversation closed successfully'
-                }
+                'type': 'acknowledgment',
+                'status': 'conversation_closed',
+                'conversation_id': conversation_id,
+                'timestamp': timezone.now().isoformat()
             }))
         else:
             await self.send_error('Failed to close conversation')
@@ -429,10 +561,26 @@ class ChatConsumer(AsyncWebsocketConsumer):
             message_type=message_type,
             content=content
         )
-
+        
         # Update conversation's last message
         conversation.update_last_message(content)
+        return message
 
+    @database_sync_to_async
+    def create_media_message(self, conversation, content, message_type, file_url, filename):
+        """Create a new media message with file attachment using direct URL"""
+        message = Message.objects.create(
+            conversation=conversation,
+            sender_type='staff',
+            sender=self.user,
+            message_type=message_type,
+            content=content,
+            media_url=file_url,
+            media_filename=filename
+        )
+        
+        # Update conversation's last message
+        conversation.update_last_message(content)
         return message
 
     @database_sync_to_async
@@ -497,6 +645,91 @@ class ChatConsumer(AsyncWebsocketConsumer):
         except Exception:
             return False
 
+    async def send_whatsapp_message(self, conversation, content, message_type='text'):
+        """Send WhatsApp message to guest for 'service' conversation types"""
+        try:
+            # Only send WhatsApp messages for 'service' conversation types
+            if conversation.conversation_type != 'service':
+                logger.info(f"Skipping WhatsApp message for conversation type: {conversation.conversation_type}")
+                return True
+
+            # Get guest's WhatsApp number
+            guest_whatsapp_number = conversation.guest.whatsapp_number
+            if not guest_whatsapp_number:
+                logger.warning(f"Guest {conversation.guest.id} has no WhatsApp number")
+                return False
+
+            # Send WhatsApp message using the utility function
+            logger.info(f"Sending WhatsApp message to {guest_whatsapp_number} for conversation {conversation.id}")
+            
+            # Run the sync function in a thread to avoid blocking the async consumer
+            import asyncio
+            loop = asyncio.get_event_loop()
+            
+            def send_message():
+                try:
+                    response = send_whatsapp_message_with_media(
+                        recipient_number=guest_whatsapp_number,
+                        message_content=content,
+                        media_id=None,
+                        media_file=None
+                    )
+                    logger.info(f"WhatsApp message sent successfully: {response}")
+                    return True
+                except Exception as e:
+                    logger.error(f"Failed to send WhatsApp message: {e}")
+                    return False
+            
+            result = await loop.run_in_executor(None, send_message)
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error in send_whatsapp_message: {e}", exc_info=True)
+            return False
+
+    async def send_whatsapp_media_with_link(self, conversation, content, media_type, media_url, filename=None):
+        """Send WhatsApp media message to guest using direct link"""
+        try:
+            # Only send WhatsApp messages for 'service' conversation types
+            if conversation.conversation_type != 'service':
+                logger.info(f"Skipping WhatsApp media message for conversation type: {conversation.conversation_type}")
+                return True
+
+            # Get guest's WhatsApp number
+            guest_whatsapp_number = conversation.guest.whatsapp_number
+            if not guest_whatsapp_number:
+                logger.warning(f"Guest {conversation.guest.id} has no WhatsApp number")
+                return False
+
+            # Send WhatsApp media message using the utility function
+            logger.info(f"Sending WhatsApp media message to {guest_whatsapp_number} for conversation {conversation.id}")
+            
+            # Run the sync function in a thread to avoid blocking the async consumer
+            import asyncio
+            loop = asyncio.get_event_loop()
+            
+            def send_media():
+                try:
+                    response = send_whatsapp_media_with_link(
+                        recipient_number=guest_whatsapp_number,
+                        media_url=media_url,
+                        media_type=media_type,
+                        caption=content,
+                        filename=filename
+                    )
+                    logger.info(f"WhatsApp media message sent successfully: {response}")
+                    return True
+                except Exception as e:
+                    logger.error(f"Failed to send WhatsApp media message: {e}")
+                    return False
+            
+            result = await loop.run_in_executor(None, send_media)
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error in send_whatsapp_media_with_link: {e}", exc_info=True)
+            return False
+
     @database_sync_to_async
     def notify_new_conversation(self, conversation):
         """Notify department members about new conversation"""
@@ -511,10 +744,8 @@ class ChatConsumer(AsyncWebsocketConsumer):
             'last_message_at': conversation.last_message_at.isoformat() if conversation.last_message_at else None
         }
         
-        # Send to relevant department group
-        relevant_group = f"department_{conversation.department.lower()}"
-        
         # This would be called from outside the consumer when a new conversation is created
+        # The actual group sending happens in the calling code
         return conversation_data
 
 

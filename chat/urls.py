@@ -21,4 +21,7 @@ urlpatterns = [
     
     # Guest conversation type lookup
     path('guest/conversation-type/', views.GuestConversationTypeView.as_view(), name='guest-conversation-type'),
+    
+    # Media upload
+    path('upload-media/', views.ChatMediaUploadView.as_view(), name='upload-media'),
 ]

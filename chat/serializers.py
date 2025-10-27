@@ -152,6 +152,7 @@ class GuestMessageSerializer(serializers.Serializer):
     media_file = serializers.FileField(required=False, allow_null=True)
     media_url = serializers.URLField(required=False, allow_null=True)
     media_filename = serializers.CharField(required=False, allow_null=True, max_length=255)
+    media_id = serializers.CharField(required=False, allow_null=True, max_length=100, help_text="WhatsApp media ID for downloading media from WhatsApp API")
     department = serializers.ChoiceField(choices=[
         ('Reception', 'Reception'),
         ('Housekeeping', 'Housekeeping'),
@@ -180,10 +181,11 @@ class GuestMessageSerializer(serializers.Serializer):
         message_type = data.get('message_type', 'text')
         media_file = data.get('media_file')
         media_url = data.get('media_url')
+        media_id = data.get('media_id')
         
-        if message_type in ['image', 'document'] and not media_file and not media_url:
+        if message_type in ['image', 'document', 'video', 'audio'] and not media_file and not media_url and not media_id:
             raise serializers.ValidationError(
-                f"Media file is required for {message_type} messages"
+                f"Media file or media_id is required for {message_type} messages"
             )
         
         if media_file and message_type == 'text':
