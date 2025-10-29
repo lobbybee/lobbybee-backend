@@ -23,18 +23,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY poetry.lock pyproject.toml ./
 
 # Install dependencies using poetry
-# --only=main: Install only main dependencies, not dev dependencies
 RUN poetry install --no-root --only=main
 
 # Copy project files
 COPY . .
 
-# Collect static files (only if DJANGO_SETTINGS_MODULE is set or settings configured)
+# Disable S3 and collect static files locally during build
+ENV DISABLE_S3_DURING_BUILD=true
+ENV DJANGO_SETTINGS_MODULE=lobbybee.settings.production
 RUN python manage.py collectstatic --noinput
+ENV DISABLE_S3_DURING_BUILD=
 
 # Create non-root user for security
 RUN useradd --create-home --shell /bin/bash app \
     && chown -R app:app /app
+
 USER app
 
 # Expose port
