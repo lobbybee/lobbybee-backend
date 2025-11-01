@@ -8,7 +8,7 @@ from rest_framework.pagination import PageNumberPagination
 import logging
 from django.conf import settings
 
-from .models import Hotel, HotelDocument, Room, RoomCategory
+from .models import Hotel, HotelDocument, Room, RoomCategory, PaymentQRCode, WiFiCredential
 from .serializers import (
     HotelSerializer,
     UserHotelSerializer,
@@ -17,8 +17,11 @@ from .serializers import (
     RoomSerializer,
     RoomStatusUpdateSerializer,
     BulkCreateRoomSerializer,
+    PaymentQRCodeSerializer,
+    WiFiCredentialSerializer,
+    RoomWiFiCredentialSerializer,
 )
-from .permissions import IsHotelAdmin, IsSameHotelUser, CanManagePlatform, IsHotelStaffReadOnlyOrAdmin, RoomPermissions
+from .permissions import IsHotelAdmin, IsSameHotelUser, CanManagePlatform, IsHotelStaffReadOnlyOrAdmin, RoomPermissions, CanManagePaymentQRCode
 from django_filters.rest_framework import DjangoFilterBackend
 from .filters import RoomFilter
 
@@ -235,6 +238,155 @@ class RoomViewSet(viewsets.ModelViewSet):
         Get all floors for the hotel.
         """
         floors = Room.objects.get_floors_for_hotel(request.user.hotel)
+        return Response({"floors": list(floors)}, status=status.HTTP_200_OK)
+
+
+class PaymentQRCodeViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet for managing Payment QR Codes.
+    
+    - Hotel Admin and Manager: Full CRUD access
+    - Receptionist: Read-only access (can only view active QR codes)
+    """
+    serializer_class = PaymentQRCodeSerializer
+    permission_classes = [permissions.IsAuthenticated, CanManagePaymentQRCode]
+    pagination_class = StandardResultsSetPagination
+    filterset_fields = ['active']
+    ordering_fields = ['name', 'created_at']
+    search_fields = ['name', 'upi_id']
+
+    def get_queryset(self):
+        """
+        Filter QR codes based on user role and hotel.
+        Receptionists can only see active QR codes.
+        Admins and Managers can see all QR codes (active and inactive).
+        """
+        queryset = PaymentQRCode.objects.filter(hotel=self.request.user.hotel)
+        
+        # Receptionists can only see active QR codes
+        if self.request.user.user_type == 'receptionist':
+            queryset = queryset.filter(active=True)
+            
+        return queryset.order_by('-created_at')
+
+    def perform_create(self, serializer):
+        """
+        Automatically assign the hotel from the authenticated user.
+        Only accessible by hotel admin and manager.
+        """
+        serializer.save(hotel=self.request.user.hotel)
+
+    @action(detail=True, methods=['post'], url_path='toggle-active')
+    def toggle_active(self, request, pk=None):
+        """
+        Toggle the active status of a QR code.
+        Only accessible by hotel admin and manager.
+        """
+        # Check if user has permission (admin or manager)
+        if request.user.user_type == 'receptionist':
+            return Response(
+                {"detail": "You do not have permission to perform this action."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        qr_code = self.get_object()
+        qr_code.active = not qr_code.active
+        qr_code.save(update_fields=['active'])
+        status_text = 'activated' if qr_code.active else 'deactivated'
+        return Response(
+            {"status": f"QR code {status_text}"},
+            status=status.HTTP_200_OK
+        )
+
+
+class WiFiCredentialViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet for managing WiFi credentials.
+    
+    - Hotel Admin and Manager: Full CRUD access
+    - Receptionist: Read-only access
+    """
+    serializer_class = WiFiCredentialSerializer
+    permission_classes = [permissions.IsAuthenticated, IsSameHotelUser, IsHotelStaffReadOnlyOrAdmin]
+    pagination_class = StandardResultsSetPagination
+    filterset_fields = ['floor', 'room_category', 'is_active']
+    ordering_fields = ['floor', 'room_category', 'created_at']
+    search_fields = ['network_name']
+
+    def get_queryset(self):
+        """
+        Filter WiFi credentials based on user hotel.
+        """
+        return WiFiCredential.objects.filter(hotel=self.request.user.hotel).select_related('room_category').order_by('floor', 'room_category__name')
+
+    def perform_create(self, serializer):
+        """
+        Automatically assign the hotel from the authenticated user.
+        """
+        serializer.save(hotel=self.request.user.hotel)
+
+    @action(detail=True, methods=['post'], url_path='toggle-active')
+    def toggle_active(self, request, pk=None):
+        """
+        Toggle the active status of WiFi credentials.
+        Only accessible by hotel admin and manager.
+        """
+        # Check if user has permission (admin or manager)
+        if request.user.user_type == 'receptionist':
+            return Response(
+                {"detail": "You do not have permission to perform this action."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        wifi_credential = self.get_object()
+        wifi_credential.is_active = not wifi_credential.is_active
+        wifi_credential.save(update_fields=['is_active'])
+        status_text = 'activated' if wifi_credential.is_active else 'deactivated'
+        return Response(
+            {"status": f"WiFi credentials {status_text}"},
+            status=status.HTTP_200_OK
+        )
+
+    @action(detail=False, methods=['get'], url_path='by-room/(?P<room_id>[^/.]+)')
+    def get_by_room(self, request, room_id=None):
+        """
+        Get WiFi credentials for a specific room.
+        Returns the most specific credentials available for the room.
+        """
+        try:
+            room = Room.objects.get(id=room_id, hotel=request.user.hotel)
+        except Room.DoesNotExist:
+            return Response(
+                {"detail": "Room not found."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        serializer = RoomWiFiCredentialSerializer(room)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    @action(detail=False, methods=['get'], url_path='by-floor/(?P<floor>[^/.]+)')
+    def get_by_floor(self, request, floor=None):
+        """
+        Get all WiFi credentials for a specific floor.
+        """
+        try:
+            floor = int(floor)
+        except ValueError:
+            return Response(
+                {"detail": "Invalid floor number."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        credentials = self.get_queryset().filter(floor=floor)
+        serializer = self.get_serializer(credentials, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    @action(detail=False, methods=['get'], url_path='available-floors')
+    def get_available_floors(self, request):
+        """
+        Get all floors that have WiFi credentials configured.
+        """
+        floors = self.get_queryset().values_list('floor', flat=True).distinct().order_by('floor')
         return Response({"floors": list(floors)}, status=status.HTTP_200_OK)
 
 

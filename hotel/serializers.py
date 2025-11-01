@@ -1,5 +1,6 @@
 from rest_framework import serializers
-from .models import Hotel, HotelDocument, Room, RoomCategory
+from django.db import models
+from .models import Hotel, HotelDocument, Room, RoomCategory, PaymentQRCode, WiFiCredential
 from user.serializers import UserSerializer
 
 class HotelDocumentSerializer(serializers.ModelSerializer):
@@ -27,7 +28,7 @@ class HotelSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'name', 'description', 'address', 'city', 'state', 'country', 
             'pincode', 'phone', 'email', 'latitude', 
-            'longitude', 'qr_code_url', 'unique_qr_code', 'wifi_password', 
+            'longitude', 'qr_code_url', 'unique_qr_code', 
             'check_in_time', 'time_zone', 'status', 'is_verified', 'is_active', 
             'is_demo', 'verification_notes', 'registration_date', 'verified_at', 
             'updated_at', 'admin', 'documents'
@@ -97,3 +98,100 @@ class BulkCreateRoomSerializer(serializers.Serializer):
         except RoomCategory.DoesNotExist:
             raise serializers.ValidationError("RoomCategory not found for this hotel.")
         return category
+
+
+class PaymentQRCodeSerializer(serializers.ModelSerializer):
+    image_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = PaymentQRCode
+        fields = ('id', 'hotel', 'name', 'image', 'image_url', 'upi_id', 'active', 'created_at', 'updated_at')
+        read_only_fields = ('hotel', 'created_at', 'updated_at')
+        extra_kwargs = {
+            'image': {'write_only': True}
+        }
+
+    def get_image_url(self, obj):
+        """
+        Generate the full URL for the QR code image.
+        Compatible with both local storage and S3.
+        """
+        return obj.get_image_url()
+
+    def create(self, validated_data):
+        request = self.context.get('request')
+        validated_data['hotel'] = request.user.hotel
+        return super().create(validated_data)
+
+
+class WiFiCredentialSerializer(serializers.ModelSerializer):
+    room_category_name = serializers.CharField(source='room_category.name', read_only=True)
+
+    class Meta:
+        model = WiFiCredential
+        fields = (
+            'id', 'hotel', 'floor', 'room_category', 'room_category_name', 
+            'network_name', 'password', 'is_active', 'created_at', 'updated_at'
+        )
+        read_only_fields = ('hotel', 'created_at', 'updated_at')
+
+    def create(self, validated_data):
+        request = self.context.get('request')
+        validated_data['hotel'] = request.user.hotel
+        return super().create(validated_data)
+
+    def validate(self, data):
+        """
+        Validate that no duplicate credentials exist for the same floor and room category.
+        """
+        request = self.context.get('request')
+        hotel = request.user.hotel
+        
+        existing = WiFiCredential.objects.filter(
+            hotel=hotel,
+            floor=data['floor'],
+            room_category=data.get('room_category')
+        ).exclude(id=self.instance.id if self.instance else None)
+        
+        if existing.exists():
+            if data.get('room_category'):
+                raise serializers.ValidationError(
+                    f"WiFi credentials already exist for floor {data['floor']} and room category {data['room_category'].name}"
+                )
+            else:
+                raise serializers.ValidationError(
+                    f"WiFi credentials already exist for floor {data['floor']} (all categories)"
+                )
+        
+        return data
+
+
+class RoomWiFiCredentialSerializer(serializers.ModelSerializer):
+    """
+    Serializer to get WiFi credentials for a specific room.
+    Returns the most specific credentials available for the room.
+    """
+    wifi_credentials = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Room
+        fields = ('id', 'room_number', 'floor', 'category', 'wifi_credentials')
+
+    def get_wifi_credentials(self, obj):
+        # Get the most specific WiFi credentials for this room
+        credential = WiFiCredential.objects.filter(
+            hotel=obj.hotel,
+            floor=obj.floor,
+            is_active=True
+        ).filter(
+            models.Q(room_category=obj.category) | models.Q(room_category__isnull=True)
+        ).order_by('-room_category__id').first()  # Prefer room-specific credentials
+
+        if credential:
+            return {
+                'network_name': credential.network_name,
+                'password': credential.password,
+                'floor': credential.floor,
+                'room_category': credential.room_category.name if credential.room_category else 'All categories'
+            }
+        return None

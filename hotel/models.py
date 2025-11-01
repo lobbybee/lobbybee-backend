@@ -36,7 +36,6 @@ class Hotel(models.Model):
     unique_qr_code = models.CharField(max_length=50, unique=True, blank=True)
 
     # Settings
-    wifi_password = models.CharField(max_length=100, blank=True)
     check_in_time = models.TimeField(default='14:00')
     time_zone = models.CharField(max_length=50, default='UTC')
 
@@ -189,3 +188,88 @@ class Room(models.Model):
 
     def get_status_display_name(self):
         return dict(self.ROOM_STATUS).get(self.status, self.status)
+
+
+# Payment QR Code Management
+class PaymentQRCode(models.Model):
+    """
+    Stores payment QR codes for hotels, which can be managed by hotel admin or manager.
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    hotel = models.ForeignKey(Hotel, on_delete=models.CASCADE, related_name='payment_qr_codes')
+    name = models.CharField(max_length=100, help_text="Name/Description of the QR code (e.g., 'UPI Payment', 'PhonePe', 'Google Pay')")
+    image = models.FileField(upload_to=upload_to_hotel_documents, help_text="QR code image file")
+    upi_id = models.CharField(max_length=100, help_text="UPI ID associated with this QR code")
+    active = models.BooleanField(default=True, help_text="Whether this QR code is currently active for use")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['hotel', 'active']),
+        ]
+
+    def __str__(self):
+        return f"{self.name} - {self.hotel.name}"
+
+    def get_image_url(self):
+        if self.image:
+            return self.image.url
+        return None
+
+
+# WiFi Credentials Management
+class WiFiCredential(models.Model):
+    """
+    Stores WiFi credentials for different floors and room categories within a hotel.
+    Allows each floor and room category combination to have different WiFi passwords.
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    hotel = models.ForeignKey(Hotel, on_delete=models.CASCADE, related_name='wifi_credentials')
+    floor = models.IntegerField(help_text="Floor number for these WiFi credentials")
+    room_category = models.ForeignKey(RoomCategory, on_delete=models.CASCADE, related_name='wifi_credentials', 
+                                    null=True, blank=True, help_text="Room category for these credentials. If null, applies to all categories on this floor.")
+    network_name = models.CharField(max_length=100, help_text="WiFi network name (SSID)")
+    password = models.CharField(max_length=100, help_text="WiFi password for this floor/category")
+    is_active = models.BooleanField(default=True, help_text="Whether these WiFi credentials are currently active")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ['hotel', 'floor', 'room_category']
+        indexes = [
+            models.Index(fields=['hotel', 'floor']),
+            models.Index(fields=['hotel', 'room_category']),
+            models.Index(fields=['hotel', 'is_active']),
+        ]
+
+    def __str__(self):
+        if self.room_category:
+            return f"WiFi for {self.hotel.name} - Floor {self.floor} - {self.room_category.name}"
+        return f"WiFi for {self.hotel.name} - Floor {self.floor} (All categories)"
+
+    def get_credentials_for_room(self, room):
+        """
+        Get the most specific WiFi credentials for a given room.
+        Prefers room-specific credentials over floor-wide credentials.
+        """
+        # Try to find credentials for this specific room category and floor
+        specific_creds = WiFiCredential.objects.filter(
+            hotel=self.hotel,
+            floor=room.floor,
+            room_category=room.category,
+            is_active=True
+        ).first()
+        
+        if specific_creds:
+            return specific_creds
+        
+        # Fall back to floor-wide credentials (room_category is null)
+        floor_creds = WiFiCredential.objects.filter(
+            hotel=self.hotel,
+            floor=room.floor,
+            room_category__isnull=True,
+            is_active=True
+        ).first()
+        
+        return floor_creds

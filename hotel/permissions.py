@@ -99,3 +99,35 @@ class IsHotelStaff(BasePermission):
             request.user.user_type in ['hotel_admin', 'manager', 'receptionist'] and
             request.user.hotel is not None
         )
+
+class CanManagePaymentQRCode(BasePermission):
+    """
+    Allows hotel admin and manager to manage payment QR codes.
+    Receptionists can only view active QR codes (list and retrieve).
+    """
+    def has_permission(self, request, view):
+        """
+        All hotel staff (admin, manager, receptionist) can access list and retrieve views.
+        Only admin and manager can create, update, delete.
+        """
+        if not (request.user.is_authenticated and request.user.hotel is not None):
+            return False
+            
+        # Allow all hotel staff to view lists and retrieve details
+        if request.method in permissions.SAFE_METHODS:
+            return request.user.user_type in ['hotel_admin', 'manager', 'receptionist']
+        
+        # Only admin and manager can modify
+        return request.user.user_type in ['hotel_admin', 'manager']
+    
+    def has_object_permission(self, request, view, obj):
+        # Ensure user belongs to the same hotel
+        if obj.hotel != request.user.hotel:
+            return False
+        
+        # Receptionists can only view, not modify
+        if request.user.user_type == 'receptionist':
+            return request.method in permissions.SAFE_METHODS
+        
+        # Admin and Manager can do everything
+        return True

@@ -1,7 +1,7 @@
 import io
 from PIL import Image
 from pyzbar.pyzbar import decode
-from pyaadhaar.decode import AadhaarSecureQR
+from pyaadhaar.decode import AadhaarSecureQr
 
 def decode_aadhaar_qr_from_image(image_bytes: bytes) -> dict:
     """
@@ -26,8 +26,18 @@ def decode_aadhaar_qr_from_image(image_bytes: bytes) -> dict:
                 qr_data = qr.data.decode("utf-8")
                 # Aadhaar QR data is numeric
                 if qr_data.isdigit():
-                    aadhaar = AadhaarSecureQR(int(qr_data))
-                    return aadhaar.decoded_data()
+                    aadhaar = AadhaarSecureQr(int(qr_data))
+        
+        # Use the correct method name
+                    if hasattr(aadhaar, 'decodeddata'):
+                        return aadhaar.decodeddata()
+                    elif hasattr(aadhaar, 'decoded_data'):
+                        return aadhaar.decoded_data()
+                    else:
+                        # Log available methods for debugging
+                        available_methods = [method for method in dir(aadhaar) if not method.startswith('_')]
+                        print(f"Available AADHAR methods: {available_methods}")
+                        return {}
             except (UnicodeDecodeError, ValueError):
                 # Continue if the QR code is not valid Aadhaar data
                 continue

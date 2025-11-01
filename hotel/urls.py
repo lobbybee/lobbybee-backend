@@ -8,12 +8,16 @@ from .views import (
     RoomCategoryViewSet,
     RoomViewSet,
     AdminHotelViewSet,
+    PaymentQRCodeViewSet,
+    WiFiCredentialViewSet,
 )
 
 router = DefaultRouter()
 router.register(r'hotels', HotelViewSet, basename='hotel')
 router.register(r'room-categories', RoomCategoryViewSet, basename='room-category')
 router.register(r'rooms', RoomViewSet, basename='room')
+router.register(r'payment-qr-codes', PaymentQRCodeViewSet, basename='payment-qr-code')
+router.register(r'wifi-credentials', WiFiCredentialViewSet, basename='wifi-credential')
 
 
 admin_router = DefaultRouter()
