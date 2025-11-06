@@ -38,6 +38,20 @@ class Conversation(models.Model):
     # Track the last message and activity
     last_message_at = models.DateTimeField(null=True, blank=True)
     last_message_preview = models.TextField(max_length=255, blank=True)
+    
+    # Request fulfillment tracking
+    is_request_fulfilled = models.BooleanField(
+        default=False, 
+        help_text="Whether the guest's request was successfully fulfilled"
+    )
+    fulfilled_at = models.DateTimeField(
+        null=True, blank=True,
+        help_text="When the request was marked as fulfilled"
+    )
+    fulfillment_notes = models.TextField(
+        blank=True, null=True,
+        help_text="Notes about request fulfillment status"
+    )
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -59,6 +73,25 @@ class Conversation(models.Model):
         self.last_message_at = timezone.now()
         self.last_message_preview = message_content[:255]
         self.save(update_fields=['last_message_at', 'last_message_preview'])
+
+    def mark_fulfilled(self, fulfilled=True, notes=None):
+        """Mark conversation request as fulfilled or unfulfilled"""
+        self.is_request_fulfilled = fulfilled
+        if fulfilled:
+            self.fulfilled_at = timezone.now()
+        else:
+            self.fulfilled_at = None
+        self.fulfillment_notes = notes
+        self.save(update_fields=['is_request_fulfilled', 'fulfilled_at', 'fulfillment_notes'])
+
+    def get_fulfillment_status_display(self):
+        """Get display text for fulfillment status"""
+        if self.is_request_fulfilled:
+            return "Fulfilled"
+        elif self.fulfilled_at:
+            return "Not Fulfilled"
+        else:
+            return "Pending"
 
 
 class Message(models.Model):

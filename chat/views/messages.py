@@ -3,7 +3,7 @@ Message-related views for handling chat messages.
 """
 
 from rest_framework.permissions import IsAuthenticated
-from . import (
+from .base import (
     APIView, status, Response, logger, User, transaction, timezone,
     MessageSerializer, MessageReadSerializer, Conversation, 
     Message, ConversationParticipant, async_to_sync, get_channel_layer

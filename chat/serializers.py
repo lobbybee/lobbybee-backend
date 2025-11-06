@@ -18,9 +18,10 @@ class ConversationSerializer(serializers.ModelSerializer):
             'id', 'guest', 'hotel', 'department', 'status',
             'guest_info', 'hotel_name',
             'last_message_at', 'last_message_preview',
-            'unread_count', 'last_message', 'created_at', 'updated_at'
+            'unread_count', 'last_message', 'created_at', 'updated_at',
+            'is_request_fulfilled', 'fulfilled_at', 'fulfillment_notes'
         ]
-        read_only_fields = ['created_at', 'updated_at', 'last_message_at', 'last_message_preview']
+        read_only_fields = ['created_at', 'updated_at', 'last_message_at', 'last_message_preview', 'fulfilled_at']
 
     def get_unread_count(self, obj):
         """Get unread message count for current user"""
@@ -66,6 +67,10 @@ class ConversationSerializer(serializers.ModelSerializer):
         if last_message:
             return MessageSerializer(last_message, context=self.context).data
         return None
+
+    def get_fulfillment_status_display(self, obj):
+        """Get display text for fulfillment status"""
+        return obj.get_fulfillment_status_display()
 
 
 class MessageSerializer(serializers.ModelSerializer):
@@ -334,3 +339,48 @@ class TemplateMessageSerializer(serializers.Serializer):
     template_id = serializers.IntegerField()
     context = serializers.JSONField(default=dict, help_text="Dictionary of variables to replace in template")
     message_type = serializers.CharField(default='text')
+
+
+class FlowMessageSerializer(serializers.Serializer):
+    """
+    Minimal serializer for flow webhook processing.
+    Only includes essential fields needed for automated flow processing.
+    """
+    whatsapp_number = serializers.CharField(max_length=20, required=True)
+    message = serializers.CharField(required=True)
+    message_type = serializers.CharField(default='text')
+    media_file = serializers.FileField(required=False, allow_null=True)
+    media_url = serializers.URLField(required=False, allow_null=True)
+    media_filename = serializers.CharField(required=False, allow_null=True, max_length=255)
+    media_id = serializers.CharField(required=False, allow_null=True, max_length=100, 
+                                   help_text="WhatsApp media ID for downloading media from WhatsApp API")
+    flow_id = serializers.CharField(required=False, allow_null=True, max_length=100,
+                                   help_text="Unique flow identifier for continuing existing flows")
+    flow_type = serializers.CharField(required=False, allow_null=True, max_length=50,
+                                     help_text="Explicit flow type (checkin, general, etc.)")
+    previous_flow_message = serializers.JSONField(required=False, allow_null=True,
+                                                 help_text="Previous flow state for continuation")
+
+    def validate_whatsapp_number(self, value):
+        """Validate and normalize WhatsApp number format"""
+        normalized = normalize_phone_number(value)
+        if not normalized:
+            raise serializers.ValidationError("Invalid WhatsApp number format")
+        return normalized
+
+    def validate(self, data):
+        """Validate media file and message type consistency"""
+        message_type = data.get('message_type', 'text')
+        media_file = data.get('media_file')
+        media_url = data.get('media_url')
+        media_id = data.get('media_id')
+        
+        if message_type in ['image', 'document', 'video', 'audio'] and not media_file and not media_url and not media_id:
+            raise serializers.ValidationError(
+                f"Media file or media_id is required for {message_type} messages"
+            )
+        
+        if media_file and message_type == 'text':
+            data['message_type'] = 'image' if media_file.content_type.startswith('image/') else 'document'
+        
+        return data

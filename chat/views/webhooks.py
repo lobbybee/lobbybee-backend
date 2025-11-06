@@ -5,9 +5,12 @@ Webhook views for handling incoming messages from various sources.
 from .base import (
     views, status, response, AllowAny, User, transaction, timezone,
     async_to_sync, get_channel_layer, normalize_phone_number,
-    download_whatsapp_media, GuestMessageSerializer, Conversation, 
-    Message, Guest, Stay, logger, create_response
+    download_whatsapp_media, GuestMessageSerializer, FlowMessageSerializer, Conversation,
+    Message, Guest, Stay, logger, create_response, ContentFile
 )
+import uuid
+import time
+from hotel.models import Hotel
 
 
 class GuestWebhookView(views.APIView):
@@ -20,7 +23,7 @@ class GuestWebhookView(views.APIView):
         logger.info(f"GuestWebhookView: Received webhook request")
         logger.info(f"Request headers: {dict(request.headers)}")
         logger.info(f"Request body: {request.data}")
-        
+
         try:
             serializer = GuestMessageSerializer(data=request.data)
             if not serializer.is_valid():
@@ -37,28 +40,28 @@ class GuestWebhookView(views.APIView):
                     {'error': 'Invalid whatsapp number format'},
                     status.HTTP_400_BAD_REQUEST
                 )
-            
+
             message_content = serializer.validated_data['message']
             message_type = serializer.validated_data.get('message_type', 'text')
             media_url = serializer.validated_data.get('media_url')
             media_filename = serializer.validated_data.get('media_filename')
             conversation_id = serializer.validated_data.get('conversation_id')
             department_type = serializer.validated_data.get('department')
-            
+
             logger.info(f"GuestWebhookView: Parsed data - whatsapp_number={whatsapp_number}, message_type={message_type}, conversation_id={conversation_id}, department={department_type}")
-            
+
             # Handle WhatsApp media files from webhook
             media_id = request.data.get('media_id')  # WhatsApp media ID from webhook
             media_file = None
             logger.info(f"GuestWebhookView: Checking media - media_id={media_id}, message_type={message_type}")
-            
+
             if media_id and message_type in ['image', 'document', 'video', 'audio']:
                 try:
                     logger.info(f"GuestWebhookView: Attempting to download WhatsApp media {media_id} for message_type: {message_type}")
                     # Download media from WhatsApp
                     media_data = download_whatsapp_media(media_id)
                     logger.info(f"GuestWebhookView: Media download result: {media_data}")
-                    
+
                     if media_data and media_data.get('content'):
                         # Save the downloaded file to a ContentFile
                         media_file = ContentFile(media_data['content'], name=media_data['filename'])
@@ -79,7 +82,7 @@ class GuestWebhookView(views.APIView):
             elif message_type in ['image', 'document', 'video', 'audio'] and not media_id:
                 logger.warning(f"GuestWebhookView: Message type {message_type} but no media_id provided, falling back to text")
                 message_type = 'text'
-            
+
             logger.info(f"GuestWebhookView: Media processing complete - final message_type={message_type}, has_media_file={media_file is not None}")
 
             # Validate guest exists and has active stay
@@ -87,7 +90,7 @@ class GuestWebhookView(views.APIView):
                 logger.info(f"GuestWebhookView: Looking up guest with whatsapp_number: {whatsapp_number}")
                 guest = Guest.objects.get(whatsapp_number=whatsapp_number)
                 logger.info(f"GuestWebhookView: Found guest: {guest.id} - {guest.full_name}")
-                
+
                 active_stay = Stay.objects.filter(guest=guest, status='active').first()
                 if not active_stay:
                     logger.error(f"GuestWebhookView: Guest {guest.id} has no active stay")
@@ -109,7 +112,7 @@ class GuestWebhookView(views.APIView):
             # Always use 'service' as default conversation type
             conversation_type = 'service'
             logger.info(f"GuestWebhookView: Using conversation_type: {conversation_type}")
-            
+
             # Handle conversation lookup vs creation
             if conversation_id:
                 # Use existing conversation
@@ -156,7 +159,7 @@ class GuestWebhookView(views.APIView):
                         conversation_type=conversation_type,
                         status='active'
                     ).first()
-                    
+
                     if existing_conversation:
                         # Use existing conversation instead of creating new one
                         logger.info(f"GuestWebhookView: Using existing active conversation {existing_conversation.id}")
@@ -252,27 +255,28 @@ class GuestWebhookView(views.APIView):
 
 class FlowWebhookView(views.APIView):
     """
-    Webhook endpoint for processing non-service messages through flows
+    Simplified webhook endpoint for processing flow messages.
+    Handles:
+    1. Hotel validation flow (for /checkin-{hotel_id} commands) - SAVES messages
+    2. Check-in flow (if check-in keywords detected) - SAVES messages and media files
+    3. General response (for all other messages) - DOES NOT save messages
+    
+    Only saves messages that are part of flows or media files during flow processing.
     """
     permission_classes = [AllowAny]  # No authentication required for webhook
 
     def post(self, request):
         """
-        Process non-service messages through appropriate flows
-        
-        Handles:
-        - Check-in flow
-        - General conversation flow
-        - Demo flow
-        - Other custom flows
+        Process flow messages with simple logic:
+        - Check-in keywords → Check-in flow
+        - Everything else → General response with media saving
         """
         logger.info(f"FlowWebhookView: Received webhook request")
-        logger.info(f"Request headers: {dict(request.headers)}")
         logger.info(f"Request body: {request.data}")
-        
+
         try:
             # Validate incoming data
-            serializer = GuestMessageSerializer(data=request.data)
+            serializer = FlowMessageSerializer(data=request.data)
             if not serializer.is_valid():
                 logger.error(f"FlowWebhookView: Serializer validation failed: {serializer.errors}")
                 return create_response(
@@ -288,12 +292,11 @@ class FlowWebhookView(views.APIView):
                     {'error': 'Invalid whatsapp number format'},
                     status.HTTP_400_BAD_REQUEST
                 )
-            
+
             message_content = serializer.validated_data['message']
             message_type = serializer.validated_data.get('message_type', 'text')
-            media_url = serializer.validated_data.get('media_url')
-            media_filename = serializer.validated_data.get('media_filename')
-            
+            flow_id = serializer.validated_data.get('flow_id', f"flow_{uuid.uuid4().hex[:12]}_{int(time.time())}")
+
             logger.info(f"FlowWebhookView: Processing message from {whatsapp_number}: {message_content[:50]}...")
 
             # Validate guest exists
@@ -307,14 +310,11 @@ class FlowWebhookView(views.APIView):
                     status.HTTP_404_NOT_FOUND
                 )
 
-            # Determine flow type
-            flow_type = self._detect_flow_type(request.data, message_content, guest)
-            logger.info(f"FlowWebhookView: Detected flow type: {flow_type}")
-
-            # Handle media processing similar to GuestWebhookView
+            # Handle media processing
             media_id = request.data.get('media_id')
             media_file = None
-            
+            media_filename = None
+
             if media_id and message_type in ['image', 'document', 'video', 'audio']:
                 try:
                     media_data = download_whatsapp_media(media_id)
@@ -327,16 +327,49 @@ class FlowWebhookView(views.APIView):
                     logger.error(f"FlowWebhookView: Failed to download media {media_id}: {e}")
                     message_type = 'text'
 
-            # Process through appropriate flow handler
-            flow_result = self._process_flow(
-                flow_type=flow_type,
-                guest=guest,
-                message_content=message_content,
-                message_type=message_type,
-                media_file=media_file,
-                media_filename=media_filename,
-                request_data=request.data
-            )
+            # Check flow type based on message content
+            message_lower = message_content.lower().strip()
+            
+            # Check for hotel ID validation command: /checkin-{hotel_id}
+            if message_lower.startswith('/checkin-'):
+                # Process hotel validation flow
+                logger.info(f"FlowWebhookView: Processing hotel validation flow")
+                flow_result = self._process_hotel_validation_flow(
+                    flow_id=flow_id,
+                    guest=guest,
+                    message_content=message_content,
+                    message_type=message_type,
+                    media_file=media_file,
+                    media_filename=media_filename
+                )
+            else:
+                # Check for regular check-in keywords
+                checkin_keywords = ['checkin', 'check in', 'check-in', 'check me in', 'check in please']
+                is_checkin_request = any(keyword in message_lower for keyword in checkin_keywords)
+
+                if is_checkin_request:
+                    # Process through check-in flow
+                    logger.info(f"FlowWebhookView: Processing check-in flow")
+                    flow_result = self._process_checkin_flow(
+                        flow_id=flow_id,
+                        guest=guest,
+                        message_content=message_content,
+                        message_type=message_type,
+                        media_file=media_file,
+                        media_filename=media_filename,
+                        request_data=request.data
+                    )
+                else:
+                    # Save message and give general response
+                    logger.info(f"FlowWebhookView: Processing general message")
+                    flow_result = self._process_general_message(
+                        flow_id=flow_id,
+                        guest=guest,
+                        message_content=message_content,
+                        message_type=message_type,
+                        media_file=media_file,
+                        media_filename=media_filename
+                    )
 
             return create_response(flow_result, status.HTTP_200_OK)
 
@@ -347,68 +380,167 @@ class FlowWebhookView(views.APIView):
                 status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
-    def _detect_flow_type(self, request_data, message_content, guest):
+    def _process_general_message(self, flow_id, guest, message_content, message_type, media_file, media_filename):
         """
-        Determine which flow should handle this message
+        Provide a simple response for non-flow messages without saving them
         """
-        # Check for explicit flow_type parameter
-        explicit_flow_type = request_data.get('flow_type')
-        if explicit_flow_type and explicit_flow_type != 'service':
-            return explicit_flow_type
-        
-        # Check for check-in keywords
-        checkin_keywords = ['checkin', 'check in', 'check-in', 'check me in', 'check in please']
-        message_lower = message_content.lower().strip()
-        
-        if any(keyword in message_lower for keyword in checkin_keywords):
-            return 'checkin'
-        
-        # Check guest context
-        active_stay = Stay.objects.filter(guest=guest, status='active').first()
-        if active_stay:
-            return 'checked_in'  # Guest is already checked in
-        else:
-            return 'general'  # Default for general conversation
-
-    def _process_flow(self, flow_type, guest, message_content, message_type, media_file, media_filename, request_data):
-        """
-        Process message through the appropriate flow handler
-        """
-        # Generate flow ID if not provided
-        flow_id = request_data.get('flow_id') or f"flow_{uuid.uuid4().hex[:12]}_{int(time.time())}"
-        
         try:
-            if flow_type == 'checkin':
-                return self._process_checkin_flow(
-                    flow_id, guest, message_content, message_type, 
-                    media_file, media_filename, request_data
-                )
-            elif flow_type == 'general':
-                return self._process_general_flow(
-                    flow_id, guest, message_content, message_type,
-                    media_file, media_filename, request_data
-                )
-            elif flow_type == 'checked_in':
-                return self._process_checkedin_flow(
-                    flow_id, guest, message_content, message_type,
-                    media_file, media_filename, request_data
-                )
-            else:
-                # Default to general flow for unknown types
-                logger.warning(f"FlowWebhookView: Unknown flow type '{flow_type}', defaulting to general")
-                return self._process_general_flow(
-                    flow_id, guest, message_content, message_type,
-                    media_file, media_filename, request_data
-                )
-                
+            # Don't save messages that don't match any flow conditions
+            # Just provide a simple response
+            logger.info(f"FlowWebhookView: Non-flow message received, not saving: {message_content[:50]}...")
+            
+            # Simple general response
+            response_text = "Thank you for your message! Our team will get back to you shortly."
+
+            return {
+                'success': True,
+                'flow_id': flow_id,
+                'flow_type': 'general',
+                'step_id': 'message_received',
+                'response': {
+                    'response_type': 'text',
+                    'text': response_text,
+                },
+                'status': 'completed',
+                'is_complete': True,
+                'message_saved': False,  # Indicate that message was not saved
+            }
+
         except Exception as e:
-            logger.error(f"FlowWebhookView: Error processing {flow_type} flow: {e}", exc_info=True)
+            logger.error(f"FlowWebhookView: Error processing general message: {e}", exc_info=True)
             return {
                 'success': False,
-                'error': 'flow_processing_error',
-                'message': f'Error processing {flow_type} flow',
+                'error': 'general_message_error',
+                'message': 'Error processing message',
                 'flow_id': flow_id,
-                'flow_type': flow_type,
+                'details': str(e)
+            }
+
+    def _process_hotel_validation_flow(self, flow_id, guest, message_content, message_type, media_file, media_filename):
+        """
+        Process hotel ID validation command: /checkin-{hotel_id}
+        Validates hotel exists and then initiates check-in flow
+        """
+        try:
+            # Extract hotel ID from message
+            message_parts = message_content.strip().split()
+            if len(message_parts) < 1:
+                return {
+                    'success': False,
+                    'error': 'invalid_hotel_id_format',
+                    'message': 'Please use the format: /checkin-{hotel_id}',
+                    'flow_id': flow_id,
+                    'flow_type': 'hotel_validation',
+                    'details': 'Missing hotel ID parameter'
+                }
+
+            # Extract hotel_id from /checkin-{hotel_id} format
+            hotel_command = message_parts[0]
+            if not hotel_command.startswith('/checkin-') or len(hotel_command) <= 9:
+                return {
+                    'success': False,
+                    'error': 'invalid_hotel_id_format',
+                    'message': 'Please use the format: /checkin-{hotel_id}',
+                    'flow_id': flow_id,
+                    'flow_type': 'hotel_validation',
+                    'details': 'Invalid hotel ID format'
+                }
+
+            hotel_id = hotel_command[9:]  # Remove '/checkin-' prefix
+            logger.info(f"FlowWebhookView: Validating hotel ID: {hotel_id}")
+
+            # Validate hotel ID and get hotel name
+            try:
+                hotel = Hotel.objects.get(id=hotel_id)
+                hotel_name = hotel.name
+                logger.info(f"FlowWebhookView: Found hotel: {hotel_name}")
+            except Hotel.DoesNotExist:
+                return {
+                    'success': False,
+                    'error': 'hotel_not_found',
+                    'message': f'Hotel with ID {hotel_id} not found',
+                    'flow_id': flow_id,
+                    'flow_type': 'hotel_validation',
+                    'details': f'No hotel found with ID {hotel_id}'
+                }
+
+            # Check if guest has an existing active stay at this hotel
+            active_stay = Stay.objects.filter(
+                guest=guest,
+                hotel=hotel,
+                status='active'
+            ).first()
+
+            if active_stay:
+                response_text = f"You already have an active stay at {hotel.name} in room {active_stay.room.room_number}. How can we assist you?"
+                return {
+                    'success': True,
+                    'flow_id': flow_id,
+                    'flow_type': 'hotel_validation',
+                    'step_id': 'existing_stay',
+                    'response': {
+                        'response_type': 'text',
+                        'text': response_text,
+                    },
+                    'status': 'completed',
+                    'is_complete': True,
+                }
+
+            # No existing stay - initiate check-in flow
+            logger.info(f"FlowWebhookView: No existing stay found for guest {guest.id} at hotel {hotel.name}, initiating check-in flow")
+
+            # Save the hotel validation message
+            self._save_flow_message(
+                guest=guest,
+                message_content=message_content,
+                message_type=message_type,
+                media_file=media_file,
+                media_filename=media_filename,
+                flow_id=flow_id,
+                flow_type='hotel_validation',
+                flow_step='hotel_validated',
+                flow_success=True,
+                flow_data={'hotel_id': hotel_id, 'hotel_name': hotel.name}
+            )
+
+            # Initiate check-in flow with hotel context
+            checkin_flow_result = self._process_checkin_flow(
+                flow_id=f"checkin_{uuid.uuid4().hex[:12]}_{int(time.time())}",
+                guest=guest,
+                message_content="start_checkin",  # Trigger check-in flow
+                message_type='text',
+                media_file=None,
+                media_filename=None,
+                request_data={
+                    'hotel_id': hotel_id,
+                    'hotel_name': hotel_name,
+                    'initiated_from': 'hotel_validation'
+                }
+            )
+
+            # Return success with check-in flow initiation
+            return {
+                'success': True,
+                'flow_id': flow_id,
+                'flow_type': 'hotel_validation',
+                'step_id': 'hotel_validated',
+                'response': {
+                    'response_type': 'text',
+                    'text': f"Welcome to {hotel.name}! Let's start your check-in process.",
+                },
+                'status': 'completed',
+                'is_complete': True,
+                'next_flow': checkin_flow_result,  # Include check-in flow result
+            }
+
+        except Exception as e:
+            logger.error(f"FlowWebhookView: Hotel validation flow error: {e}", exc_info=True)
+            return {
+                'success': False,
+                'error': 'hotel_validation_error',
+                'message': 'Error in hotel validation flow processing',
+                'flow_id': flow_id,
+                'flow_type': 'hotel_validation',
                 'details': str(e)
             }
 
@@ -418,24 +550,24 @@ class FlowWebhookView(views.APIView):
         """
         try:
             from ..flows.checkin_flow import check_in_flow
-            
+
             # Prepare data for check_in_flow function
             incoming_data = {
                 'message': message_content,
                 'message_type': message_type,
                 'media_data': media_file.read() if media_file else None,
             }
-            
+
             # Get previous flow state if provided
             previous_flow_message = request_data.get('previous_flow_message')
-            
+
             # Process through check-in flow
             flow_result = check_in_flow(
                 flow_id=flow_id,
                 incoming_data=incoming_data,
                 previous_flow_message=previous_flow_message
             )
-            
+
             # Save message with flow metadata
             self._save_flow_message(
                 guest=guest,
@@ -449,7 +581,7 @@ class FlowWebhookView(views.APIView):
                 flow_success=flow_result.get('status') != 'error',
                 flow_data=flow_result.get('flow_data', {})
             )
-            
+
             # Return standardized flow response
             return {
                 'success': True,
@@ -463,7 +595,7 @@ class FlowWebhookView(views.APIView):
                 'requires_input': flow_result.get('next_action') in ['await_user_input', 'await_media_upload'],
                 'is_complete': flow_result.get('status') == 'completed',
             }
-            
+
         except Exception as e:
             logger.error(f"FlowWebhookView: Check-in flow error: {e}", exc_info=True)
             return {
@@ -475,156 +607,57 @@ class FlowWebhookView(views.APIView):
                 'details': str(e)
             }
 
-    def _process_general_flow(self, flow_id, guest, message_content, message_type, media_file, media_filename, request_data):
-        """
-        Process general conversation flow
-        """
-        try:
-            # For general flow, we just save the message and create a simple response
-            self._save_flow_message(
-                guest=guest,
-                message_content=message_content,
-                message_type=message_type,
-                media_file=media_file,
-                media_filename=media_filename,
-                flow_id=flow_id,
-                flow_type='general',
-                flow_step='message_received',
-                flow_success=True,
-                flow_data={}
-            )
-            
-            # Simple auto-response for general messages
-            response_text = f"Thank you for your message, {guest.full_name or 'Guest'}! Our team will get back to you shortly."
-            
-            return {
-                'success': True,
-                'flow_id': flow_id,
-                'flow_type': 'general',
-                'step_id': 'message_received',
-                'response': {
-                    'response_type': 'text',
-                    'text': response_text,
-                    'options': []
-                },
-                'status': 'completed',
-                'next_action': 'end_flow',
-                'flow_data': {},
-                'requires_input': False,
-                'is_complete': True,
-            }
-            
-        except Exception as e:
-            logger.error(f"FlowWebhookView: General flow error: {e}", exc_info=True)
-            return {
-                'success': False,
-                'error': 'general_flow_error',
-                'message': 'Error in general flow processing',
-                'flow_id': flow_id,
-                'flow_type': 'general',
-                'details': str(e)
-            }
-
-    def _process_checkedin_flow(self, flow_id, guest, message_content, message_type, media_file, media_filename, request_data):
-        """
-        Process messages from already checked-in guests
-        """
-        try:
-            # For checked-in guests, we create service-like conversations
-            self._save_flow_message(
-                guest=guest,
-                message_content=message_content,
-                message_type=message_type,
-                media_file=media_file,
-                media_filename=media_filename,
-                flow_id=flow_id,
-                flow_type='checked_in',
-                flow_step='guest_request',
-                flow_success=True,
-                flow_data={}
-            )
-            
-            # Response for checked-in guests
-            response_text = f"Hello {guest.full_name or 'Guest'}! How can we assist you during your stay?"
-            
-            return {
-                'success': True,
-                'flow_id': flow_id,
-                'flow_type': 'checked_in',
-                'step_id': 'guest_request',
-                'response': {
-                    'response_type': 'text',
-                    'text': response_text,
-                    'options': []
-                },
-                'status': 'in_progress',
-                'next_action': 'await_user_input',
-                'flow_data': {},
-                'requires_input': True,
-                'is_complete': False,
-            }
-            
-        except Exception as e:
-            logger.error(f"FlowWebhookView: Checked-in flow error: {e}", exc_info=True)
-            return {
-                'success': False,
-                'error': 'checkedin_flow_error',
-                'message': 'Error in checked-in flow processing',
-                'flow_id': flow_id,
-                'flow_type': 'checked_in',
-                'details': str(e)
-            }
-
     def _save_flow_message(self, guest, message_content, message_type, media_file, media_filename, flow_id, flow_type, flow_step, flow_success, flow_data):
         """
-        Save message with flow metadata
+        Save a flow message to the database for logging and tracking purposes
         """
         try:
-            # Get or create active stay for hotel information
+            # Find or create a conversation for this guest and hotel
+            # For flow messages, we don't need a specific department
+            conversation = None
+            
+            # Try to find existing conversation for this guest
             active_stay = Stay.objects.filter(guest=guest, status='active').first()
-            if not active_stay:
-                logger.warning(f"FlowWebhookView: No active stay found for guest {guest.id}, using default hotel")
-                # Fallback to first hotel or create logic for this case
-                from hotel.models import Hotel
-                hotel = Hotel.objects.first()
-            else:
-                hotel = active_stay.hotel
+            if active_stay:
+                conversation = Conversation.objects.filter(
+                    guest=guest,
+                    hotel=active_stay.hotel
+                ).first()
+            
+            # Create conversation if not found
+            if not conversation:
+                if active_stay:
+                    conversation = Conversation.objects.create(
+                        guest=guest,
+                        hotel=active_stay.hotel,
+                        department='Reception',  # Default department
+                        status='active'
+                    )
+                else:
+                    # If no active stay, don't create conversation - just log the flow message
+                    logger.info(f"FlowWebhookView: No active stay for guest {guest.id}, skipping message creation")
+                    return None
 
-            # Get or create conversation for this flow
-            conversation, created = Conversation.objects.get_or_create(
-                guest=guest,
-                hotel=hotel,
-                department='Reception',  # Default department for flows
-                conversation_type=flow_type,
-                status='active',
-                defaults={
-                    'last_message_at': timezone.now(),
-                    'last_message_preview': message_content[:255],
-                }
-            )
-
-            if not created:
-                conversation.update_last_message(message_content)
-
-            # Create message with flow metadata
+            # Create message record
             message = Message.objects.create(
                 conversation=conversation,
                 sender_type='guest',
+                sender=None,  # Guest message - no specific sender
                 message_type=message_type,
                 content=message_content,
                 media_file=media_file,
                 media_filename=media_filename,
-                
+
                 # Flow-specific fields
                 is_flow=True,
                 flow_id=flow_id,
                 flow_step=flow_step,
                 is_flow_step_success=flow_success,
             )
-            
+
             logger.info(f"FlowWebhookView: Saved flow message {message.id} for flow {flow_id}")
             return message
-            
+
         except Exception as e:
             logger.error(f"FlowWebhookView: Error saving flow message: {e}", exc_info=True)
             # Continue processing even if message saving fails

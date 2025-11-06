@@ -6,11 +6,12 @@ import os
 import uuid
 import logging
 from rest_framework.permissions import IsAuthenticated
-from . import (
+from .base import (
     APIView, status, Response, logger, User, transaction, timezone,
     Conversation, Message, ConversationParticipant, convert_audio_for_whatsapp
 )
 from django.core.files.base import ContentFile
+from django.core.files.storage import default_storage
 
 
 class ChatMediaUploadView(APIView):
@@ -97,49 +98,30 @@ class ChatMediaUploadView(APIView):
                     status=status.HTTP_404_NOT_FOUND
                 )
             
-            # Process and save the file
+            # Process and save the file - no message creation
             with transaction.atomic():
                 try:
                     # Handle audio file conversion for WhatsApp compatibility
                     processed_file, message_type, filename = self._process_uploaded_file(uploaded_file)
                     
-                    # Create message with media
-                    message = Message.objects.create(
-                        conversation=conversation,
-                        sender=user,
-                        sender_type='staff',
-                        message_type=message_type,
-                        content=caption or f"Shared a {message_type.replace('_', ' ')}",
-                        media_file=processed_file,
-                        media_filename=filename
-                    )
+                    # Generate unique filename and upload path
+                    ext = filename.split('.')[-1]
+                    unique_filename = f"{uuid.uuid4().hex}.{ext}"
+                    upload_path = f"chat/hotel_{conversation.hotel.id}/conversation_{conversation.id}/{unique_filename}"
                     
-                    # Update conversation
-                    conversation.update_last_message(message.content)
+                    # Save file directly to storage
+                    saved_path = default_storage.save(upload_path, processed_file)
+                    uploaded_file_url = default_storage.url(saved_path)
                     
-                    # Add user as participant if not already
-                    participant, created = ConversationParticipant.objects.get_or_create(
-                        conversation=conversation,
-                        staff=user,
-                        defaults={'is_active': True}
-                    )
+                    logger.info(f"ChatMediaUploadView: Successfully uploaded file: {unique_filename}")
                     
-                    if not created and not participant.is_active:
-                        participant.is_active = True
-                        participant.save()
-                    
-                    logger.info(f"ChatMediaUploadView: Successfully created message {message.id} with media")
-                    
-                    # Prepare response data
+                    # Prepare response data with file info only (no message)
                     response_data = {
                         'success': True,
-                        'message_id': message.id,
-                        'conversation_id': conversation.id,
-                        'message_type': message.message_type,
-                        'content': message.content,
-                        'media_url': message.get_media_url,
-                        'media_filename': message.media_filename,
-                        'created_at': message.created_at.isoformat(),
+                        'file_url': uploaded_file_url,
+                        'filename': unique_filename,
+                        'file_type': message_type,
+                        'conversation_id': conversation_id,
                         'file_info': {
                             'original_name': uploaded_file.name,
                             'size': uploaded_file.size,
@@ -147,8 +129,7 @@ class ChatMediaUploadView(APIView):
                         }
                     }
                     
-                    # Broadcast message via WebSocket (this would be handled by the message creation consumer)
-                    logger.info(f"ChatMediaUploadView: Upload completed successfully")
+                    logger.info(f"ChatMediaUploadView: Upload completed successfully, returning file URL")
                     return Response(response_data, status=status.HTTP_201_CREATED)
                     
                 except Exception as process_error:

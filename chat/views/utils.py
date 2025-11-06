@@ -2,7 +2,7 @@
 Utility views and functions for chat functionality.
 """
 
-from . import (
+from .base import (
     APIView, status, Response, logger, User, transaction, timezone,
     TypingIndicatorSerializer, Conversation, ConversationParticipant,
     async_to_sync, get_channel_layer

@@ -8,6 +8,8 @@ import time
 import os
 from rest_framework import status, views, response
 from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.views import APIView
+from rest_framework.response import Response
 from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.utils import timezone
@@ -19,7 +21,8 @@ from ..models import Conversation, Message, ConversationParticipant
 from guest.models import Guest, Stay
 from ..serializers import (
     ConversationSerializer, MessageSerializer, GuestMessageSerializer,
-    ConversationCreateSerializer, MessageReadSerializer, TypingIndicatorSerializer
+    ConversationCreateSerializer, MessageReadSerializer, TypingIndicatorSerializer,
+    FlowMessageSerializer
 )
 from ..consumers import notify_new_conversation_to_department, notify_conversation_update_to_department
 from ..utils.phone_utils import normalize_phone_number
