@@ -50,7 +50,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
         logger.info(f"User departments: {self.departments}")
 
         # Create list of department group names
-        self.department_group_names = [f"department_{dept}" for dept in self.departments]
+        self.department_group_names = [f"department_{dept.lower()}" for dept in self.departments]
         logger.info(f"Department group names: {self.department_group_names}")
 
         # Add user to all department groups
@@ -59,14 +59,15 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 group_name,
                 self.channel_name
             )
-        logger.info(f"User {self.user.username} added to groups: {self.department_group_names}")
+            logger.info(f"User {self.user.username} added to group: {group_name}")
+        logger.info(f"User {self.user.username} added to all groups: {self.department_group_names}")
 
         await self.accept()
         logger.info(f"WebSocket connection accepted for user {self.user.username} in departments: {self.departments}")
 
         # Send connection confirmation to all departments
         for department_name in self.departments:
-            group_name = f"department_{department_name}"
+            group_name = f"department_{department_name.lower()}"
             await self.channel_layer.group_send(
                 group_name,
                 {
@@ -91,7 +92,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 )
 
                 # Extract department name from group name
-                department_name = group_name.replace('department_', '')
+                department_name = group_name.replace('department_', '').lower()
 
                 # Notify other users about disconnection
                 await self.channel_layer.group_send(
@@ -177,7 +178,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
             await self.send_whatsapp_message(conversation, content, 'text')
 
         # Broadcast to relevant department group based on conversation department
-        conversation_department = message_data.get('department_name', conversation.department.lower())
+        conversation_department = conversation.department.lower()
         relevant_group = f"department_{conversation_department}"
         
         await self.channel_layer.group_send(
@@ -276,7 +277,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
             await self.send_whatsapp_media_with_link(conversation, message_content, file_type, file_url, filename)
 
         # Broadcast to relevant department group based on conversation department
-        conversation_department = message_data.get('department_name', conversation.department.lower())
+        conversation_department = conversation.department.lower()
         relevant_group = f"department_{conversation_department}"
             
         await self.channel_layer.group_send(
@@ -409,8 +410,8 @@ class ChatConsumer(AsyncWebsocketConsumer):
         """Handle new conversation notifications"""
         notification = event['notification']
         await self.send(text_data=json.dumps({
-            'type': 'new_conversation',
-            'data': notification
+            'type': notification.get('type', 'new_conversation'),
+            'data': notification.get('data', notification)
         }))
 
     async def send_error(self, error_message):

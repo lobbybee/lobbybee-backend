@@ -8,6 +8,7 @@ from .base import (
     download_whatsapp_media, GuestMessageSerializer, FlowMessageSerializer, Conversation,
     Message, Guest, Stay, logger, create_response, ContentFile
 )
+from ..consumers import notify_new_conversation_to_department
 from ..utils.whatsapp_payload_utils import convert_flow_response_to_whatsapp_payload
 from ..utils.webhook_deduplication import (
     check_and_create_webhook_attempt,
@@ -207,7 +208,7 @@ def process_guest_webhook(request_data, request_headers=None, media_id=None):
                             # Broadcast the service message to staff first
                             try:
                                 channel_layer = get_channel_layer()
-                                department_group_name = f"department_{conversation.department}"
+                                department_group_name = f"department_{conversation.department.lower()}"
                                 
                                 service_message_data = {
                                     'id': return_message.id,
@@ -260,6 +261,37 @@ def process_guest_webhook(request_data, request_headers=None, media_id=None):
                     )
                     created = True
                     logger.info(f"process_guest_webhook: Created new conversation {conversation.id}")
+                    
+                    # Notify department staff about new conversation
+                    try:
+                        channel_layer = get_channel_layer()
+                        
+                        conversation_data = {
+                            'id': conversation.id,
+                            'guest_name': conversation.guest.full_name,
+                            'department': conversation.department.lower(),
+                            'conversation_type': conversation.conversation_type,
+                            'status': conversation.status,
+                            'created_at': conversation.created_at.isoformat(),
+                            'last_message_preview': conversation.last_message_preview,
+                            'last_message_at': conversation.last_message_at.isoformat() if conversation.last_message_at else None
+                        }
+                        
+                        relevant_group = f"department_{conversation.department.lower()}"
+                        
+                        async_to_sync(channel_layer.group_send)(
+                            relevant_group,
+                            {
+                                'type': 'new_conversation_notification',
+                                'notification': {
+                                    'type': 'new_conversation',
+                                    'data': conversation_data
+                                }
+                            }
+                        )
+                        logger.info(f"process_guest_webhook: Sent new conversation notification for conversation {conversation.id}")
+                    except Exception as notify_error:
+                        logger.error(f"process_guest_webhook: Failed to send new conversation notification: {notify_error}", exc_info=True)
 
             # Create message
             logger.info(f"process_guest_webhook: Creating message - type: {message_type}, has_media: {media_file is not None}")
@@ -288,7 +320,7 @@ def process_guest_webhook(request_data, request_headers=None, media_id=None):
         try:
             logger.info(f"process_guest_webhook: Broadcasting message to department group: {department_type}")
             channel_layer = get_channel_layer()
-            department_group_name = f"department_{department_type}"
+            department_group_name = f"department_{department_type.lower()}"
 
             message_data = {
                 'id': message.id,

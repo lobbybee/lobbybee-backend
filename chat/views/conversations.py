@@ -592,14 +592,18 @@ class GuestConversationTypeView(APIView):
         recipient_number = message_data.get('from')
         guest_name = guest_info.get('full_name', 'Guest') if guest_info else 'Guest'
 
+        logger.info(f"Conversation routing: guest_exists={guest_exists}, has_conversations={has_conversations}, conversations_count={len(conversations)}")
+
         # Note: Access_denied logic removed since we now handle all messages through unified webhook system
 
         # Check most recent conversation (if it exists, it's already sorted by last_message_at)
         if has_conversations and conversations:
             most_recent_conv = conversations[0]
+            logger.info(f"Most recent conversation: {most_recent_conv}, is_expired: {most_recent_conv.get('is_expired', False)}")
 
             # If most recent conversation is expired, all conversations will be expired
             if most_recent_conv.get('is_expired', False):
+                logger.info("Conversation is expired, showing menu")
                 # Handle list reply to create new conversation with selected department
                 if message_type_info.get('is_list_reply'):
                     return self._handle_department_selection(
@@ -617,13 +621,16 @@ class GuestConversationTypeView(APIView):
                     }
 
             # Most recent conversation is active, handle based on message type
+            logger.info("Conversation is active, checking message type")
             # Handle list reply (department selection)
             if message_type_info.get('is_list_reply'):
+                logger.info("List reply detected, handling department selection")
                 return self._handle_department_selection(
                     guest_data, message_type_info, recipient_number, guest_name, conversations
                 )
 
             # Use the most recent active conversation for other message types
+            logger.info(f"Using existing conversation: {most_recent_conv.get('id')}")
             return {
                 **guest_data,
                 'action': 'relay',
@@ -834,11 +841,14 @@ class GuestConversationTypeView(APIView):
                 message_type='text'
             )
             
+            # Update conversation's last message timestamp and preview
+            conversation.update_last_message(guest_message.content)
+            
             # Broadcast the "guest reopened conversation" message to staff via WebSocket
             try:
                 from .base import async_to_sync, get_channel_layer
                 channel_layer = get_channel_layer()
-                department_group_name = f"department_{conversation.department}"
+                department_group_name = f"department_{conversation.department.lower()}"
                 
                 # Get guest stay info
                 from guest.models import Stay
