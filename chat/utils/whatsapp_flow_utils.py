@@ -46,6 +46,7 @@ def extract_whatsapp_message_data(webhook_body):
 
         return {
             'from': message.get('from'),
+            'id': message.get('id'),  # WhatsApp message ID for deduplication
             'type': message.get('type'),
             'timestamp': message.get('timestamp'),
             'text': message.get('text', {}).get('body', ''),

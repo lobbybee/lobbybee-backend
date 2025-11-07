@@ -1,8 +1,5 @@
 from django.urls import path
 
-# Import new modular webhook views
-from .views import GuestWebhookView, FlowWebhookView
-
 from .views import (
     ConversationListView,
     ConversationDetailView,
@@ -17,12 +14,6 @@ from .views import (
 app_name = 'chat'
 
 urlpatterns = [
-    # Guest webhook endpoint (new modular)
-    path('guest-webhook/', GuestWebhookView.as_view(), name='guest-webhook'),
-
-    # Flow webhook endpoint for non-service messages (new modular)
-    path('flow-webhook/', FlowWebhookView.as_view(), name='flow-webhook'),
-
     # Conversation management (original views)
     path('conversations/', ConversationListView.as_view(), name='conversation-list'),
     path('conversations/create/', CreateConversationView.as_view(), name='conversation-create'),

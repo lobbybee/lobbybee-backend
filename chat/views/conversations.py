@@ -31,8 +31,14 @@ from ..utils.whatsapp_flow_utils import (
     generate_department_menu_payload,
     generate_error_text_payload,
     validate_department_selection,
-    find_active_department_conversation
+    find_active_department_conversation,
 )
+from ..utils.webhook_deduplication import (
+    check_and_create_webhook_attempt,
+    update_webhook_attempt,
+)
+from .webhooks import process_guest_webhook, process_flow_webhook
+from ..utils.whatsapp_payload_utils import convert_flow_response_to_whatsapp_payload
 from datetime import datetime,timezone
 class ConversationListView(APIView):
     """
@@ -299,40 +305,11 @@ class CloseConversationView(APIView):
 
 class GuestConversationTypeView(APIView):
     """
-    Get the type of conversation for a guest and determine routing action
-    Supports both GET (legacy) and POST (with webhook data) methods
+    Process incoming WhatsApp messages and determine routing action
+    POST method only - includes webhook data for enhanced routing logic
     """
 
     permission_classes = []
-
-    def get(self, request):
-        """Legacy GET method - returns conversation info only"""
-        user = request.user
-        guest_whatsapp_number = request.GET.get("guest_whatsapp_number")
-
-        if not guest_whatsapp_number:
-            return Response(
-                {"error": "guest_whatsapp_number parameter is required"},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        # Get base conversation info
-        base_response = self._get_guest_conversation_info(user, guest_whatsapp_number)
-
-        if base_response.status_code != 200:
-            return base_response
-
-        response_data = base_response.data
-        
-        # Add default values for compatibility with GuestWebhookView
-        response_data['message_type_info'] = None
-        response_data['message'] = {
-            'message': '',
-            'message_type': 'text'
-        }
-        response_data['action'] = 'relay'
-
-        return Response(response_data)
 
     def post(self, request):
         """
@@ -353,25 +330,13 @@ class GuestConversationTypeView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # Get base conversation info
-        base_response = self._get_guest_conversation_info(user, guest_whatsapp_number)
-
-        if base_response.status_code != 200:
-            return base_response
-
-        response_data = base_response.data
-
-        # If no webhook body provided, return basic info (legacy behavior)
         if not webhook_body:
-            response_data['action'] = 'relay'
-            response_data['message_type_info'] = None
-            response_data['message'] = {
-                'message': '',
-                'message_type': 'text'
-            }
-            return Response(response_data)
+            return Response(
+                {"error": "webhook_body parameter is required"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
-        # Extract and validate webhook message data
+        # Extract and validate webhook message data first
         message_data, error = extract_whatsapp_message_data(webhook_body)
         if error:
             logger.warning(f"Webhook parsing error: {error}")
@@ -379,10 +344,52 @@ class GuestConversationTypeView(APIView):
                 {
                     "error": "Invalid webhook data",
                     "details": error,
-                    "fallback_action": "relay"
                 },
                 status=status.HTTP_400_BAD_REQUEST,
             )
+
+        # Extract WhatsApp message ID for deduplication
+        whatsapp_message_id = message_data.get('id')
+        if not whatsapp_message_id:
+            return Response(
+                {"error": "Missing WhatsApp message ID in webhook data"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Check for duplicates using WebhookAttempt model
+        webhook_attempt, is_duplicate, is_new = check_and_create_webhook_attempt(
+            webhook_type='guest',
+            whatsapp_message_id=whatsapp_message_id,
+            whatsapp_number=guest_whatsapp_number,
+            request_data=request.data
+        )
+
+        if is_duplicate:
+            # Return existing webhook attempt data
+            existing_data = webhook_attempt.response_data or {}
+            return Response({
+                'success': True,
+                'duplicate_message': True,
+                'original_attempt_id': webhook_attempt.id,
+                **existing_data
+            }, status=status.HTTP_200_OK)
+
+        # If we reach here, it's a new message, continue with processing
+        logger.info(f"Processing new WhatsApp message {whatsapp_message_id} from {guest_whatsapp_number}")
+
+        # Get base conversation info
+        base_response = self._get_guest_conversation_info(user, guest_whatsapp_number)
+
+        if base_response.status_code != 200:
+            # Update webhook attempt with error
+            update_webhook_attempt(
+                webhook_attempt, 
+                'processing_failed', 
+                error_message=f"Failed to get guest conversation info: {base_response.data}"
+            )
+            return base_response
+
+        response_data = base_response.data
 
         # Get message type information
         message_type_info = get_message_type_info(message_data)
@@ -397,6 +404,46 @@ class GuestConversationTypeView(APIView):
             response_data,
             message_data,
             message_type_info
+        )
+
+        # Execute webhook if needed and merge result
+        routing_result = self._execute_webhook_and_merge_result(
+            routing_result=routing_result,
+            guest_data=routing_result,
+            message_data=message_data,
+            webhook_body=webhook_body
+        )
+
+        # Update webhook attempt with success
+        # Clean response data for JSON serialization
+        import json
+        from datetime import datetime
+        
+        def clean_json_data(obj):
+            """Recursively clean data to make JSON serializable"""
+            if isinstance(obj, datetime):
+                return obj.isoformat()  # Convert datetime to ISO string
+            elif isinstance(obj, dict):
+                return {k: clean_json_data(v) for k, v in obj.items()}
+            elif isinstance(obj, list):
+                return [clean_json_data(item) for item in obj]
+            else:
+                return obj
+        
+        try:
+            # Test JSON serialization and clean if needed
+            json.dumps(routing_result)
+            clean_response_data = routing_result
+        except (TypeError, ValueError):
+            # If serialization fails, clean the data
+            clean_response_data = clean_json_data(routing_result)
+        
+        update_webhook_attempt(
+            webhook_attempt,
+            'success',
+            response_data=clean_response_data,
+            message_id=routing_result.get('message_id'),
+            conversation_id=routing_result.get('conversation_id')
         )
 
         return Response(routing_result)
@@ -526,44 +573,38 @@ class GuestConversationTypeView(APIView):
         recipient_number = message_data.get('from')
         guest_name = guest_info.get('full_name', 'Guest') if guest_info else 'Guest'
 
-        # Check if guest is allowed to use service
-        if guest_status in ['old_guest', 'anonymous']:
-            return {
-                **guest_data,
-                'action': 'access_denied',
-                'reason': 'guest_not_active',
-                'whatsapp_payload': generate_error_text_payload(
-                    recipient_number,
-                    f"Hi {guest_name}, it looks like you're not currently checked in. "
-                    "Please contact reception if you need assistance."
-                ) if guest_status == 'old_guest' else generate_error_text_payload(
-                    recipient_number,
-                    "We couldn't find your guest profile. Please contact reception for assistance."
-                )
-            }
+        # Note: Access_denied logic removed since we now handle all messages through unified webhook system
 
-        # Handle list reply (department selection)
-        if message_type_info.get('is_list_reply'):
-            return self._handle_department_selection(
-                guest_data, message_type_info, recipient_number, guest_name, conversations
-            )
-
-        # Check most recent conversation only (optimization)
+        # Check most recent conversation (if it exists, it's already sorted by last_message_at)
         if has_conversations and conversations:
             most_recent_conv = conversations[0]
 
-            # If most recent conversation is expired, show menu
+            # If most recent conversation is expired, all conversations will be expired
             if most_recent_conv.get('is_expired', False):
-                return {
-                    **guest_data,
-                    'action': 'show_menu',
-                    'whatsapp_payload': generate_department_menu_payload(
-                        recipient_number,
-                        guest_name
+                # Handle list reply to create new conversation with selected department
+                if message_type_info.get('is_list_reply'):
+                    return self._handle_department_selection(
+                        guest_data, message_type_info, recipient_number, guest_name, conversations
                     )
-                }
+                else:
+                    # Show menu for user to select a department
+                    return {
+                        **guest_data,
+                        'action': 'show_menu',
+                        'whatsapp_payload': generate_department_menu_payload(
+                            recipient_number,
+                            guest_name
+                        )
+                    }
 
-            # Use the most recent active conversation
+            # Most recent conversation is active, handle based on message type
+            # Handle list reply (department selection)
+            if message_type_info.get('is_list_reply'):
+                return self._handle_department_selection(
+                    guest_data, message_type_info, recipient_number, guest_name, conversations
+                )
+
+            # Use the most recent active conversation for other message types
             return {
                 **guest_data,
                 'action': 'relay',
@@ -609,17 +650,7 @@ class GuestConversationTypeView(APIView):
                 )
             }
 
-        # Re-verify guest is still active (edge case protection)
-        if guest_data.get('guest_status') != 'active_guest':
-            return {
-                **guest_data,
-                'action': 'access_denied',
-                'reason': 'guest_status_changed',
-                'whatsapp_payload': generate_error_text_payload(
-                    recipient_number,
-                    f"Hi {guest_name}, we couldn't process your request. Please contact reception for assistance."
-                )
-            }
+        # Note: Guest status verification removed since we now handle all messages through unified webhook system
 
         # Find existing non-expired conversation for this department
         existing_conv = find_active_department_conversation(conversations, dept_name)
@@ -722,3 +753,145 @@ class GuestConversationTypeView(APIView):
                 'message': 'Message received',
                 'message_type': 'text'
             }
+
+    def _prepare_guest_webhook_data(self, guest_data, message_data, webhook_body=None, target_conversation=None):
+        """
+        Prepare data for process_guest_webhook function
+        
+        Returns a dictionary compatible with GuestMessageSerializer
+        """
+        guest_info = guest_data.get('guest_info')
+        if not guest_info:
+            return None
+            
+        message_data = guest_data.get('message', {})
+        
+        # Prepare webhook data
+        webhook_data = {
+            'whatsapp_number': guest_info.get('whatsapp_number'),
+            'message': message_data.get('message', ''),
+            'message_type': message_data.get('message_type', 'text'),
+        }
+        
+        # Add WhatsApp message ID for deduplication
+        if webhook_body and 'entry' in webhook_body:
+            try:
+                entry = webhook_body.get('entry', [])
+                if entry and len(entry) > 0:
+                    changes = entry[0].get('changes', [])
+                    if changes and len(changes) > 0:
+                        value = changes[0].get('value', {})
+                        messages = value.get('messages', [])
+                        if messages and len(messages) > 0:
+                            webhook_data['whatsapp_message_id'] = messages[0].get('id')
+            except Exception as e:
+                logger.warning(f"GuestConversationTypeView: Error extracting WhatsApp message ID: {e}")
+        
+        # Add conversation info if provided
+        if target_conversation:
+            if target_conversation.get('use_existing', True) and target_conversation.get('id'):
+                # Use existing conversation
+                webhook_data['conversation_id'] = target_conversation['id']
+            else:
+                # Create new conversation - need department
+                webhook_data['department'] = target_conversation.get('department')
+        
+        # Add media info if present
+        if message_data.get('message_type') in ['image', 'document', 'video', 'audio']:
+            webhook_data['media_url'] = message_data.get('media_url')
+            webhook_data['media_filename'] = message_data.get('media_filename')
+        
+        return webhook_data
+
+    def _prepare_flow_webhook_data(self, guest_data, message_data):
+        """
+        Prepare data for process_flow_webhook function
+        
+        Returns a dictionary compatible with FlowMessageSerializer
+        """
+        guest_info = guest_data.get('guest_info')
+        if not guest_info:
+            return None
+            
+        message_content = message_data.get('message', '')
+        message_type = message_data.get('message_type', 'text')
+        
+        # Prepare webhook data
+        webhook_data = {
+            'whatsapp_number': guest_info.get('whatsapp_number'),
+            'message': message_content,
+            'message_type': message_type,
+        }
+        
+        # Add media info if present
+        if message_type in ['image', 'document', 'video', 'audio']:
+            webhook_data['media_url'] = message_data.get('media_url')
+            webhook_data['media_filename'] = message_data.get('media_filename')
+        
+        return webhook_data
+
+    def _execute_webhook_and_merge_result(self, routing_result, guest_data, message_data, webhook_body=None):
+        """
+        Execute the appropriate webhook function and merge its result with routing_result
+        
+        Args:
+            routing_result: The current routing result from _determine_routing_action
+            guest_data: Guest information for preparing webhook data
+            message_data: Message data from WhatsApp
+            webhook_body: Original webhook body for extracting media ID
+            
+        Returns:
+            Updated routing_result with webhook execution result
+        """
+        try:
+            action = routing_result.get('action')
+            
+            if action == 'relay':
+                # Handle relay action with guest webhook
+                webhook_data = self._prepare_guest_webhook_data(
+                    guest_data=guest_data,
+                    message_data=message_data,
+                    webhook_body=webhook_body,
+                    target_conversation=routing_result.get('target_conversation')
+                )
+                
+                if webhook_data:
+                    media_id = webhook_body.get('media_id') if webhook_body else None
+                    webhook_response, status_code = process_guest_webhook(
+                        request_data=webhook_data,
+                        media_id=media_id
+                    )
+                    
+                    # Merge webhook result into routing result
+                    if webhook_response.get('success'):
+                        routing_result.update({
+                            'webhook_executed': True,
+                            'webhook_result': webhook_response,
+                            'webhook_status_code': status_code,
+                            'message_id': webhook_response.get('message_id'),
+                            'conversation_id': webhook_response.get('conversation_id'),
+                            'department': webhook_response.get('department'),
+                            'conversation_created': webhook_response.get('conversation_created', False)
+                        })
+                    else:
+                        routing_result.update({
+                            'webhook_executed': True,
+                            'webhook_error': webhook_response,
+                            'webhook_status_code': status_code
+                        })
+                        
+            else:
+                # For non-relay actions, we could process through flow webhook if needed
+                # For now, the WhatsApp payload is already prepared in the routing result
+                # These are typically interactive menu responses
+                pass
+            
+            return routing_result
+            
+        except Exception as e:
+            logger.error(f"GuestConversationTypeView: Error executing webhook: {e}", exc_info=True)
+            routing_result.update({
+                'webhook_executed': False,
+                'webhook_error': str(e)
+            })
+            return routing_result

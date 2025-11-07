@@ -134,6 +134,15 @@ class Message(models.Model):
     flow_step = models.IntegerField(blank=True, null=True, help_text="Current step number in the flow")
     is_flow_step_success = models.BooleanField(null=True, blank=True, help_text="Whether this flow step was successful")
 
+    # WhatsApp integration fields
+    whatsapp_message_id = models.CharField(
+        max_length=100, 
+        blank=True, 
+        null=True, 
+        db_index=True,
+        help_text="WhatsApp message ID for deduplication of incoming guest messages only"
+    )
+
     # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -175,13 +184,85 @@ class Message(models.Model):
 
     def save(self, *args, **kwargs):
         """Override save to handle media file and URL"""
+        is_new = self.pk is None
+        
         if self.media_file:
             # Set media URL from file field
             self.media_url = self.media_file.url
             # Extract filename if not provided
             if not self.media_filename:
                 self.media_filename = self.media_file.name.split('/')[-1]
+        
         super().save(*args, **kwargs)
+        
+        # Track outgoing messages for deduplication
+        if is_new and self.sender_type == 'staff':
+            from .utils.webhook_deduplication import create_outgoing_webhook_attempt
+            
+            try:
+                whatsapp_number = self.conversation.guest.whatsapp_number
+                create_outgoing_webhook_attempt(
+                    webhook_type='outgoing',
+                    message_content=self.content,
+                    whatsapp_number=whatsapp_number,
+                    message_id=self.id,
+                    conversation_id=self.conversation.id
+                )
+            except Exception as e:
+                # Don't fail the save if deduplication tracking fails
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning(f"Failed to track outgoing message for deduplication: {e}")
+
+
+class WebhookAttempt(models.Model):
+    """
+    Track all webhook attempts for deduplication and debugging purposes
+    """
+    WEBHOOK_TYPES = [
+        ('guest', 'Guest Webhook'),
+        ('flow', 'Flow Webhook'),
+        ('outgoing', 'Outgoing Message'),
+    ]
+    
+    STATUSES = [
+        ('pending', 'Pending'),
+        ('processing', 'Processing'),
+        ('success', 'Success'),
+        ('validation_failed', 'Validation Failed'),
+        ('processing_failed', 'Processing Failed'),
+        ('duplicate', 'Duplicate'),
+    ]
+
+    webhook_type = models.CharField(max_length=20, choices=WEBHOOK_TYPES)
+    whatsapp_message_id = models.CharField(max_length=100, db_index=True)
+    whatsapp_number = models.CharField(max_length=20, db_index=True)
+    status = models.CharField(max_length=20, choices=STATUSES, default='pending')
+    
+    # Request/Response data for debugging
+    request_data = models.JSONField(default=dict, blank=True)
+    response_data = models.JSONField(default=dict, blank=True)
+    error_message = models.TextField(blank=True, null=True)
+    
+    # Processing metadata
+    processing_time_ms = models.IntegerField(null=True, blank=True)
+    message_id = models.IntegerField(null=True, blank=True, help_text="Created message ID if successful")
+    conversation_id = models.IntegerField(null=True, blank=True, help_text="Related conversation ID")
+    
+    # Timestamps
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ['webhook_type', 'whatsapp_message_id']
+        indexes = [
+            models.Index(fields=['webhook_type', 'status']),
+            models.Index(fields=['whatsapp_number', 'created_at']),
+            models.Index(fields=['created_at']),
+        ]
+
+    def __str__(self):
+        return f"{self.get_webhook_type_display()} - {self.whatsapp_message_id[:20]}... - {self.status}"
 
 
 class ConversationParticipant(models.Model):
