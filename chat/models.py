@@ -57,7 +57,15 @@ class Conversation(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        unique_together = ['guest', 'hotel', 'department', 'conversation_type', 'status']
+        constraints = [
+            # Only enforce uniqueness for active conversations to prevent duplicate open conversations
+            # Allow multiple closed conversations for the same guest/department combo
+            models.UniqueConstraint(
+                fields=['guest', 'hotel', 'department', 'conversation_type'],
+                condition=models.Q(status='active'),
+                name='unique_active_conversation'
+            )
+        ]
         indexes = [
             models.Index(fields=['guest', 'status']),
             models.Index(fields=['hotel', 'department', 'status']),

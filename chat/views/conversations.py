@@ -30,6 +30,7 @@ from ..utils.whatsapp_flow_utils import (
     get_message_type_info,
     generate_department_menu_payload,
     generate_error_text_payload,
+    generate_success_text_payload,
     validate_department_selection,
     find_active_department_conversation,
 )
@@ -399,6 +400,24 @@ class GuestConversationTypeView(APIView):
         message_content = self._extract_message_content(message_data, message_type_info)
         response_data['message'] = message_content
 
+        # Handle special button reply interactions
+        button_result = self._handle_button_reply_interactions(
+            message_data, 
+            message_type_info, 
+            response_data
+        )
+        
+        if button_result:
+            # Button was handled, return the result directly
+            update_webhook_attempt(
+                webhook_attempt,
+                'success',
+                response_data=button_result,
+                message_id=button_result.get('message_id'),
+                conversation_id=button_result.get('conversation_id')
+            )
+            return Response(button_result)
+
         # Determine routing action
         routing_result = self._determine_routing_action(
             response_data,
@@ -655,6 +674,9 @@ class GuestConversationTypeView(APIView):
         # Find existing non-expired conversation for this department
         existing_conv = find_active_department_conversation(conversations, dept_name)
 
+        # Generate success message payload
+        success_payload = generate_success_text_payload(recipient_number, dept_name, guest_name)
+
         if existing_conv:
             # Use existing conversation
             return {
@@ -663,7 +685,8 @@ class GuestConversationTypeView(APIView):
                 'selected_department': list_reply_id,
                 'target_conversation': self._format_target_conversation(
                     existing_conv, use_existing=True
-                )
+                ),
+                'whatsapp_payload': success_payload
             }
         else:
             # Create new conversation
@@ -677,7 +700,8 @@ class GuestConversationTypeView(APIView):
                     'conversation_type': 'service',
                     'use_existing': False,
                     'create_new': True
-                }
+                },
+                'whatsapp_payload': success_payload
             }
 
     def _format_target_conversation(self, conversation, use_existing=True):
@@ -752,6 +776,187 @@ class GuestConversationTypeView(APIView):
             return {
                 'message': 'Message received',
                 'message_type': 'text'
+            }
+
+    def _handle_button_reply_interactions(self, message_data, message_type_info, response_data):
+        """
+        Handle special button reply interactions for conversation management
+        
+        Returns dict with response data if button was handled, None otherwise
+        """
+        msg_type = message_data.get('type')
+        
+        if msg_type != 'interactive':
+            return None
+            
+        interactive_data = message_data.get('interactive', {})
+        interactive_type = interactive_data.get('type')
+        
+        if interactive_type != 'button_reply':
+            return None
+            
+        button_reply = interactive_data.get('button_reply', {})
+        button_id = button_reply.get('id', '')
+        
+        # Check if this is a special button ID we need to handle
+        if button_id.startswith('accept_reopen_conversation_conv#'):
+            return self._handle_accept_reopen_conversation(button_id, response_data)
+        elif button_id.startswith('req_fulfilled_conv#'):
+            return self._handle_fulfillment_response(button_id, True, response_data)
+        elif button_id.startswith('req_unfulfilled_conv#'):
+            return self._handle_fulfillment_response(button_id, False, response_data)
+            
+        return None
+
+    def _handle_accept_reopen_conversation(self, button_id, response_data):
+        """Handle accept_reopen_conversation button click"""
+        try:
+            # Extract conversation ID
+            conversation_id = button_id.split('#', 1)[1]
+            
+            # Verify conversation exists
+            try:
+                conversation = Conversation.objects.get(id=conversation_id)
+            except Conversation.DoesNotExist:
+                logger.warning(f"Conversation {conversation_id} not found for reopen request")
+                return {
+                    'success': False,
+                    'error': 'Conversation not found',
+                    'message': 'The conversation you are trying to reopen could not be found.'
+                }
+            
+            # Create a new message from guest to reactivate conversation
+            guest_name = conversation.guest.full_name or 'Guest'
+            guest_message = Message.objects.create(
+                conversation=conversation,
+                sender_type='guest',
+                content=guest_name + " has reopened the conversation",
+                message_type='text'
+            )
+            
+            # Broadcast the "guest reopened conversation" message to staff via WebSocket
+            try:
+                from .base import async_to_sync, get_channel_layer
+                channel_layer = get_channel_layer()
+                department_group_name = f"department_{conversation.department}"
+                
+                # Get guest stay info
+                from guest.models import Stay
+                active_stay = Stay.objects.filter(guest=conversation.guest, status='active').first()
+                
+                message_data = {
+                    'id': guest_message.id,
+                    'conversation_id': conversation.id,
+                    'sender_type': 'guest',
+                    'sender_name': guest_name,
+                    'sender_id': None,
+                    'message_type': guest_message.message_type,
+                    'content': guest_message.content,
+                    'media_url': guest_message.get_media_url,
+                    'media_filename': guest_message.media_filename,
+                    'is_read': guest_message.is_read,
+                    'created_at': guest_message.created_at.isoformat(),
+                    'updated_at': guest_message.updated_at.isoformat(),
+                    'guest_info': {
+                        'id': conversation.guest.id,
+                        'name': conversation.guest.full_name,
+                        'whatsapp_number': conversation.guest.whatsapp_number,
+                        'room_number': active_stay.room.room_number if active_stay else None
+                    }
+                }
+                
+                async_to_sync(channel_layer.group_send)(
+                    department_group_name,
+                    {
+                        'type': 'chat_message',
+                        'message': message_data
+                    }
+                )
+                logger.info(f"Broadcasted guest reopened conversation message to {department_group_name}")
+            except Exception as ws_error:
+                logger.error(f"Failed to broadcast reopened conversation message: {ws_error}", exc_info=True)
+
+            # Send WhatsApp response
+            try:
+                from ..utils.whatsapp_utils import send_whatsapp_message_with_media
+                send_whatsapp_message_with_media(
+                    recipient_number=conversation.guest.whatsapp_number,
+                    message_content="You are connected. Please type your message."
+                )
+                logger.info(f"Sent reconnection message to {conversation.guest.whatsapp_number}")
+            except Exception as e:
+                logger.error(f"Failed to send reconnection message: {e}")
+            
+            logger.info(f"Conversation {conversation_id} reopened by guest")
+            
+            return {
+                'success': True,
+                'message': 'Conversation reopened successfully',
+                'conversation_id': conversation.id,
+                'message_id': guest_message.id,
+                'action': 'conversation_reopened'
+            }
+            
+        except Exception as e:
+            logger.error(f"Error handling accept_reopen_conversation: {e}", exc_info=True)
+            return {
+                'success': False,
+                'error': 'Failed to reopen conversation',
+                'message': 'An error occurred while reopening the conversation.'
+            }
+
+    def _handle_fulfillment_response(self, button_id, is_fulfilled, response_data):
+        """Handle req_fulfilled_conv and req_unfulfilled_conv button clicks"""
+        try:
+            # Extract conversation ID
+            conversation_id = button_id.split('#', 1)[1]
+            
+            # Verify conversation exists
+            try:
+                conversation = Conversation.objects.get(id=conversation_id)
+            except Conversation.DoesNotExist:
+                logger.warning(f"Conversation {conversation_id} not found for fulfillment response")
+                return {
+                    'success': False,
+                    'error': 'Conversation not found',
+                    'message': 'The conversation could not be found.'
+                }
+            
+            # Update conversation fulfillment status
+            if is_fulfilled:
+                conversation.mark_fulfilled(True)
+                feedback_text = "fulfilled"
+            else:
+                conversation.mark_fulfilled(False)
+                feedback_text = "not fulfilled"
+            
+            # Send WhatsApp feedback confirmation
+            try:
+                from ..utils.whatsapp_utils import send_whatsapp_message_with_media
+                send_whatsapp_message_with_media(
+                    recipient_number=conversation.guest.whatsapp_number,
+                    message_content="Your feedback has been recorded"
+                )
+                logger.info(f"Sent feedback confirmation to {conversation.guest.whatsapp_number}")
+            except Exception as e:
+                logger.error(f"Failed to send feedback confirmation: {e}")
+            
+            logger.info(f"Conversation {conversation_id} marked as {feedback_text} by guest")
+            
+            return {
+                'success': True,
+                'message': f'Feedback recorded - request marked as {feedback_text}',
+                'conversation_id': conversation.id,
+                'action': 'feedback_recorded',
+                'is_fulfilled': is_fulfilled
+            }
+            
+        except Exception as e:
+            logger.error(f"Error handling fulfillment response: {e}", exc_info=True)
+            return {
+                'success': False,
+                'error': 'Failed to record feedback',
+                'message': 'An error occurred while recording your feedback.'
             }
 
     def _prepare_guest_webhook_data(self, guest_data, message_data, webhook_body=None, target_conversation=None):

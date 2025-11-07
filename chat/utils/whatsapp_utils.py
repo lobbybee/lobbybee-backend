@@ -462,6 +462,55 @@ def test_media_link_validation():
     return results
 
 
+def send_whatsapp_button_message(recipient_number: str, message_text: str, buttons: list):
+    """
+    Sends a WhatsApp interactive message with reply buttons.
+
+    Args:
+        recipient_number: The WhatsApp number to send to
+        message_text: The text content of the message
+        buttons: List of button dictionaries with 'id' and 'title' keys
+
+    Returns:
+        The response from WhatsApp API
+    """
+    phone_number_id = settings.PHONE_NUMBER_ID
+    access_token = settings.WHATSAPP_ACCESS_KEY
+    url = f"https://graph.facebook.com/v22.0/{phone_number_id}/messages"
+
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/json",
+    }
+
+    # Build interactive message with buttons
+    payload = {
+        "messaging_product": "whatsapp",
+        "recipient_type": "individual",
+        "to": recipient_number,
+        "type": "interactive",
+        "interactive": {
+            "type": "button",
+            "body": {
+                "text": message_text
+            },
+            "action": {
+                "buttons": buttons
+            }
+        }
+    }
+
+    try:
+        response = requests.post(url, json=payload, headers=headers)
+        response.raise_for_status()
+        logger.info(f"WhatsApp button message sent to {recipient_number}")
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Error sending WhatsApp button message to {recipient_number}: {e}")
+        logger.error(f"Response body: {e.response.text if e.response else 'No response'}")
+        raise
+
+
 def send_whatsapp_message_with_media(recipient_number: str, message_content: str, media_id: str = None, media_file=None, media_url: str = None):
     """
     Sends a WhatsApp message with optional media attachment.

@@ -6,7 +6,7 @@ from django.core.exceptions import ObjectDoesNotExist
 from django.utils import timezone
 from .models import Conversation, Message, ConversationParticipant
 from .utils.phone_utils import normalize_phone_number, get_guest_group_name
-from .utils.whatsapp_utils import send_whatsapp_message_with_media, send_whatsapp_media_with_link
+from .utils.whatsapp_utils import send_whatsapp_message_with_media, send_whatsapp_media_with_link, send_whatsapp_button_message
 import logging
 
 User = get_user_model()
@@ -130,6 +130,8 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 await self.handle_unsubscribe_conversation(data)
             elif message_type == 'close_conversation':
                 await self.handle_close_conversation(data)
+            elif message_type == 'reopen-temporary':
+                await self.handle_reopen_temporary(data)
             else:
                 await self.send_error('Invalid message type')
 
@@ -496,9 +498,16 @@ class ChatConsumer(AsyncWebsocketConsumer):
             await self.send_error('Access denied to this conversation')
             return
 
-        # Update conversation status to closed
+        # Update conversation status to closed and set fulfillment tracking
         success = await self.close_conversation(conversation)
         if success:
+            # Send WhatsApp fulfillment feedback message for 'service' conversation types
+            if conversation.conversation_type == 'service':
+                try:
+                    await self.send_fulfillment_feedback_message(conversation)
+                except Exception as e:
+                    logger.error(f"Error sending fulfillment feedback for conversation {conversation_id}: {e}")
+
             # Notify all relevant department members about the conversation update
             conversation_department = conversation.department.lower()
             relevant_group = f"department_{conversation_department}"
@@ -525,7 +534,84 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 'timestamp': timezone.now().isoformat()
             }))
         else:
-            await self.send_error('Failed to close conversation')
+            await self.send_error('Failed to close conversation - database update failed')
+
+    async def handle_reopen_temporary(self, data):
+        """Handle sending a WhatsApp button message to reopen a conversation temporarily"""
+        conversation_id = data.get('conversation_id')
+        if not conversation_id:
+            await self.send_error('Conversation ID is required')
+            return
+
+        conversation = await self.get_conversation(conversation_id)
+        if not conversation:
+            await self.send_error('Conversation not found')
+            return
+
+        if not await self.validate_conversation_access(conversation):
+            await self.send_error('Access denied to this conversation')
+            return
+
+        # Only send WhatsApp button message for 'service' conversation types
+        if conversation.conversation_type != 'service':
+            await self.send_error('WhatsApp button messages are only supported for service conversations')
+            return
+
+        # Get guest's WhatsApp number
+        guest_whatsapp_number = conversation.guest.whatsapp_number
+        if not guest_whatsapp_number:
+            await self.send_error('Guest has no WhatsApp number')
+            return
+
+        # Get current department name for the message
+        current_department = conversation.department.capitalize() if conversation.department else 'service'
+
+        # Create the WhatsApp button message
+        message_text = f"There is an update to your {current_department} conversation, do you want to continue?"
+        buttons = [
+            {
+                "type": "reply",
+                "reply": {
+                    "id": f"accept_reopen_conversation_conv#{conversation_id}",
+                    "title": "Continue"
+                }
+            }
+        ]
+
+        try:
+            # Run the sync function in a thread to avoid blocking the async consumer
+            import asyncio
+            loop = asyncio.get_event_loop()
+            
+            def send_button_message():
+                try:
+                    response = send_whatsapp_button_message(
+                        recipient_number=guest_whatsapp_number,
+                        message_text=message_text,
+                        buttons=buttons
+                    )
+                    logger.info(f"WhatsApp button message sent successfully for conversation {conversation.id}: {response}")
+                    return True, response
+                except Exception as e:
+                    logger.error(f"Failed to send WhatsApp button message: {e}")
+                    return False, str(e)
+            
+            success, result = await loop.run_in_executor(None, send_button_message)
+            
+            if success:
+                # Send acknowledgment to the staff member
+                await self.send(text_data=json.dumps({
+                    'type': 'acknowledgment',
+                    'status': 'reopen_button_sent',
+                    'conversation_id': conversation_id,
+                    'timestamp': timezone.now().isoformat()
+                }))
+            else:
+                await self.send_error(f'Failed to send WhatsApp button message: {result}')
+                
+        except Exception as e:
+            logger.error(f"Error in handle_reopen_temporary: {e}", exc_info=True)
+            await self.send_error(f'Error sending WhatsApp button message: {str(e)}')
 
     @database_sync_to_async
     def get_user_departments(self):
@@ -637,12 +723,22 @@ class ChatConsumer(AsyncWebsocketConsumer):
 
     @database_sync_to_async
     def close_conversation(self, conversation):
-        """Close a conversation by setting status to 'closed'"""
+        """Close a conversation by setting status to 'closed' and initializing fulfillment tracking"""
         try:
             conversation.status = 'closed'
-            conversation.save(update_fields=['status'])
+            # Initialize fulfillment tracking when conversation is closed
+            update_fields = ['status']
+            if not conversation.is_request_fulfilled:
+                # Only set these if not already fulfilled
+                conversation.fulfilled_at = None
+                conversation.fulfillment_notes = None
+                update_fields.extend(['fulfilled_at', 'fulfillment_notes'])
+            
+            conversation.save(update_fields=update_fields)
+            logger.info(f"Successfully closed conversation {conversation.id}")
             return True
-        except Exception:
+        except Exception as e:
+            logger.error(f"Error closing conversation {conversation.id}: {e}", exc_info=True)
             return False
 
     async def send_whatsapp_message(self, conversation, content, message_type='text'):
@@ -728,6 +824,63 @@ class ChatConsumer(AsyncWebsocketConsumer):
             
         except Exception as e:
             logger.error(f"Error in send_whatsapp_media_with_link: {e}", exc_info=True)
+            return False
+
+    async def send_fulfillment_feedback_message(self, conversation):
+        """Send WhatsApp message with fulfillment feedback buttons"""
+        try:
+            # Only send WhatsApp messages for 'service' conversation types
+            if conversation.conversation_type != 'service':
+                logger.info(f"Skipping fulfillment feedback message for conversation type: {conversation.conversation_type}")
+                return True
+
+            # Get guest's WhatsApp number
+            guest_whatsapp_number = conversation.guest.whatsapp_number
+            if not guest_whatsapp_number:
+                logger.warning(f"Guest {conversation.guest.id} has no WhatsApp number")
+                return False
+
+            # Create the fulfillment feedback message
+            message_text = "The conversation is successfully closed, were your request fulfilled?"
+            buttons = [
+                {
+                    "type": "reply",
+                    "reply": {
+                        "id": f"req_fulfilled_conv#{conversation.id}",
+                        "title": "Yes"
+                    }
+                },
+                {
+                    "type": "reply", 
+                    "reply": {
+                        "id": f"req_unfulfilled_conv#{conversation.id}",
+                        "title": "No"
+                    }
+                }
+            ]
+
+            # Run the sync function in a thread to avoid blocking the async consumer
+            import asyncio
+            loop = asyncio.get_event_loop()
+            
+            def send_feedback_message():
+                try:
+                    response = send_whatsapp_button_message(
+                        recipient_number=guest_whatsapp_number,
+                        message_text=message_text,
+                        buttons=buttons
+                    )
+                    logger.info(f"Fulfillment feedback message sent successfully for conversation {conversation.id}: {response}")
+                    return True, response
+                except Exception as e:
+                    logger.error(f"Failed to send fulfillment feedback message: {e}")
+                    return False, str(e)
+            
+            success, result = await loop.run_in_executor(None, send_feedback_message)
+            return success
+            
+        except Exception as e:
+            logger.error(f"Error in send_fulfillment_feedback_message: {e}", exc_info=True)
             return False
 
     @database_sync_to_async

@@ -10,7 +10,7 @@ from .base import (
 )
 from ..utils.whatsapp_payload_utils import convert_flow_response_to_whatsapp_payload
 from ..utils.webhook_deduplication import (
-    check_and_create_webhook_attempt, 
+    check_and_create_webhook_attempt,
     update_webhook_attempt
 )
 import uuid
@@ -23,17 +23,17 @@ def process_guest_webhook(request_data, request_headers=None, media_id=None):
     Function to process guest webhook requests.
     Same logic as GuestWebhookView.post() but callable directly.
     Note: Deduplication is handled at the view level (GuestConversationTypeView).
-    
+
     Args:
         request_data: The request data/payload
         request_headers: Optional request headers for logging
         media_id: Optional WhatsApp media ID
-    
+
     Returns:
         Tuple of (response_data, status_code)
     """
     start_time = time.time()
-    
+
     if request_headers:
         logger.info(f"process_guest_webhook: Request headers: {dict(request_headers)}")
     logger.info(f"process_guest_webhook: Request body: {request_data}")
@@ -183,6 +183,67 @@ def process_guest_webhook(request_data, request_headers=None, media_id=None):
                     # Use existing conversation instead of creating new one
                     logger.info(f"process_guest_webhook: Using existing active conversation {existing_conversation.id}")
                     conversation = existing_conversation
+                    
+                    # Check if user is returning after being away (30 minutes threshold)
+                    time_threshold = timezone.now() - timezone.timedelta(minutes=30)
+                    is_returning_user = (
+                        conversation.last_message_at and 
+                        conversation.last_message_at < time_threshold
+                    )
+                    
+                    if is_returning_user:
+                        logger.info(f"process_guest_webhook: User is returning after {timezone.now() - conversation.last_message_at}")
+                        # Create a service message to notify staff that user is back online
+                        try:
+                            guest_display_name = guest.full_name or 'Guest'
+                            return_message = Message.objects.create(
+                                conversation=conversation,
+                                sender_type='staff',
+                                content=f"{guest_display_name} is back online",
+                                message_type='system'
+                            )
+                            logger.info(f"process_guest_webhook: Created 'User is back online' service message {return_message.id}")
+                            
+                            # Broadcast the service message to staff first
+                            try:
+                                channel_layer = get_channel_layer()
+                                department_group_name = f"department_{conversation.department}"
+                                
+                                service_message_data = {
+                                    'id': return_message.id,
+                                    'conversation_id': conversation.id,
+                                    'sender_type': 'staff',
+                                    'sender_name': 'System',
+                                    'sender_id': None,
+                                    'message_type': return_message.message_type,
+                                    'content': return_message.content,
+                                    'media_url': return_message.get_media_url,
+                                    'media_filename': return_message.media_filename,
+                                    'is_read': return_message.is_read,
+                                    'created_at': return_message.created_at.isoformat(),
+                                    'updated_at': return_message.updated_at.isoformat(),
+                                    'guest_info': {
+                                        'id': guest.id,
+                                        'name': guest.full_name,
+                                        'whatsapp_number': guest.whatsapp_number,
+                                        'room_number': active_stay.room.room_number if active_stay else None
+                                    }
+                                }
+                                
+                                async_to_sync(channel_layer.group_send)(
+                                    department_group_name,
+                                    {
+                                        'type': 'chat_message',
+                                        'message': service_message_data
+                                    }
+                                )
+                                logger.info(f"process_guest_webhook: Broadcasted 'User is back online' service message")
+                            except Exception as ws_error:
+                                logger.error(f"process_guest_webhook: Failed to broadcast service message: {ws_error}", exc_info=True)
+                        except Exception as e:
+                            logger.error(f"process_guest_webhook: Failed to create 'User is back online' service message: {e}", exc_info=True)
+                    
+                    # Now update the conversation with the actual user message
                     conversation.update_last_message(message_content)
                     created = False
                 else:
@@ -202,7 +263,7 @@ def process_guest_webhook(request_data, request_headers=None, media_id=None):
 
             # Create message
             logger.info(f"process_guest_webhook: Creating message - type: {message_type}, has_media: {media_file is not None}")
-            
+
             # Prepare message creation data
             message_data = {
                 'conversation': conversation,
@@ -213,13 +274,13 @@ def process_guest_webhook(request_data, request_headers=None, media_id=None):
                 'media_url': media_url,
                 'media_filename': media_filename,
             }
-            
+
             # Add WhatsApp message ID if it exists (for incoming guest messages)
             whatsapp_message_id = request_data.get('whatsapp_message_id')
             if whatsapp_message_id:
                 message_data['whatsapp_message_id'] = whatsapp_message_id
                 logger.info(f"process_guest_webhook: Creating message with WhatsApp ID {whatsapp_message_id}")
-            
+
             message = Message.objects.create(**message_data)
             logger.info(f"process_guest_webhook: Created message {message.id} successfully")
 
@@ -272,13 +333,13 @@ def process_guest_webhook(request_data, request_headers=None, media_id=None):
             'conversation_created': created if not conversation_id else False
         }
         logger.info(f"process_guest_webhook: Successfully processed webhook - {response_data}")
-        
+
         return (response_data, status.HTTP_201_CREATED)
 
     except Exception as e:
         error_msg = f"process_guest_webhook: Internal server error: {e}"
         logger.error(error_msg, exc_info=True)
-        
+
         return (
             {'error': 'Internal server error', 'details': str(e)},
             status.HTTP_500_INTERNAL_SERVER_ERROR
@@ -289,22 +350,22 @@ def process_flow_webhook(request_data, media_id=None):
     """
     Function to process flow webhook requests.
     Same logic as FlowWebhookView.post() but callable directly.
-    
+
     Args:
         request_data: The request data/payload
         media_id: Optional WhatsApp media ID
-    
+
     Returns:
         Tuple of (response_data, status_code)
     """
     start_time = time.time()
-    
+
     logger.info(f"process_flow_webhook: Received webhook request")
     logger.info(f"Request body: {request_data}")
 
     # Extract WhatsApp message ID for deduplication
     whatsapp_message_id = request_data.get('whatsapp_message_id')
-    
+
     # Extract phone number early for deduplication
     temp_serializer = FlowMessageSerializer(data=request_data)
     if temp_serializer.is_valid():
@@ -323,7 +384,7 @@ def process_flow_webhook(request_data, media_id=None):
         whatsapp_number=whatsapp_number,
         request_data=request_data
     )
-    
+
     if is_duplicate:
         # Return existing webhook attempt data
         existing_data = webhook_attempt.response_data or {}
@@ -398,7 +459,7 @@ def process_flow_webhook(request_data, media_id=None):
 
         # Check flow type based on message content
         message_lower = message_content.lower().strip()
-        
+
         # Check for hotel ID validation command: /checkin-{hotel_id}
         if message_lower.startswith('/checkin-'):
             # Process hotel validation flow
@@ -445,7 +506,7 @@ def process_flow_webhook(request_data, media_id=None):
             flow_result=flow_result,
             recipient_number=whatsapp_number
         )
-        
+
         # Add WhatsApp payload to the result
         flow_result['whatsapp_payload'] = whatsapp_payload
 
@@ -463,7 +524,7 @@ def process_flow_webhook(request_data, media_id=None):
     except Exception as e:
         error_msg = f"process_flow_webhook: Internal server error: {e}"
         logger.error(error_msg, exc_info=True)
-        
+
         # Update webhook attempt with error
         processing_time_ms = int((time.time() - start_time) * 1000)
         update_webhook_attempt(
@@ -472,339 +533,8 @@ def process_flow_webhook(request_data, media_id=None):
             error_message=error_msg,
             processing_time_ms=processing_time_ms
         )
-        
+
         return (
             {'error': 'Internal server error', 'details': str(e)},
             status.HTTP_500_INTERNAL_SERVER_ERROR
         )
-
-
-class GuestWebhookView(views.APIView):
-    """
-    Webhook endpoint for receiving messages from guest applications (Service messages only)
-    """
-    permission_classes = [AllowAny]  # No authentication required for webhook
-
-    def post(self, request):
-        logger.info(f"GuestWebhookView: Received webhook request")
-        
-        # Use the function to process the webhook
-        response_data, status_code = process_guest_webhook(
-            request_data=request.data,
-            request_headers=request.headers,
-            media_id=request.data.get('media_id')
-        )
-        
-        return create_response(response_data, status_code)
-
-
-class FlowWebhookView(views.APIView):
-    """
-    Simplified webhook endpoint for processing flow messages.
-    Handles:
-    1. Hotel validation flow (for /checkin-{hotel_id} commands) - SAVES messages
-    2. Check-in flow (if check-in keywords detected) - SAVES messages and media files
-    3. General response (for all other messages) - DOES NOT save messages
-    
-    Only saves messages that are part of flows or media files during flow processing.
-    """
-    permission_classes = [AllowAny]  # No authentication required for webhook
-
-    def post(self, request):
-        """
-        Process flow messages with simple logic:
-        - Check-in keywords → Check-in flow
-        - Everything else → General response with media saving
-        """
-        logger.info(f"FlowWebhookView: Received webhook request")
-        
-        # Use the function to process the webhook
-        response_data, status_code = process_flow_webhook(
-            request_data=request.data,
-            media_id=request.data.get('media_id')
-        )
-        
-        return create_response(response_data, status_code)
-
-    def _process_general_message(self, flow_id, guest, message_content, message_type, media_file, media_filename):
-        """
-        Provide a simple response for non-flow messages without saving them
-        """
-        try:
-            # Don't save messages that don't match any flow conditions
-            # Just provide a simple response
-            logger.info(f"FlowWebhookView: Non-flow message received, not saving: {message_content[:50]}...")
-            
-            # Simple general response
-            response_text = "Thank you for your message! Our team will get back to you shortly."
-
-            return {
-                'success': True,
-                'flow_id': flow_id,
-                'flow_type': 'general',
-                'step_id': 'message_received',
-                'response': {
-                    'response_type': 'text',
-                    'text': response_text,
-                },
-                'status': 'completed',
-                'is_complete': True,
-                'message_saved': False,  # Indicate that message was not saved
-            }
-
-        except Exception as e:
-            logger.error(f"FlowWebhookView: Error processing general message: {e}", exc_info=True)
-            return {
-                'success': False,
-                'error': 'general_message_error',
-                'message': 'Error processing message',
-                'flow_id': flow_id,
-                'details': str(e)
-            }
-
-    def _process_hotel_validation_flow(self, flow_id, guest, message_content, message_type, media_file, media_filename):
-        """
-        Process hotel ID validation command: /checkin-{hotel_id}
-        Validates hotel exists and then initiates check-in flow
-        """
-        try:
-            # Extract hotel ID from message
-            message_parts = message_content.strip().split()
-            if len(message_parts) < 1:
-                return {
-                    'success': False,
-                    'error': 'invalid_hotel_id_format',
-                    'message': 'Please use the format: /checkin-{hotel_id}',
-                    'flow_id': flow_id,
-                    'flow_type': 'hotel_validation',
-                    'details': 'Missing hotel ID parameter'
-                }
-
-            # Extract hotel_id from /checkin-{hotel_id} format
-            hotel_command = message_parts[0]
-            if not hotel_command.startswith('/checkin-') or len(hotel_command) <= 9:
-                return {
-                    'success': False,
-                    'error': 'invalid_hotel_id_format',
-                    'message': 'Please use the format: /checkin-{hotel_id}',
-                    'flow_id': flow_id,
-                    'flow_type': 'hotel_validation',
-                    'details': 'Invalid hotel ID format'
-                }
-
-            hotel_id = hotel_command[9:]  # Remove '/checkin-' prefix
-            logger.info(f"FlowWebhookView: Validating hotel ID: {hotel_id}")
-
-            # Validate hotel ID and get hotel name
-            try:
-                hotel = Hotel.objects.get(id=hotel_id)
-                hotel_name = hotel.name
-                logger.info(f"FlowWebhookView: Found hotel: {hotel_name}")
-            except Hotel.DoesNotExist:
-                return {
-                    'success': False,
-                    'error': 'hotel_not_found',
-                    'message': f'Hotel with ID {hotel_id} not found',
-                    'flow_id': flow_id,
-                    'flow_type': 'hotel_validation',
-                    'details': f'No hotel found with ID {hotel_id}'
-                }
-
-            # Check if guest has an existing active stay at this hotel
-            active_stay = Stay.objects.filter(
-                guest=guest,
-                hotel=hotel,
-                status='active'
-            ).first()
-
-            if active_stay:
-                response_text = f"You already have an active stay at {hotel.name} in room {active_stay.room.room_number}. How can we assist you?"
-                return {
-                    'success': True,
-                    'flow_id': flow_id,
-                    'flow_type': 'hotel_validation',
-                    'step_id': 'existing_stay',
-                    'response': {
-                        'response_type': 'text',
-                        'text': response_text,
-                    },
-                    'status': 'completed',
-                    'is_complete': True,
-                }
-
-            # No existing stay - initiate check-in flow
-            logger.info(f"FlowWebhookView: No existing stay found for guest {guest.id} at hotel {hotel.name}, initiating check-in flow")
-
-            # Save the hotel validation message
-            self._save_flow_message(
-                guest=guest,
-                message_content=message_content,
-                message_type=message_type,
-                media_file=media_file,
-                media_filename=media_filename,
-                flow_id=flow_id,
-                flow_type='hotel_validation',
-                flow_step='hotel_validated',
-                flow_success=True,
-                flow_data={'hotel_id': hotel_id, 'hotel_name': hotel.name}
-            )
-
-            # Initiate check-in flow with hotel context
-            checkin_flow_result = self._process_checkin_flow(
-                flow_id=f"checkin_{uuid.uuid4().hex[:12]}_{int(time.time())}",
-                guest=guest,
-                message_content="start_checkin",  # Trigger check-in flow
-                message_type='text',
-                media_file=None,
-                media_filename=None,
-                request_data={
-                    'hotel_id': hotel_id,
-                    'hotel_name': hotel_name,
-                    'initiated_from': 'hotel_validation'
-                }
-            )
-
-            # Return success with check-in flow initiation
-            return {
-                'success': True,
-                'flow_id': flow_id,
-                'flow_type': 'hotel_validation',
-                'step_id': 'hotel_validated',
-                'response': {
-                    'response_type': 'text',
-                    'text': f"Welcome to {hotel.name}! Let's start your check-in process.",
-                },
-                'status': 'completed',
-                'is_complete': True,
-                'next_flow': checkin_flow_result,  # Include check-in flow result
-            }
-
-        except Exception as e:
-            logger.error(f"FlowWebhookView: Hotel validation flow error: {e}", exc_info=True)
-            return {
-                'success': False,
-                'error': 'hotel_validation_error',
-                'message': 'Error in hotel validation flow processing',
-                'flow_id': flow_id,
-                'flow_type': 'hotel_validation',
-                'details': str(e)
-            }
-
-    def _process_checkin_flow(self, flow_id, guest, message_content, message_type, media_file, media_filename, request_data):
-        """
-        Process check-in flow using existing checkin_flow.py logic
-        """
-        try:
-            from ..flows.checkin_flow import check_in_flow
-
-            # Prepare data for check_in_flow function
-            incoming_data = {
-                'message': message_content,
-                'message_type': message_type,
-                'media_data': media_file.read() if media_file else None,
-            }
-
-            # Get previous flow state if provided
-            previous_flow_message = request_data.get('previous_flow_message')
-
-            # Process through check-in flow
-            flow_result = check_in_flow(
-                flow_id=flow_id,
-                incoming_data=incoming_data,
-                previous_flow_message=previous_flow_message
-            )
-
-            # Save message with flow metadata
-            self._save_flow_message(
-                guest=guest,
-                message_content=message_content,
-                message_type=message_type,
-                media_file=media_file,
-                media_filename=media_filename,
-                flow_id=flow_id,
-                flow_type='checkin',
-                flow_step=flow_result.get('step_id'),
-                flow_success=flow_result.get('status') != 'error',
-                flow_data=flow_result.get('flow_data', {})
-            )
-
-            # Return standardized flow response
-            return {
-                'success': True,
-                'flow_id': flow_id,
-                'flow_type': 'checkin',
-                'step_id': flow_result.get('step_id'),
-                'response': flow_result.get('response'),
-                'status': flow_result.get('status'),
-                'next_action': flow_result.get('next_action'),
-                'flow_data': flow_result.get('flow_data'),
-                'requires_input': flow_result.get('next_action') in ['await_user_input', 'await_media_upload'],
-                'is_complete': flow_result.get('status') == 'completed',
-            }
-
-        except Exception as e:
-            logger.error(f"FlowWebhookView: Check-in flow error: {e}", exc_info=True)
-            return {
-                'success': False,
-                'error': 'checkin_flow_error',
-                'message': 'Error in check-in flow processing',
-                'flow_id': flow_id,
-                'flow_type': 'checkin',
-                'details': str(e)
-            }
-
-    def _save_flow_message(self, guest, message_content, message_type, media_file, media_filename, flow_id, flow_type, flow_step, flow_success, flow_data):
-        """
-        Save a flow message to the database for logging and tracking purposes
-        """
-        try:
-            # Find or create a conversation for this guest and hotel
-            # For flow messages, we don't need a specific department
-            conversation = None
-            
-            # Try to find existing conversation for this guest
-            active_stay = Stay.objects.filter(guest=guest, status='active').first()
-            if active_stay:
-                conversation = Conversation.objects.filter(
-                    guest=guest,
-                    hotel=active_stay.hotel
-                ).first()
-            
-            # Create conversation if not found
-            if not conversation:
-                if active_stay:
-                    conversation = Conversation.objects.create(
-                        guest=guest,
-                        hotel=active_stay.hotel,
-                        department='Reception',  # Default department
-                        status='active'
-                    )
-                else:
-                    # If no active stay, don't create conversation - just log the flow message
-                    logger.info(f"FlowWebhookView: No active stay for guest {guest.id}, skipping message creation")
-                    return None
-
-            # Create message record
-            message = Message.objects.create(
-                conversation=conversation,
-                sender_type='guest',
-                sender=None,  # Guest message - no specific sender
-                message_type=message_type,
-                content=message_content,
-                media_file=media_file,
-                media_filename=media_filename,
-
-                # Flow-specific fields
-                is_flow=True,
-                flow_id=flow_id,
-                flow_step=flow_step,
-                is_flow_step_success=flow_success,
-            )
-
-            logger.info(f"FlowWebhookView: Saved flow message {message.id} for flow {flow_id}")
-            return message
-
-        except Exception as e:
-            logger.error(f"FlowWebhookView: Error saving flow message: {e}", exc_info=True)
-            # Continue processing even if message saving fails
-            return None

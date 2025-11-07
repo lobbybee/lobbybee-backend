@@ -171,6 +171,21 @@ def generate_error_text_payload(recipient_number, error_message):
     }
 
 
+def generate_success_text_payload(recipient_number, department_name, guest_name="Guest"):
+    """
+    Generate WhatsApp text message payload for successful department connection
+    """
+    return {
+        "messaging_product": "whatsapp",
+        "recipient_type": "individual",
+        "to": recipient_number,
+        "type": "text",
+        "text": {
+            "body": f"✅ You are now connected to {department_name}, {guest_name}!\n\nOur team will be with you shortly. Please share your request, and we'll be happy to assist you. 🐝"
+        }
+    }
+
+
 def validate_department_selection(department_id):
     """
     Validate if department ID is from our menu
