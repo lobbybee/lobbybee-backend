@@ -77,12 +77,21 @@ services:
       - static_volume:/app/static
       - media_volume:/app/media
       - ./config/nginx/default.conf:/etc/nginx/conf.d/default.conf
-      - certs_volume:/etc/nginx/certs
+      - certbot_certs:/etc/letsencrypt
+      - certbot_webroot:/var/www/certbot
       - ./config/certs/options-ssl-nginx.conf:/etc/nginx/certs/options-ssl-nginx.conf
       - ./config/certs/ssl-dhparams.pem:/etc/nginx/certs/ssl-dhparams.pem
-      - certbot_webroot:/var/www/certbot
     depends_on:
       - web
+      - certbot
+    restart: unless-stopped
+
+  certbot:
+    image: certbot/certbot:latest
+    volumes:
+      - certbot_certs:/etc/letsencrypt
+      - certbot_webroot:/var/www/certbot
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
     restart: unless-stopped
 
 volumes:
@@ -90,4 +99,4 @@ volumes:
   static_volume:
   media_volume:
   certbot_webroot:
-  certs_volume:
+  certbot_certs:
