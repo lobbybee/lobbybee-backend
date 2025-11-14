@@ -121,10 +121,20 @@ class GuestManagementViewSet(viewsets.GenericViewSet):
     @action(detail=False, methods=['get'], url_path='guests')
     def list_guests(self, request):
         """
-        List all guests for the hotel
+        List all guests for the hotel with optional search functionality
+        Query parameters:
+        - search: Search term to filter guests by name or phone number
         """
-        guests = self.get_queryset()
-        serializer = GuestResponseSerializer(guests, many=True)
+        queryset = self.get_queryset()
+        search_term = request.query_params.get('search', None)
+        
+        if search_term:
+            queryset = queryset.filter(
+                Q(full_name__icontains=search_term) | 
+                Q(whatsapp_number__icontains=search_term)
+            )
+        
+        serializer = GuestResponseSerializer(queryset, many=True)
         return Response(serializer.data)
 
     @action(detail=False, methods=['get'], url_path='bookings')
@@ -229,7 +239,7 @@ class StayManagementViewSet(viewsets.GenericViewSet):
     def verify_checkin(self, request, pk=None):
         """
         Verify and activate a stay. Updates register number and marks as checked in.
-        Can optionally update room assignment.
+        Can optionally update room assignment and checkout date.
         """
         stay = self.get_object()
         
@@ -264,6 +274,16 @@ class StayManagementViewSet(viewsets.GenericViewSet):
                     new_room.save()
                     stay.room = new_room
                 
+                # Update checkout date if provided
+                if 'check_out_date' in serializer.validated_data:
+                    new_checkout_date = serializer.validated_data['check_out_date']
+                    stay.check_out_date = new_checkout_date
+                    
+                    # Also update booking checkout date if booking exists
+                    if stay.booking:
+                        stay.booking.check_out_date = new_checkout_date
+                        stay.booking.save()
+                
                 # Update guest info if provided
                 guest_updates = serializer.validated_data.get('guest_updates', {})
                 if guest_updates:
@@ -292,6 +312,7 @@ class StayManagementViewSet(viewsets.GenericViewSet):
                 return Response({
                     'stay_id': stay.id,
                     'register_number': stay.register_number,
+                    'check_out_date': stay.check_out_date,
                     'message': 'Check-in verified and activated successfully'
                 }, status=status.HTTP_200_OK)
                 
@@ -310,3 +331,55 @@ class StayManagementViewSet(viewsets.GenericViewSet):
         stays = self.get_queryset().filter(status='pending').order_by('-created_at')
         serializer = StayListSerializer(stays, many=True)
         return Response(serializer.data)
+
+    @action(detail=False, methods=['get'], url_path='checked-in-users')
+    def checked_in_users(self, request):
+        """
+        List all checked-in users (active stays)
+        """
+        stays = self.get_queryset().filter(status='active').order_by('-actual_check_in')
+        serializer = StayListSerializer(stays, many=True)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['post'], url_path='checkout')
+    def checkout_user(self, request, pk=None):
+        """
+        Check out a guest by changing stay status to checked-out
+        Also updates guest status and room status to cleaning
+        """
+        stay = self.get_object()
+        
+        if stay.status != 'active':
+            return Response(
+                {'error': f'Stay is not active. Current status: {stay.status}'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            with transaction.atomic():
+                # Update stay status
+                stay.status = 'completed'
+                stay.actual_check_out = timezone.now()
+                stay.save()
+                
+                # Update guest status
+                stay.guest.status = 'checked_out'
+                stay.guest.save()
+                
+                # Update room status to cleaning
+                if stay.room:
+                    stay.room.status = 'cleaning'
+                    stay.room.current_guest = None
+                    stay.room.save()
+                
+                return Response({
+                    'stay_id': stay.id,
+                    'message': 'Guest checked out successfully'
+                }, status=status.HTTP_200_OK)
+                
+        except Exception as e:
+            logger.error(f"Error checking out guest: {str(e)}")
+            return Response(
+                {'error': f'Failed to check out guest: {str(e)}'},
+                status=status.HTTP_400_BAD_REQUEST
+            )

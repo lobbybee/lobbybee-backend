@@ -17,3 +17,5 @@ urlpatterns = [
 # POST /api/guest/stay-management/checkin-offline/
 # PATCH /api/guest/stay-management/{id}/verify-checkin/
 # GET  /api/guest/stay-management/pending-stays/
+# GET  /api/guest/stay-management/checked-in-users/
+# POST /api/guest/stay-management/{id}/checkout/

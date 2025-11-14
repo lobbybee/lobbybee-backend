@@ -314,12 +314,19 @@ def handle_returning_guest_checkin(guest, hotel_id, flow_data):
 
 def cleanup_incomplete_guest_data(guest):
     """Clean up incomplete guest data from failed check-ins."""
-    from guest.models import GuestIdentityDocument, Booking
+    from guest.models import GuestIdentityDocument, Booking, Stay
 
-    # Delete incomplete bookings (pending or cancelled)
+    # Delete incomplete stays (pending status - these are from WhatsApp flows without room assignment)
+    Stay.objects.filter(
+        guest=guest,
+        status='pending'
+    ).delete()
+
+    # Delete incomplete bookings (pending or cancelled status)
+    # Note: pending_verification is a guest status, not a booking status
     Booking.objects.filter(
         primary_guest=guest,
-        status__in=['pending', 'cancelled']
+        status__in=['pending']
     ).delete()
 
     # Delete unverified identity documents
@@ -830,20 +837,74 @@ def handle_aadhar_confirmation_step(conversation, guest, message_text, flow_data
 
     # Handle both text responses and button responses (btn_0, btn_1)
     if response in ['yes', 'correct', 'confirm', '1', 'btn_0']:
-        # Extracted info is correct - data already saved
-        logger.info(f"User confirmed AADHAR data with response '{response}', completing check-in for guest {guest.id}")
+        # Extracted info is correct - ensure data is saved and create pending stay and booking
+        logger.info(f"User confirmed AADHAR data with response '{response}', creating pending stay for guest {guest.id}")
 
-        response_text = f"""✅ Thank you for confirming your information!
+        try:
+            # Ensure extracted Aadhaar data is properly saved to guest before creating booking
+            extracted_info = flow_data.get('extracted_aadhar_info', {})
+            if extracted_info:
+                # Refresh guest object to get latest state
+                guest.refresh_from_db()
+                
+                # Save extracted data to guest if not already saved
+                if 'name' in extracted_info and not guest.full_name:
+                    guest.full_name = extracted_info['name']
+                
+                if 'dob' in extracted_info and not guest.date_of_birth:
+                    from datetime import datetime
+                    try:
+                        # Try different DOB formats: DD-MM-YYYY and DD/MM/YYYY
+                        dob_str = extracted_info['dob']
+                        if '-' in dob_str:
+                            guest.date_of_birth = datetime.strptime(dob_str, '%d-%m-%Y').date()
+                        elif '/' in dob_str:
+                            guest.date_of_birth = datetime.strptime(dob_str, '%d/%m/%Y').date()
+                        else:
+                            logger.warning(f"Unknown DOB format: {dob_str}")
+                        logger.info(f"Set DOB from Aadhaar: {guest.date_of_birth}")
+                    except Exception as e:
+                        logger.error(f"Error parsing DOB '{extracted_info['dob']}': {e}")
+                
+                # Save any updates to guest
+                guest.save()
+                logger.info(f"Guest data saved before booking creation: {guest.full_name}, DOB: {guest.date_of_birth}")
 
-Dear {guest.full_name}, our receptionist will validate your information and assign you a room shortly.
+            booking, stay = create_pending_stay_from_flow(conversation, guest)
 
+            # Update conversation
+            conversation.conversation_type = 'booking_created'
+            conversation.status = 'closed'
+            conversation.save(update_fields=['conversation_type', 'status'])
+
+            response_text = f"""✅ Thank you for confirming your information!
+
+Dear {guest.full_name}, your information has been received and is pending verification.
+
+Our receptionist will:
+• Verify your AADHAR details
+• Assign you a suitable room
+• Confirm your check-in details
+
+You'll receive a confirmation once your room is ready.
+
+Booking ID: {booking.id}
 Welcome to {conversation.hotel.name}! 🏨"""
 
-        save_system_message(conversation, response_text, CheckinStep.COMPLETED)
-        return {
-            "type": "text",
-            "text": response_text
-        }
+            save_system_message(conversation, response_text, CheckinStep.COMPLETED)
+            return {
+                "type": "text",
+                "text": response_text
+            }
+
+        except Exception as e:
+            logger.error(f"Error creating pending stay from AADHAR confirmation: {e}")
+            error_text = "There was an error processing your check-in. Please contact the reception desk for assistance."
+            save_system_message(conversation, error_text, CheckinStep.COMPLETED, is_success=False)
+            return {
+                "type": "text",
+                "text": error_text
+            }
 
     elif response in ['no', 'incorrect', 'modify', '2', 'btn_1']:
         # User wants to correct - redirect to NAME step for manual input
@@ -914,9 +975,16 @@ def process_aadhar_verification(conversation, guest, flow_data):
             if 'dob' in formatted_data:
                 from datetime import datetime
                 try:
-                    guest.date_of_birth = datetime.strptime(formatted_data['dob'], '%d/%m/%Y').date()
-                except:
-                    pass
+                    # Try different DOB formats: DD-MM-YYYY and DD/MM/YYYY
+                    dob_str = formatted_data['dob']
+                    if '-' in dob_str:
+                        guest.date_of_birth = datetime.strptime(dob_str, '%d-%m-%Y').date()
+                    elif '/' in dob_str:
+                        guest.date_of_birth = datetime.strptime(dob_str, '%d/%m/%Y').date()
+                    else:
+                        logger.warning(f"Unknown DOB format: {dob_str}")
+                except Exception as e:
+                    logger.error(f"Error parsing DOB '{formatted_data['dob']}': {e}")
 
             guest.save(update_fields=['full_name', 'date_of_birth'])
             logger.info(f"Saved AADHAR extracted data to guest {guest.id}")
@@ -936,9 +1004,16 @@ def process_aadhar_verification(conversation, guest, flow_data):
                 if 'dob' in formatted_data:
                     from datetime import datetime
                     try:
-                        guest.date_of_birth = datetime.strptime(formatted_data['dob'], '%d/%m/%Y').date()
-                    except:
-                        pass
+                        # Try different DOB formats: DD-MM-YYYY and DD/MM/YYYY
+                        dob_str = formatted_data['dob']
+                        if '-' in dob_str:
+                            guest.date_of_birth = datetime.strptime(dob_str, '%d-%m-%Y').date()
+                        elif '/' in dob_str:
+                            guest.date_of_birth = datetime.strptime(dob_str, '%d/%m/%Y').date()
+                        else:
+                            logger.warning(f"Unknown DOB format: {dob_str}")
+                    except Exception as e:
+                        logger.error(f"Error parsing DOB '{formatted_data['dob']}': {e}")
 
                 guest.save(update_fields=['full_name', 'date_of_birth'])
                 logger.info(f"Saved AADHAR extracted data to guest {guest.id}")
@@ -1079,6 +1154,60 @@ Please verify that all details are accurate. Select Confirm to proceed with chec
     }
 
 
+def create_pending_stay_from_flow(conversation, guest):
+    """
+    Create pending stay and booking from completed WhatsApp check-in flow.
+    This creates the booking without room assignment, which will be handled
+    by receptionists during the verification step.
+    """
+    from guest.models import Booking, Stay
+    from django.utils import timezone
+    from datetime import timedelta
+
+    try:
+        with transaction.atomic():
+            # Create booking record to group the stay
+            # Use current date as check-in, tomorrow as check-out (can be modified by staff)
+            booking = Booking.objects.create(
+                hotel=conversation.hotel,
+                primary_guest=guest,
+                check_in_date=timezone.now().date(),
+                check_out_date=(timezone.now() + timedelta(days=1)).date(),
+                status='pending',  # Will be confirmed by staff after room assignment
+                guest_names=[guest.full_name] if guest.full_name else [],
+                total_amount=0  # Will be calculated based on assigned room
+            )
+
+            # Create pending stay record without room assignment
+            stay = Stay.objects.create(
+                booking=booking,
+                hotel=conversation.hotel,
+                guest=guest,
+                room=None,  # No room assigned yet - will be assigned by receptionist
+                register_number=None,  # Will be assigned during verification
+                check_in_date=timezone.now().date(),
+                check_out_date=(timezone.now() + timedelta(days=1)).date(),
+                number_of_guests=1,  # Default, can be updated by staff
+                guest_names=[guest.full_name] if guest.full_name else [],
+                status='pending',  # Pending room assignment and verification
+                identity_verified=False,  # Documents uploaded but not verified
+                documents_uploaded=True,  # Documents have been uploaded via WhatsApp
+                actual_check_in=None  # Will be set when actually checked in
+            )
+
+            # Update guest status
+            guest.status = 'pending_verification'
+            guest.save(update_fields=['status'])
+
+            logger.info(f"Created pending booking {booking.id} and stay {stay.id} for guest {guest.id} from WhatsApp flow")
+
+            return booking, stay
+
+    except Exception as e:
+        logger.error(f"Error creating pending stay from flow: {e}", exc_info=True)
+        raise
+
+
 def process_confirmation_response(conversation, guest, message_text):
     """Process confirmation response."""
 
@@ -1086,46 +1215,44 @@ def process_confirmation_response(conversation, guest, message_text):
 
     # Handle both text responses and button responses (btn_0, btn_1)
     if response in ['confirm', 'btn_0']:
-        # Create booking record for successful check-in
-        from guest.models import Booking
-        from django.utils import timezone
+        # Create pending stay and booking from completed flow
+        try:
+            booking, stay = create_pending_stay_from_flow(conversation, guest)
 
-        # Create booking with current date as check-in date
-        # Check-out date defaults to tomorrow (can be modified later)
-        from datetime import timedelta
-        booking = Booking.objects.create(
-            hotel=conversation.hotel,
-            primary_guest=guest,
-            check_in_date=timezone.now(),
-            check_out_date=timezone.now() + timedelta(days=1),
-            status='pending',  # Will be confirmed by staff
-            guest_names=[guest.full_name] if guest.full_name else []
-        )
+            # Update conversation
+            conversation.conversation_type = 'booking_created'
+            conversation.status = 'closed'
+            conversation.save(update_fields=['conversation_type', 'status'])
 
-        # Update guest status
-        guest.status = 'pending_checkin'
-        guest.save(update_fields=['status'])
+            success_text = f"""✅ Check-in information submitted successfully!
 
-        # Update conversation
-        conversation.conversation_type = 'booking_created'
-        conversation.status = 'closed'
-        conversation.save(update_fields=['conversation_type', 'status'])
+Dear {guest.full_name}, your information has been received and is pending verification.
 
-        success_text = f"""✅ Check-in created successfully!
+Our receptionist will:
+• Verify your identity documents
+• Assign you a suitable room
+• Confirm your check-in details
 
-Dear {guest.full_name}, your check-in at {conversation.hotel.name} has been created.
-
-Our receptionist will verify your details, assign you a room, and confirm your check-in shortly.
+You'll receive a confirmation once your room is ready.
 
 Booking ID: {booking.id}
 Welcome to {conversation.hotel.name}! 🏨"""
 
-        save_system_message(conversation, success_text, CheckinStep.COMPLETED)
+            save_system_message(conversation, success_text, CheckinStep.COMPLETED)
 
-        return {
-            "type": "text",
-            "text": success_text
-        }
+            return {
+                "type": "text",
+                "text": success_text
+            }
+
+        except Exception as e:
+            logger.error(f"Error creating pending stay: {e}")
+            error_text = "There was an error processing your check-in. Please contact the reception desk for assistance."
+            save_system_message(conversation, error_text, CheckinStep.COMPLETED, is_success=False)
+            return {
+                "type": "text",
+                "text": error_text
+            }
 
     elif response in ['modify', 'btn_1']:
         # Restart the flow

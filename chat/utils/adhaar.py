@@ -29,8 +29,10 @@ def decode_aadhaar_qr_from_image(image_bytes: bytes) -> dict:
                     aadhaar = AadhaarSecureQr(int(qr_data))
         # Use the correct method name
                     if hasattr(aadhaar, 'decodeddata'):
+                        print("Decoded data:", aadhaar.decodeddata())
                         return aadhaar.decodeddata()
                     elif hasattr(aadhaar, 'decoded_data'):
+                        print("Decoded data:", aadhaar.decoded_data())
                         return aadhaar.decoded_data()
                     else:
                         # Log available methods for debugging

@@ -20,6 +20,7 @@ class Booking(models.Model):
 
     total_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     status = models.CharField(max_length=20, choices=BOOKING_STATUS, default='pending')
+    is_via_whatsapp = models.BooleanField(default=False)
 
     # This field will store the list of guests for the entire booking
     guest_names = models.JSONField(default=list)
@@ -103,7 +104,7 @@ class Stay(models.Model):
     booking = models.ForeignKey(Booking, on_delete=models.CASCADE, related_name='stays', null=True, blank=True)
     hotel = models.ForeignKey(Hotel, on_delete=models.CASCADE, related_name='stays')
     guest = models.ForeignKey(Guest, on_delete=models.CASCADE, related_name='stays')
-    room = models.ForeignKey(Room, on_delete=models.CASCADE, related_name='stays')
+    room = models.ForeignKey(Room, on_delete=models.CASCADE, related_name='stays', null=True, blank=True)
     register_number = models.CharField(max_length=50, blank=True, null=True)
 
     check_in_date = models.DateTimeField()

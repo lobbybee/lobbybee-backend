@@ -49,6 +49,7 @@ class VerifyCheckinSerializer(serializers.Serializer):
     register_number = serializers.CharField(required=False, allow_blank=True)
     room_id = serializers.IntegerField(required=False)
     guest_updates = serializers.DictField(required=False)
+    check_out_date = serializers.DateTimeField(required=False)
 
 # Response serializers
 class GuestResponseSerializer(serializers.ModelSerializer):
@@ -58,7 +59,9 @@ class GuestResponseSerializer(serializers.ModelSerializer):
         model = Guest
         fields = [
             "id", "whatsapp_number", "full_name", "email", 
-            "status", "is_primary_guest", "identity_documents"
+            "status", "is_primary_guest", "documents", "nationality",
+            "register_number", "date_of_birth", "preferred_language",
+            "is_whatsapp_active", "loyalty_points", "notes"
         ]
     
     def get_documents(self, obj):
@@ -75,21 +78,34 @@ class GuestResponseSerializer(serializers.ModelSerializer):
 class StayListSerializer(serializers.ModelSerializer):
     guest = GuestResponseSerializer(read_only=True)
     room_details = serializers.SerializerMethodField()
+    booking_details = serializers.SerializerMethodField()
     
     class Meta:
         model = Stay
         fields = [
             "id", "guest", "status", "check_in_date", "check_out_date",
-            "room", "room_details", "register_number", "identity_verified"
+            "room", "room_details", "register_number", "identity_verified", "booking_details"
         ]
     
     def get_room_details(self, obj):
         return {
-            "id": obj.room.id,
-            "room_number": obj.room.room_number,
-            "floor": obj.room.floor,
-            "category": obj.room.category.name if obj.room.category else None
+            "id": obj.room.id if obj.room else None,
+            "room_number": obj.room.room_number if obj.room else None,
+            "floor": obj.room.floor if obj.room else None,
+            "category": obj.room.category.name if obj.room and obj.room.category else None
         }
+    
+    def get_booking_details(self, obj):
+        if obj.booking:
+            return {
+                "id": obj.booking.id,
+                "status": obj.booking.status,
+                "total_amount": obj.booking.total_amount,
+                "is_via_whatsapp": obj.booking.is_via_whatsapp,
+                "guest_names": obj.booking.guest_names,
+                "booking_date": obj.booking.booking_date
+            }
+        return None
 
 # Legacy serializers for compatibility with other parts of the codebase
 class GuestSerializer(serializers.ModelSerializer):
@@ -114,6 +130,7 @@ class GuestSerializer(serializers.ModelSerializer):
             "notes",
         ]
 
+# Additional response serializers for API consistency
 class BookingListSerializer(serializers.ModelSerializer):
     primary_guest = GuestResponseSerializer(read_only=True)
     
@@ -121,5 +138,5 @@ class BookingListSerializer(serializers.ModelSerializer):
         model = Booking
         fields = [
             "id", "primary_guest", "check_in_date", "check_out_date",
-            "status", "total_amount", "guest_names"
+            "status", "total_amount", "guest_names", "is_via_whatsapp"
         ]
