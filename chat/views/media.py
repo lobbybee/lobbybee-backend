@@ -188,3 +188,124 @@ class ChatMediaUploadView(APIView):
             processed_file = uploaded_file
         
         return processed_file, message_type, unique_filename
+
+
+class TemplateMediaUploadView(APIView):
+    """
+    API endpoint for uploading media files for message templates
+    Handles image uploads for hotel admins and platform staff
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        """Handle media file upload for message templates"""
+        logger.info(f"TemplateMediaUploadView: Received upload request from user {request.user.username}")
+        
+        try:
+            if 'file' not in request.FILES:
+                logger.error("TemplateMediaUploadView: No file provided")
+                return Response(
+                    {'error': 'file is required'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            uploaded_file = request.FILES['file']
+            logger.info(f"TemplateMediaUploadView: Processing file {uploaded_file.name}")
+            
+            # Validate file size (5MB limit for templates)
+            max_size = 5 * 1024 * 1024  # 5MB
+            if uploaded_file.size > max_size:
+                logger.error(f"TemplateMediaUploadView: File too large: {uploaded_file.size} bytes")
+                return Response(
+                    {'error': 'File size exceeds 5MB limit'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Validate file type - only images for templates
+            allowed_types = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
+            
+            if uploaded_file.content_type not in allowed_types:
+                logger.error(f"TemplateMediaUploadView: Unsupported file type: {uploaded_file.content_type}")
+                return Response(
+                    {'error': f'File type {uploaded_file.content_type} is not supported. Only images are allowed.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Validate user permissions
+            user = request.user
+            
+            # Only hotel admins, platform staff, and superusers can upload template media
+            if user.user_type not in ['hotel_admin', 'platform_staff'] and not user.is_superuser:
+                logger.error(f"TemplateMediaUploadView: Access denied for user {user.username}")
+                return Response(
+                    {'error': 'Access denied. Only hotel admins and platform staff can upload template media.'},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+            
+            # Process and save the file
+            try:
+                # Process the image file
+                processed_file, file_type, filename = self._process_template_file(uploaded_file)
+                
+                # Generate upload path based on user type
+                if user.user_type == 'hotel_admin' and hasattr(user, 'hotel'):
+                    upload_path = f"templates/hotel_{user.hotel.id}/{filename}"
+                else:
+                    # Platform staff and superusers - global templates
+                    upload_path = f"templates/global/{filename}"
+                
+                # Save file to storage
+                saved_path = default_storage.save(upload_path, processed_file)
+                file_url = default_storage.url(saved_path)
+                
+                logger.info(f"TemplateMediaUploadView: Successfully uploaded template file: {filename}")
+                
+                # Prepare response data
+                response_data = {
+                    'success': True,
+                    'file_url': file_url,
+                    'filename': filename,
+                    'file_type': file_type,
+                    'file_info': {
+                        'original_name': uploaded_file.name,
+                        'size': uploaded_file.size,
+                        'content_type': uploaded_file.content_type,
+                    }
+                }
+                
+                logger.info(f"TemplateMediaUploadView: Template media upload completed successfully")
+                return Response(response_data, status=status.HTTP_201_CREATED)
+                
+            except Exception as process_error:
+                logger.error(f"TemplateMediaUploadView: Error processing file: {process_error}", exc_info=True)
+                return Response(
+                    {'error': 'Error processing uploaded file', 'details': str(process_error)},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+                
+        except Exception as e:
+            logger.error(f"TemplateMediaUploadView: Unexpected error: {e}", exc_info=True)
+            return Response(
+                {'error': 'Internal server error', 'details': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    def _process_template_file(self, uploaded_file):
+        """
+        Process uploaded file for template usage
+        Returns: (processed_file, file_type, filename)
+        """
+        filename = uploaded_file.name
+        content_type = uploaded_file.content_type
+        
+        # Generate unique filename with original extension
+        file_extension = os.path.splitext(filename)[1]
+        unique_filename = f"template_{uuid.uuid4().hex}{file_extension}"
+        
+        # Determine file type
+        file_type = 'image'
+        
+        # For templates, we use the original file as-is (no audio conversion needed)
+        processed_file = uploaded_file
+        
+        return processed_file, file_type, unique_filename

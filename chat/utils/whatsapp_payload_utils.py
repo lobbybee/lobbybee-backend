@@ -16,7 +16,8 @@ def convert_flow_response_to_whatsapp_payload(flow_result, recipient_number):
     Returns:
         WhatsApp payload dictionary ready for sending
     """
-    if not flow_result or not flow_result.get('success'):
+    # Check if flow_result has an error status
+    if not flow_result or flow_result.get('status') == 'error' or flow_result.get('step_id') == 'error':
         # Return error payload for failed flow
         return generate_error_text_payload(
             recipient_number,
@@ -45,6 +46,7 @@ def convert_flow_response_to_whatsapp_payload(flow_result, recipient_number):
         options = response.get('options', [])
         if len(options) > 3:
             # Too many buttons, convert to list
+            body_text = response.get('body_text', 'Please choose from the options below:')
             base_payload.update({
                 "type": "interactive",
                 "interactive": {
@@ -54,7 +56,7 @@ def convert_flow_response_to_whatsapp_payload(flow_result, recipient_number):
                         "text": response.get('text', 'Please select an option:')
                     },
                     "body": {
-                        "text": "Please choose from the options below:"
+                        "text": body_text
                     },
                     "action": {
                         "button": "Select Option",
@@ -72,31 +74,48 @@ def convert_flow_response_to_whatsapp_payload(flow_result, recipient_number):
                 }
             })
         else:
-            # Use buttons (max 3)
+            # Use buttons (max 3) with proper header and body structure
+            header_text = response.get('text', '')
+            body_text = response.get('body_text', '')
+            
+            interactive_payload = {
+                "type": "button",
+                "header": {
+                    "type": "text",
+                    "text": header_text
+                },
+                "body": {
+                    "text": body_text
+                },
+                "action": {
+                    "buttons": [
+                        {
+                            "type": "reply",
+                            "reply": {
+                                "id": f"btn_{i}",
+                                "title": option
+                            }
+                        } for i, option in enumerate(options)
+                    ]
+                }
+            }
+            
+            # Add footer if available
+            if response.get('footer'):
+                interactive_payload["footer"] = {
+                    "text": response.get('footer')
+                }
+                
             base_payload.update({
                 "type": "interactive",
-                "interactive": {
-                    "type": "button",
-                    "body": {
-                        "text": response.get('text', '')
-                    },
-                    "action": {
-                        "buttons": [
-                            {
-                                "type": "reply",
-                                "reply": {
-                                    "id": f"btn_{i}",
-                                    "title": option
-                                }
-                            } for i, option in enumerate(options)
-                        ]
-                    }
-                }
+                "interactive": interactive_payload
             })
             
     elif response_type == 'list':
         # Interactive list response
         options = response.get('options', [])
+        body_text = response.get('body_text', 'Please choose from the options below:')
+        
         base_payload.update({
             "type": "interactive",
             "interactive": {
@@ -106,7 +125,7 @@ def convert_flow_response_to_whatsapp_payload(flow_result, recipient_number):
                     "text": response.get('text', 'Please select an option:')
                 },
                 "body": {
-                    "text": "Please choose from the options below:"
+                    "text": body_text
                 },
                 "footer": {
                     "text": "Powered by LobbyBee"
@@ -253,20 +272,21 @@ def create_button_payload(recipient_number, message_text, buttons):
     }
 
 
-def create_list_payload(recipient_number, header_text, options, footer_text="Powered by LobbyBee"):
+def create_list_payload(recipient_number, header_text, options, footer_text="Powered by LobbyBee", body_text=None):
     """
     Create an interactive list WhatsApp payload
     
     Args:
         recipient_number: WhatsApp phone number to send to
-        header_text: The header text for the list
+        header_text: The header text for the list (max 60 characters)
         options: List of option strings
         footer_text: Optional footer text
+        body_text: Optional body text for detailed description (max 1024 characters)
         
     Returns:
         WhatsApp payload dictionary
     """
-    return {
+    payload = {
         "messaging_product": "whatsapp",
         "recipient_type": "individual",
         "to": recipient_number,
@@ -276,9 +296,6 @@ def create_list_payload(recipient_number, header_text, options, footer_text="Pow
             "header": {
                 "type": "text",
                 "text": header_text
-            },
-            "body": {
-                "text": "Please choose from the options below:"
             },
             "footer": {
                 "text": footer_text
@@ -298,3 +315,16 @@ def create_list_payload(recipient_number, header_text, options, footer_text="Pow
             }
         }
     }
+    
+    # Add body text if provided (for backward compatibility, it's optional)
+    if body_text:
+        payload["interactive"]["body"] = {
+            "text": body_text
+        }
+    else:
+        # Default body text for backward compatibility
+        payload["interactive"]["body"] = {
+            "text": "Please choose from the options below:"
+        }
+        
+    return payload

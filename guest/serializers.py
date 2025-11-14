@@ -2,54 +2,98 @@ from rest_framework import serializers
 from .models import Guest, GuestIdentityDocument, Stay, Booking
 from django.db import transaction
 from hotel.models import Room
+import logging
+
+logger = logging.getLogger(__name__)
 
 
-class BookingSerializer(serializers.ModelSerializer):
-    # This field will accept a list of room IDs for the booking
-    room_ids = serializers.ListField(
-        child=serializers.IntegerField(), write_only=True
+class AccompanyingGuestSerializer(serializers.Serializer):
+    full_name = serializers.CharField(max_length=200)
+    documents = serializers.ListField(
+        child=serializers.FileField(),
+        write_only=True,
+        required=False
     )
-    # Make primary_guest writable by its ID
-    primary_guest = serializers.PrimaryKeyRelatedField(queryset=Guest.objects.all())
+    document_type = serializers.ChoiceField(
+        choices=GuestIdentityDocument.DOCUMENT_TYPES,
+        write_only=True,
+        required=False
+    )
 
+class DocumentUploadSerializer(serializers.Serializer):
+    document_file = serializers.FileField()
+    document_file_back = serializers.FileField(required=False)
+    document_type = serializers.ChoiceField(choices=GuestIdentityDocument.DOCUMENT_TYPES)
+    document_number = serializers.CharField(max_length=50, required=False, allow_blank=True)
+    is_primary = serializers.BooleanField(default=False)
+
+class CreateGuestSerializer(serializers.Serializer):
+    primary_guest = serializers.DictField()
+    accompanying_guests = AccompanyingGuestSerializer(many=True, required=False)
+    
+    def validate_primary_guest(self, value):
+        required_fields = ['full_name', 'whatsapp_number']
+        for field in required_fields:
+            if field not in value:
+                raise serializers.ValidationError(f"'{field}' is required in primary_guest")
+        return value
+
+class CheckinOfflineSerializer(serializers.Serializer):
+    primary_guest_id = serializers.IntegerField()
+    room_ids = serializers.ListField(child=serializers.IntegerField())
+    check_in_date = serializers.DateTimeField()
+    check_out_date = serializers.DateTimeField()
+    guest_names = serializers.ListField(child=serializers.CharField(), required=False)
+
+class VerifyCheckinSerializer(serializers.Serializer):
+    register_number = serializers.CharField(required=False, allow_blank=True)
+    room_id = serializers.IntegerField(required=False)
+    guest_updates = serializers.DictField(required=False)
+
+# Response serializers
+class GuestResponseSerializer(serializers.ModelSerializer):
+    documents = serializers.SerializerMethodField()
+    
     class Meta:
-        model = Booking
+        model = Guest
         fields = [
-            'id', 'primary_guest', 'check_in_date', 'check_out_date',
-            'guest_names', 'room_ids', 'status', 'total_amount'
+            "id", "whatsapp_number", "full_name", "email", 
+            "status", "is_primary_guest", "identity_documents"
         ]
-        read_only_fields = ['id', 'status', 'total_amount']
+    
+    def get_documents(self, obj):
+        docs = obj.identity_documents.filter(is_accompanying_guest=False)
+        return [{
+            "id": doc.id,
+            "document_type": doc.document_type,
+            "document_number": doc.document_number,
+            "is_verified": doc.is_verified,
+            "document_file_url": doc.document_file.url if doc.document_file else None,
+            "document_file_back_url": doc.document_file_back.url if doc.document_file_back else None,
+        } for doc in docs]
 
-    def create(self, validated_data):
-        room_ids = validated_data.pop('room_ids')
-        hotel = self.context['request'].user.hotel
+class StayListSerializer(serializers.ModelSerializer):
+    guest = GuestResponseSerializer(read_only=True)
+    room_details = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = Stay
+        fields = [
+            "id", "guest", "status", "check_in_date", "check_out_date",
+            "room", "room_details", "register_number", "identity_verified"
+        ]
+    
+    def get_room_details(self, obj):
+        return {
+            "id": obj.room.id,
+            "room_number": obj.room.room_number,
+            "floor": obj.room.floor,
+            "category": obj.room.category.name if obj.room.category else None
+        }
 
-        # Use a transaction to ensure all stays are created or none are
-        with transaction.atomic():
-            # Create the main booking record
-            booking = Booking.objects.create(hotel=hotel, **validated_data)
-
-            # Create a separate Stay record for each room
-            for room_id in room_ids:
-                try:
-                    room = Room.objects.get(id=room_id, hotel=hotel)
-                    Stay.objects.create(
-                        booking=booking,
-                        hotel=hotel,
-                        guest=booking.primary_guest,
-                        room=room,
-                        check_in_date=booking.check_in_date,
-                        check_out_date=booking.check_out_date,
-                        status='pending' # Default status for a new stay
-                    )
-                except Room.DoesNotExist:
-                    # Handle case where a room might not exist or belong to the hotel
-                    raise serializers.ValidationError(f"Room with ID {room_id} not found in this hotel.")
-
-        return booking
-
-
+# Legacy serializers for compatibility with other parts of the codebase
 class GuestSerializer(serializers.ModelSerializer):
+    """Legacy GuestSerializer for backward compatibility"""
     class Meta:
         model = Guest
         fields = [
@@ -70,71 +114,12 @@ class GuestSerializer(serializers.ModelSerializer):
             "notes",
         ]
 
-
-class StaySerializer(serializers.ModelSerializer):
+class BookingListSerializer(serializers.ModelSerializer):
+    primary_guest = GuestResponseSerializer(read_only=True)
+    
     class Meta:
-        model = Stay
-        fields = "__all__"
-        read_only_fields = ("hotel",)
-
-    def to_representation(self, instance):
-        from hotel.serializers import RoomSerializer
-
-        representation = super().to_representation(instance)
-        guest_data = GuestSerializer(instance.guest).data
-        guest_data['identity_documents'] = GuestIdentityDocumentSerializer(instance.guest.identity_documents.all(), many=True).data
-        representation["guest"] = guest_data
-        representation["room"] = RoomSerializer(instance.room).data
-        return representation
-
-
-class GuestIdentityDocumentSerializer(serializers.ModelSerializer):
-    document_file_url = serializers.SerializerMethodField()
-    document_file_back_url = serializers.SerializerMethodField()
-
-    class Meta:
-        model = GuestIdentityDocument
-        fields = "__all__"
-        read_only_fields = ("guest", "verified_by")
-        extra_kwargs = {
-            'document_file': {'write_only': True},
-            'document_file_back': {'write_only': True}
-        }
-
-    def get_document_file_url(self, obj):
-        if obj.document_file:
-            return obj.document_file.url
-        return None
-
-    def get_document_file_back_url(self, obj):
-        if obj.document_file_back:
-            return obj.document_file_back.url
-        return None
-
-    def create(self, validated_data):
-        guest = validated_data.get('guest')
-        is_primary = validated_data.get('is_primary', False)
-        
-        # If this document is marked as primary, unset the primary flag on any existing primary document for this guest
-        if is_primary and guest:
-            GuestIdentityDocument.objects.filter(guest=guest, is_primary=True).update(is_primary=False)
-        
-        return super().create(validated_data)
-
-    def update(self, instance, validated_data):
-        guest = instance.guest
-        is_primary = validated_data.get('is_primary', instance.is_primary)
-        
-        # If this document is being updated to primary, unset the primary flag on any existing primary document for this guest
-        if is_primary and guest:
-            GuestIdentityDocument.objects.filter(guest=guest, is_primary=True).exclude(pk=instance.pk).update(is_primary=False)
-        
-        return super().update(instance, validated_data)
-
-
-class CheckInSerializer(serializers.Serializer):
-    stay_id = serializers.IntegerField()
-
-
-class CheckOutSerializer(serializers.Serializer):
-    stay_id = serializers.IntegerField()
+        model = Booking
+        fields = [
+            "id", "primary_guest", "check_in_date", "check_out_date",
+            "status", "total_amount", "guest_names"
+        ]

@@ -184,14 +184,14 @@ def process_guest_webhook(request_data, request_headers=None, media_id=None):
                     # Use existing conversation instead of creating new one
                     logger.info(f"process_guest_webhook: Using existing active conversation {existing_conversation.id}")
                     conversation = existing_conversation
-                    
+
                     # Check if user is returning after being away (30 minutes threshold)
                     time_threshold = timezone.now() - timezone.timedelta(minutes=30)
                     is_returning_user = (
-                        conversation.last_message_at and 
+                        conversation.last_message_at and
                         conversation.last_message_at < time_threshold
                     )
-                    
+
                     if is_returning_user:
                         logger.info(f"process_guest_webhook: User is returning after {timezone.now() - conversation.last_message_at}")
                         # Create a service message to notify staff that user is back online
@@ -204,12 +204,12 @@ def process_guest_webhook(request_data, request_headers=None, media_id=None):
                                 message_type='system'
                             )
                             logger.info(f"process_guest_webhook: Created 'User is back online' service message {return_message.id}")
-                            
+
                             # Broadcast the service message to staff first
                             try:
                                 channel_layer = get_channel_layer()
                                 department_group_name = f"department_{conversation.department.lower()}"
-                                
+
                                 service_message_data = {
                                     'id': return_message.id,
                                     'conversation_id': conversation.id,
@@ -230,7 +230,7 @@ def process_guest_webhook(request_data, request_headers=None, media_id=None):
                                         'room_number': active_stay.room.room_number if active_stay else None
                                     }
                                 }
-                                
+
                                 async_to_sync(channel_layer.group_send)(
                                     department_group_name,
                                     {
@@ -243,7 +243,7 @@ def process_guest_webhook(request_data, request_headers=None, media_id=None):
                                 logger.error(f"process_guest_webhook: Failed to broadcast service message: {ws_error}", exc_info=True)
                         except Exception as e:
                             logger.error(f"process_guest_webhook: Failed to create 'User is back online' service message: {e}", exc_info=True)
-                    
+
                     # Now update the conversation with the actual user message
                     conversation.update_last_message(message_content)
                     created = False
@@ -261,11 +261,11 @@ def process_guest_webhook(request_data, request_headers=None, media_id=None):
                     )
                     created = True
                     logger.info(f"process_guest_webhook: Created new conversation {conversation.id}")
-                    
+
                     # Notify department staff about new conversation
                     try:
                         channel_layer = get_channel_layer()
-                        
+
                         conversation_data = {
                             'id': conversation.id,
                             'guest_name': conversation.guest.full_name,
@@ -276,9 +276,9 @@ def process_guest_webhook(request_data, request_headers=None, media_id=None):
                             'last_message_preview': conversation.last_message_preview,
                             'last_message_at': conversation.last_message_at.isoformat() if conversation.last_message_at else None
                         }
-                        
+
                         relevant_group = f"department_{conversation.department.lower()}"
-                        
+
                         async_to_sync(channel_layer.group_send)(
                             relevant_group,
                             {
@@ -371,200 +371,6 @@ def process_guest_webhook(request_data, request_headers=None, media_id=None):
     except Exception as e:
         error_msg = f"process_guest_webhook: Internal server error: {e}"
         logger.error(error_msg, exc_info=True)
-
-        return (
-            {'error': 'Internal server error', 'details': str(e)},
-            status.HTTP_500_INTERNAL_SERVER_ERROR
-        )
-
-
-def process_flow_webhook(request_data, media_id=None):
-    """
-    Function to process flow webhook requests.
-    Same logic as FlowWebhookView.post() but callable directly.
-
-    Args:
-        request_data: The request data/payload
-        media_id: Optional WhatsApp media ID
-
-    Returns:
-        Tuple of (response_data, status_code)
-    """
-    start_time = time.time()
-
-    logger.info(f"process_flow_webhook: Received webhook request")
-    logger.info(f"Request body: {request_data}")
-
-    # Extract WhatsApp message ID for deduplication
-    whatsapp_message_id = request_data.get('whatsapp_message_id')
-
-    # Extract phone number early for deduplication
-    temp_serializer = FlowMessageSerializer(data=request_data)
-    if temp_serializer.is_valid():
-        whatsapp_number = normalize_phone_number(temp_serializer.validated_data['whatsapp_number'])
-    else:
-        logger.error(f"process_flow_webhook: Early validation failed: {temp_serializer.errors}")
-        return (
-            {'error': 'Invalid data', 'details': temp_serializer.errors},
-            status.HTTP_400_BAD_REQUEST
-        )
-
-    # Check for deduplication before any processing
-    webhook_attempt, is_duplicate, is_new = check_and_create_webhook_attempt(
-        webhook_type='flow',
-        whatsapp_message_id=whatsapp_message_id,
-        whatsapp_number=whatsapp_number,
-        request_data=request_data
-    )
-
-    if is_duplicate:
-        # Return existing webhook attempt data
-        existing_data = webhook_attempt.response_data or {}
-        return (
-            {
-                'success': True,
-                'duplicate_message': True,
-                'original_attempt_id': webhook_attempt.id,
-                **existing_data
-            },
-            status.HTTP_200_OK
-        )
-
-    try:
-        # Validate incoming data
-        serializer = FlowMessageSerializer(data=request_data)
-        if not serializer.is_valid():
-            error_msg = f"process_flow_webhook: Serializer validation failed: {serializer.errors}"
-            logger.error(error_msg)
-            update_webhook_attempt(webhook_attempt, 'validation_failed', error_message=error_msg)
-            return (
-                {'error': 'Invalid data', 'details': serializer.errors},
-                status.HTTP_400_BAD_REQUEST
-            )
-
-        # Extract validated data
-        whatsapp_number = normalize_phone_number(serializer.validated_data['whatsapp_number'])
-        if not whatsapp_number:
-            error_msg = "process_flow_webhook: Invalid whatsapp number format"
-            logger.error(error_msg)
-            update_webhook_attempt(webhook_attempt, 'validation_failed', error_message=error_msg)
-            return (
-                {'error': 'Invalid whatsapp number format'},
-                status.HTTP_400_BAD_REQUEST
-            )
-
-        message_content = serializer.validated_data['message']
-        message_type = serializer.validated_data.get('message_type', 'text')
-        flow_id = serializer.validated_data.get('flow_id', f"flow_{uuid.uuid4().hex[:12]}_{int(time.time())}")
-
-        logger.info(f"process_flow_webhook: Processing message from {whatsapp_number}: {message_content[:50]}...")
-
-        # Validate guest exists
-        try:
-            guest = Guest.objects.get(whatsapp_number=whatsapp_number)
-            logger.info(f"process_flow_webhook: Found guest: {guest.id} - {guest.full_name}")
-        except Guest.DoesNotExist:
-            error_msg = f"process_flow_webhook: Guest not found with whatsapp_number: {whatsapp_number}"
-            logger.error(error_msg)
-            update_webhook_attempt(webhook_attempt, 'processing_failed', error_message=error_msg)
-            return (
-                {'error': 'Guest not found'},
-                status.HTTP_404_NOT_FOUND
-            )
-
-        # Handle media processing
-        provided_media_id = media_id or request_data.get('media_id')
-        media_file = None
-        media_filename = None
-
-        if provided_media_id and message_type in ['image', 'document', 'video', 'audio']:
-            try:
-                media_data = download_whatsapp_media(provided_media_id)
-                if media_data and media_data.get('content'):
-                    media_file = ContentFile(media_data['content'], name=media_data['filename'])
-                    message_type = media_data['message_type']
-                    media_filename = media_data['filename']
-                    logger.info(f"process_flow_webhook: Downloaded media {provided_media_id} as {message_type}")
-            except Exception as e:
-                logger.error(f"process_flow_webhook: Failed to download media {provided_media_id}: {e}")
-                message_type = 'text'
-
-        # Check flow type based on message content
-        message_lower = message_content.lower().strip()
-
-        # Check for hotel ID validation command: /checkin-{hotel_id}
-        if message_lower.startswith('/checkin-'):
-            # Process hotel validation flow
-            logger.info(f"process_flow_webhook: Processing hotel validation flow")
-            flow_result = _process_hotel_validation_flow(
-                flow_id=flow_id,
-                guest=guest,
-                message_content=message_content,
-                message_type=message_type,
-                media_file=media_file,
-                media_filename=media_filename
-            )
-        else:
-            # Check for regular check-in keywords
-            checkin_keywords = ['checkin', 'check in', 'check-in', 'check me in', 'check in please']
-            is_checkin_request = any(keyword in message_lower for keyword in checkin_keywords)
-
-            if is_checkin_request:
-                # Process through check-in flow
-                logger.info(f"process_flow_webhook: Processing check-in flow")
-                flow_result = _process_checkin_flow(
-                    flow_id=flow_id,
-                    guest=guest,
-                    message_content=message_content,
-                    message_type=message_type,
-                    media_file=media_file,
-                    media_filename=media_filename,
-                    request_data=request_data
-                )
-            else:
-                # Save message and give general response
-                logger.info(f"process_flow_webhook: Processing general message")
-                flow_result = _process_general_message(
-                    flow_id=flow_id,
-                    guest=guest,
-                    message_content=message_content,
-                    message_type=message_type,
-                    media_file=media_file,
-                    media_filename=media_filename
-                )
-
-        # Convert flow result to WhatsApp payload for direct sending
-        whatsapp_payload = convert_flow_response_to_whatsapp_payload(
-            flow_result=flow_result,
-            recipient_number=whatsapp_number
-        )
-
-        # Add WhatsApp payload to the result
-        flow_result['whatsapp_payload'] = whatsapp_payload
-
-        # Update webhook attempt with success
-        processing_time_ms = int((time.time() - start_time) * 1000)
-        update_webhook_attempt(
-            webhook_attempt=webhook_attempt,
-            status='success',
-            response_data=flow_result,
-            processing_time_ms=processing_time_ms
-        )
-
-        return (flow_result, status.HTTP_200_OK)
-
-    except Exception as e:
-        error_msg = f"process_flow_webhook: Internal server error: {e}"
-        logger.error(error_msg, exc_info=True)
-
-        # Update webhook attempt with error
-        processing_time_ms = int((time.time() - start_time) * 1000)
-        update_webhook_attempt(
-            webhook_attempt=webhook_attempt,
-            status='processing_failed',
-            error_message=error_msg,
-            processing_time_ms=processing_time_ms
-        )
 
         return (
             {'error': 'Internal server error', 'details': str(e)},

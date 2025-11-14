@@ -44,6 +44,14 @@ def extract_whatsapp_message_data(webhook_body):
 
         message = messages[0]
 
+        # Extract media ID if present
+        media_id = None
+        msg_type = message.get('type')
+        if msg_type in ['image', 'audio', 'video', 'document']:
+            media_obj = message.get(msg_type, {})
+            if media_obj:
+                media_id = media_obj.get('id')
+
         return {
             'from': message.get('from'),
             'id': message.get('id'),  # WhatsApp message ID for deduplication
@@ -55,6 +63,7 @@ def extract_whatsapp_message_data(webhook_body):
             'audio': message.get('audio'),
             'video': message.get('video'),
             'document': message.get('document'),
+            'media_id': media_id,  # Extract media ID for downloading
         }, None
 
     except (KeyError, IndexError, TypeError) as e:

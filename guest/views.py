@@ -2,392 +2,311 @@ from rest_framework import viewsets, permissions, status, generics
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.db.models import Q
-# Removed context_manager import as app is no longer used
+from django.db import transaction
+from django.utils import timezone
+from django.shortcuts import get_object_or_404
+
 from .models import Guest, GuestIdentityDocument, Stay, Booking
 from .serializers import (
-    GuestSerializer,
-    GuestIdentityDocumentSerializer,
-    StaySerializer,
-    CheckInSerializer,
-    CheckOutSerializer,
-    BookingSerializer
+    CreateGuestSerializer, CheckinOfflineSerializer, VerifyCheckinSerializer,
+    StayListSerializer, BookingListSerializer, GuestResponseSerializer
 )
-from hotel.permissions import IsHotelAdmin, IsSameHotelUser, CanCheckInCheckOut, IsHotelStaff, IsHotelStaffReadOnlyOrAdmin
+from hotel.models import Hotel, Room
+from hotel.permissions import IsHotelStaff, IsSameHotelUser
 from .permissions import CanManageGuests, CanViewAndManageStays
-from django.utils import timezone
 import logging
-from django.conf import settings
-import logging
-from django.conf import settings
 
-class BookingViewSet(viewsets.ModelViewSet):
-    queryset = Booking.objects.all()
-    serializer_class = BookingSerializer
+logger = logging.getLogger(__name__)
+
+
+class GuestManagementViewSet(viewsets.GenericViewSet):
+    """
+    Simplified guest management endpoints
+    """
     permission_classes = [permissions.IsAuthenticated, IsHotelStaff, IsSameHotelUser]
-
+    
     def get_queryset(self):
-        # Only show bookings for the user's hotel
-        return Booking.objects.filter(hotel=self.request.user.hotel)
-
-    def perform_create(self, serializer):
-        # The serializer's create method already handles hotel assignment
-        serializer.save()
-
-
-
-class GuestViewSet(viewsets.ModelViewSet):
-    queryset = Guest.objects.all()
-    serializer_class = GuestSerializer
-    permission_classes = [permissions.IsAuthenticated, CanManageGuests, IsSameHotelUser]
-    filterset_fields = ['status', 'nationality']
-    ordering_fields = ['full_name', 'first_contact_date']
-
-    @action(detail=False, methods=['get'], url_path='search')
-    def search(self, request):
-        """
-        Search for guests by name, email, or phone number within the user's hotel.
-        """
-        query = request.query_params.get('q', None)
-        if not query:
-            return Response(
-                {"detail": "Query parameter 'q' is required."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        # Get guests that have a stay or booking record in the current user's hotel
-        hotel_guests = Guest.objects.filter(
-            Q(stays__hotel=request.user.hotel) |
-            Q(bookings__hotel=request.user.hotel)
+        return Guest.objects.filter(
+            Q(stays__hotel=self.request.user.hotel) | Q(bookings__hotel=self.request.user.hotel)
         ).distinct()
 
-        # Apply the search query on the filtered guests
-        search_results = hotel_guests.filter(
-            Q(full_name__icontains=query)
-            | Q(email__icontains=query)
-            | Q(whatsapp_number__icontains=query)
-        )
-
-        serializer = self.get_serializer(search_results, many=True)
-        return Response(serializer.data)
-
-    @action(detail=False, methods=['get'], url_path='stays-by-phone')
-    def stays_by_phone(self, request):
+    @action(detail=False, methods=['post'], url_path='create-guest')
+    def create_guest(self, request):
         """
-        Get a guest's stay history by their phone number.
-        """
-        phone_number = request.query_params.get("phone_number", None)
-        if not phone_number:
-            return Response(
-                {"detail": "Query parameter 'phone_number' is required."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        try:
-            guest = Guest.objects.get(whatsapp_number=phone_number)
-        except Guest.DoesNotExist:
-            return Response(
-                {"detail": "Guest with this phone number not found."},
-                status=status.HTTP_404_NOT_FOUND,
-            )
-
-        # Filter stays for the current user's hotel
-        stays = Stay.objects.filter(guest=guest, hotel=request.user.hotel).order_by(
-            "-check_in_date"
-        )
-        serializer = StaySerializer(stays, many=True)
-        return Response(serializer.data)
-
-
-class GuestIdentityDocumentViewSet(viewsets.ModelViewSet):
-    queryset = GuestIdentityDocument.objects.all()
-    serializer_class = GuestIdentityDocumentSerializer
-    permission_classes = [permissions.IsAuthenticated, CanCheckInCheckOut, IsSameHotelUser]
-    filterset_fields = ['document_type', 'is_verified']
-    ordering_fields = ['uploaded_at']
-
-    def get_queryset(self):
-        return GuestIdentityDocument.objects.filter(
-            guest__stay__hotel=self.request.user.hotel
-        )
-
-    def perform_create(self, serializer):
-        from rest_framework import serializers
-        from rest_framework.exceptions import PermissionDenied
-        guest_id = self.request.data.get('guest')
-        if not guest_id:
-            raise serializers.ValidationError({'guest': 'This field is required.'})
-        try:
-            guest = Guest.objects.get(id=guest_id)
-        except (Guest.DoesNotExist, ValueError):
-            raise serializers.ValidationError({'guest': 'Invalid guest.'})
-
-        # Ensure the document is associated with a guest
-        # We allow uploading documents for any existing guest in the system
-        # This supports pre-registration scenarios where documents are uploaded before stay creation
-        if guest.id:  # Just verify the guest exists
-            serializer.save(guest=guest, verified_by=self.request.user)
-        else:
-            raise PermissionDenied(
-                "You can only add documents for valid guests."
-            )
-
-    @action(detail=True, methods=['post'], url_path='upload-back')
-    def upload_back(self, request, pk=None):
-        document = self.get_object()
-        file = request.data.get('document_file_back')
-
-        if not file:
-            return Response(
-                {"detail": "No file provided."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        document.document_file_back = file
-        document.save()
-
-        serializer = self.get_serializer(document)
-        return Response(serializer.data)
-
-
-class GuestIdentityDocumentUploadView(generics.CreateAPIView):
-    """
-    Upload identity documents for a guest.
-    """
-
-    serializer_class = GuestIdentityDocumentSerializer
-    permission_classes = [permissions.IsAuthenticated, CanCheckInCheckOut, IsSameHotelUser]
-
-    def perform_create(self, serializer):
-        from rest_framework import serializers
-        logger = logging.getLogger(__name__)
-        # Get the default storage backend from STORAGES setting
-        storages_config = getattr(settings, 'STORAGES', {})
-        default_storage_config = storages_config.get('default', {})
-        backend = default_storage_config.get('BACKEND', 'Not configured')
-        logger.info(f"DEFAULT_FILE_STORAGE: {backend}")
-        logger.info(f"AWS_STORAGE_BUCKET_NAME: {settings.AWS_STORAGE_BUCKET_NAME}")
-        logger.info(f"AWS_S3_REGION_NAME: {settings.AWS_S3_REGION_NAME}")
+        Create primary guest with accompanying guests and their documents.
+        Returns guest IDs for use in booking/stay creation.
         
-        guest_id = self.request.data.get('guest')
-        if not guest_id:
-            raise serializers.ValidationError({'guest': 'This field is required.'})
+        Expected format:
+        - Form data with primary_guest, accompanying_guests JSON
+        - Files: primary_documents_0, primary_documents_1, guest_0_documents_0, guest_1_documents_0, etc.
+        """
+        serializer = CreateGuestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        
         try:
-            guest = Guest.objects.get(id=guest_id)
-        except (Guest.DoesNotExist, ValueError):
-            raise serializers.ValidationError({'guest': 'Invalid guest.'})
-
-        # If this document is marked as primary, unset the primary flag on any existing primary document for this guest
-        is_primary = self.request.data.get('is_primary', False)
-        if is_primary:
-            GuestIdentityDocument.objects.filter(guest=guest, is_primary=True).update(is_primary=False)
-
-        # Ensure the document is associated with a guest
-        # We allow uploading documents for any existing guest in the system
-        # This supports pre-registration scenarios where documents are uploaded before stay creation
-        if guest.id:  # Just verify the guest exists
-            serializer.save(guest=guest, verified_by=self.request.user)
-        else:
-            from rest_framework.exceptions import PermissionDenied
-            raise PermissionDenied(
-                "You can only add documents for valid guests."
+            with transaction.atomic():
+                # Create primary guest
+                primary_data = serializer.validated_data['primary_guest']
+                primary_guest = Guest.objects.create(
+                    whatsapp_number=primary_data['whatsapp_number'],
+                    full_name=primary_data['full_name'],
+                    email=primary_data.get('email', ''),
+                    is_primary_guest=True,
+                    status='pending_checkin'
+                )
+                
+                # Create accompanying guests
+                accompanying_guest_ids = []
+                accompanying_guests_data = serializer.validated_data.get('accompanying_guests', [])
+                
+                for i, acc_guest_data in enumerate(accompanying_guests_data):
+                    acc_guest = Guest.objects.create(
+                        full_name=acc_guest_data['full_name'],
+                        is_primary_guest=False,
+                        status='pending_checkin',
+                        whatsapp_number=f"ACC_{primary_guest.whatsapp_number}_{i+1}"
+                    )
+                    accompanying_guest_ids.append(acc_guest.id)
+                
+                # Handle primary guest documents
+                primary_doc_count = 0
+                while f'primary_documents_{primary_doc_count}' in request.FILES:
+                    doc_file = request.FILES[f'primary_documents_{primary_doc_count}']
+                    doc_back_file = request.FILES.get(f'primary_documents_back_{primary_doc_count}')
+                    
+                    GuestIdentityDocument.objects.create(
+                        guest=primary_guest,
+                        document_type=primary_data.get('document_type', 'other'),
+                        document_number=primary_data.get('document_number', ''),
+                        document_file=doc_file,
+                        document_file_back=doc_back_file,
+                        is_accompanying_guest=False,
+                        is_primary=(primary_doc_count == 0)  # First doc is primary
+                    )
+                    primary_doc_count += 1
+                
+                # Handle accompanying guest documents
+                for i, acc_guest_id in enumerate(accompanying_guest_ids):
+                    acc_guest_data = accompanying_guests_data[i]
+                    acc_doc_count = 0
+                    
+                    while f'guest_{i}_documents_{acc_doc_count}' in request.FILES:
+                        doc_file = request.FILES[f'guest_{i}_documents_{acc_doc_count}']
+                        doc_back_file = request.FILES.get(f'guest_{i}_documents_back_{acc_doc_count}')
+                        
+                        GuestIdentityDocument.objects.create(
+                            guest_id=acc_guest_id,
+                            document_type=acc_guest_data.get('document_type', 'other'),
+                            document_number=acc_guest_data.get('document_number', ''),
+                            document_file=doc_file,
+                            document_file_back=doc_back_file,
+                            is_accompanying_guest=True,
+                            is_primary=(acc_doc_count == 0)  # First doc is primary for this guest
+                        )
+                        acc_doc_count += 1
+                
+                return Response({
+                    'primary_guest_id': primary_guest.id,
+                    'accompanying_guest_ids': accompanying_guest_ids,
+                    'message': 'Guests created successfully'
+                }, status=status.HTTP_201_CREATED)
+                
+        except Exception as e:
+            logger.error(f"Error creating guests: {str(e)}")
+            return Response(
+                {'error': f'Failed to create guests: {str(e)}'},
+                status=status.HTTP_400_BAD_REQUEST
             )
 
+    @action(detail=False, methods=['get'], url_path='guests')
+    def list_guests(self, request):
+        """
+        List all guests for the hotel
+        """
+        guests = self.get_queryset()
+        serializer = GuestResponseSerializer(guests, many=True)
+        return Response(serializer.data)
 
-class StayViewSet(viewsets.ModelViewSet):
-    queryset = Stay.objects.all()
-    serializer_class = StaySerializer
+    @action(detail=False, methods=['get'], url_path='bookings')
+    def list_bookings(self, request):
+        """
+        List all bookings for the hotel
+        """
+        bookings = Booking.objects.filter(hotel=request.user.hotel)
+        serializer = BookingListSerializer(bookings, many=True)
+        return Response(serializer.data)
+
+
+class StayManagementViewSet(viewsets.GenericViewSet):
+    """
+    Simplified stay management endpoints
+    """
     permission_classes = [permissions.IsAuthenticated, CanViewAndManageStays, IsSameHotelUser]
-    filterset_fields = ['status', 'check_in_date']
-    ordering_fields = ['check_in_date', 'check_out_date']
-
+    
     def get_queryset(self):
         return Stay.objects.filter(hotel=self.request.user.hotel)
 
-    def perform_create(self, serializer):
-        serializer.save(hotel=self.request.user.hotel)
-
-    @action(
-        detail=True,  # Acts on a specific stay instance
-        methods=["post"],
-        url_path="verify-and-check-in",
-        permission_classes=[CanCheckInCheckOut], # Or a more specific permission
-    )
-    def verify_and_check_in(self, request, pk=None):
+    @action(detail=False, methods=['post'], url_path='checkin-offline')
+    def checkin_offline(self, request):
         """
-        Verifies a guest's identity documents and checks them in.
-        An optional `register_number` can be provided.
+        Create pending stays with room assignment.
+        Creates booking record to group stays.
+        """
+        serializer = CheckinOfflineSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        
+        try:
+            with transaction.atomic():
+                hotel = request.user.hotel
+                primary_guest_id = serializer.validated_data['primary_guest_id']
+                room_ids = serializer.validated_data['room_ids']
+                check_in_date = serializer.validated_data['check_in_date']
+                check_out_date = serializer.validated_data['check_out_date']
+                guest_names = serializer.validated_data.get('guest_names', [])
+                
+                # Validate primary guest exists
+                primary_guest = get_object_or_404(Guest, id=primary_guest_id)
+                
+                # Validate rooms exist and are available
+                rooms = []
+                for room_id in room_ids:
+                    room = get_object_or_404(Room, id=room_id, hotel=hotel)
+                    if room.status != 'available':
+                        raise serializers.ValidationError(f"Room {room.room_number} is not available")
+                    rooms.append(room)
+                
+                # Create dummy booking to group stays
+                booking = Booking.objects.create(
+                    hotel=hotel,
+                    primary_guest=primary_guest,
+                    check_in_date=check_in_date,
+                    check_out_date=check_out_date,
+                    guest_names=guest_names,
+                    status='confirmed',
+                    total_amount=0  # Calculate based on room rates if needed
+                )
+                
+                # Create stay records
+                stays = []
+                for i, room in enumerate(rooms):
+                    guest_name = guest_names[i] if i < len(guest_names) else primary_guest.full_name
+                    
+                    stay = Stay.objects.create(
+                        booking=booking,
+                        hotel=hotel,
+                        guest=primary_guest,
+                        room=room,
+                        register_number=None,  # Will be set during verification
+                        check_in_date=check_in_date,
+                        check_out_date=check_out_date,
+                        number_of_guests=1,
+                        guest_names=[guest_name],
+                        status='pending',
+                        identity_verified=False,
+                        documents_uploaded=True
+                    )
+                    stays.append(stay)
+                    
+                    # Update room status to occupied
+                    room.status = 'occupied'
+                    room.current_guest = primary_guest
+                    room.save()
+                
+                return Response({
+                    'booking_id': booking.id,
+                    'stay_ids': [stay.id for stay in stays],
+                    'message': 'Check-in created successfully. Pending verification.'
+                }, status=status.HTTP_201_CREATED)
+                
+        except Exception as e:
+            logger.error(f"Error creating check-in: {str(e)}")
+            return Response(
+                {'error': f'Failed to create check-in: {str(e)}'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+    @action(detail=True, methods=['patch'], url_path='verify-checkin')
+    def verify_checkin(self, request, pk=None):
+        """
+        Verify and activate a stay. Updates register number and marks as checked in.
+        Can optionally update room assignment.
         """
         stay = self.get_object()
-
-        if stay.status != "pending":
-            return Response(
-                {"detail": f"Stay is already {stay.status}."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        # Mark all documents as verified for this guest
-        stay.guest.identity_documents.update(is_verified=True, verified_by=request.user)
-
-        # Mark the stay as identity verified
-        stay.identity_verified = True
-
-        register_number = request.data.get("register_number")
-        if register_number:
-            stay.register_number = register_number
-
-        stay.save()
-
-        room = stay.room
-        if room.status != "available":
-            return Response(
-                {"detail": f"Room is not available. Current status: {room.status}"},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        # Update statuses
-        stay.status = "active"
-        stay.actual_check_in = timezone.now()
-        stay.save()
-
-        room.status = "occupied"
-        room.current_guest = stay.guest
-        room.save()
-
-        guest = stay.guest
-        guest.status = "checked_in"
-        guest.save()
-
-        return Response(StaySerializer(stay).data, status=status.HTTP_200_OK)
-
-    @action(
-        detail=True,  # Acts on a specific stay instance
-        methods=["post"],
-        url_path="initiate-checkin",
-        permission_classes=[CanCheckInCheckOut], # Allow receptionists to initiate check-in
-    )
-    def initiate_checkin(self, request, pk=None):
-        """
-        Initiates the WhatsApp check-in flow for a guest.
-        """
-        try:
-            stay = self.get_object()
-        except Stay.DoesNotExist:
-            return Response(
-                {"detail": "Stay not found in this hotel."},
-                status=status.HTTP_404_NOT_FOUND,
-            )
-
-        if stay.status != "pending":
-            return Response(
-                {"detail": f"Check-in cannot be initiated. Stay status is '{stay.status}' instead of 'pending'."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        guest = stay.guest
-        if not guest.whatsapp_number:
-            return Response(
-                {"detail": "Guest does not have a WhatsApp number."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        # TODO: Implement WhatsApp check-in flow without context_manager
-        # This would need to be reimplemented using a different approach
         
-        return Response(
-            {"detail": "WhatsApp check-in flow initiated successfully."},
-            status=status.HTTP_200_OK,
-        )
-
-    @action(
-        detail=False,
-        methods=["post"],
-        url_path="check-in",
-        permission_classes=[CanCheckInCheckOut],
-    )
-    def check_in(self, request):
-        serializer = CheckInSerializer(data=request.data)
+        if stay.status != 'pending':
+            return Response(
+                {'error': f'Stay is not pending. Current status: {stay.status}'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        serializer = VerifyCheckinSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        stay_id = serializer.validated_data["stay_id"]
-
+        
         try:
-            stay = Stay.objects.get(pk=stay_id, hotel=request.user.hotel)
-        except Stay.DoesNotExist:
+            with transaction.atomic():
+                # Update register number if provided
+                if 'register_number' in serializer.validated_data:
+                    stay.register_number = serializer.validated_data['register_number']
+                
+                # Update room if provided
+                if 'room_id' in serializer.validated_data:
+                    new_room = get_object_or_404(Room, id=serializer.validated_data['room_id'], hotel=stay.hotel)
+                    
+                    # Free up old room
+                    if stay.room:
+                        stay.room.status = 'available'
+                        stay.room.current_guest = None
+                        stay.room.save()
+                    
+                    # Assign new room
+                    new_room.status = 'occupied'
+                    new_room.current_guest = stay.guest
+                    new_room.save()
+                    stay.room = new_room
+                
+                # Update guest info if provided
+                guest_updates = serializer.validated_data.get('guest_updates', {})
+                if guest_updates:
+                    for field, value in guest_updates.items():
+                        if hasattr(stay.guest, field):
+                            setattr(stay.guest, field, value)
+                    stay.guest.save()
+                
+                # Mark identity as verified (assuming manual verification by staff)
+                stay.identity_verified = True
+                stay.status = 'active'
+                stay.actual_check_in = timezone.now()
+                stay.save()
+                
+                # Update guest status
+                stay.guest.status = 'checked_in'
+                stay.guest.save()
+                
+                # Update booking status if all stays are active
+                if stay.booking:
+                    all_active = all(s.status == 'active' for s in stay.booking.stays.all())
+                    if all_active:
+                        stay.booking.status = 'confirmed'
+                        stay.booking.save()
+                
+                return Response({
+                    'stay_id': stay.id,
+                    'register_number': stay.register_number,
+                    'message': 'Check-in verified and activated successfully'
+                }, status=status.HTTP_200_OK)
+                
+        except Exception as e:
+            logger.error(f"Error verifying check-in: {str(e)}")
             return Response(
-                {"detail": "Stay not found in this hotel."},
-                status=status.HTTP_404_NOT_FOUND,
+                {'error': f'Failed to verify check-in: {str(e)}'},
+                status=status.HTTP_400_BAD_REQUEST
             )
 
-        if stay.status != "pending":
-            return Response(
-                {"detail": f"Stay is already {stay.status}."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        if not stay.identity_verified:
-            return Response(
-                {"detail": "Identity not verified for this stay."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        room = stay.room
-        if room.status != "available":
-            return Response(
-                {"detail": f"Room is not available. Current status: {room.status}"},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        # Update statuses
-        stay.status = "active"
-        stay.actual_check_in = timezone.now()
-        stay.save()
-
-        room.status = "occupied"
-        room.current_guest = stay.guest
-        room.save()
-
-        guest = stay.guest
-        guest.status = "checked_in"
-        guest.save()
-
-        return Response(StaySerializer(stay).data, status=status.HTTP_200_OK)
-
-    @action(
-        detail=False,
-        methods=["post"],
-        url_path="check-out",
-        permission_classes=[CanCheckInCheckOut],
-    )
-    def check_out(self, request):
-        serializer = CheckOutSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        stay_id = serializer.validated_data["stay_id"]
-
-        try:
-            stay = Stay.objects.get(pk=stay_id, hotel=request.user.hotel)
-        except Stay.DoesNotExist:
-            return Response(
-                {"detail": "Stay not found in this hotel."},
-                status=status.HTTP_404_NOT_FOUND,
-            )
-
-        if stay.status != "active":
-            return Response(
-                {"detail": f"Stay is not active. Current status: {stay.status}"},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        # Update statuses
-        stay.status = "completed"
-        stay.actual_check_out = timezone.now()
-        stay.save()
-
-        room = stay.room
-        room.status = "cleaning"  # Or 'available' based on hotel policy
-        room.current_guest = None
-        room.save()
-
-        guest = stay.guest
-        guest.status = "checked_out"
-        guest.save()
-
-        return Response(StaySerializer(stay).data, status=status.HTTP_200_OK)
+    @action(detail=False, methods=['get'], url_path='pending-stays')
+    def pending_stays(self, request):
+        """
+        List all stays that are pending verification
+        """
+        stays = self.get_queryset().filter(status='pending').order_by('-created_at')
+        serializer = StayListSerializer(stays, many=True)
+        return Response(serializer.data)

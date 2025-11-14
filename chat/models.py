@@ -38,10 +38,10 @@ class Conversation(models.Model):
     # Track the last message and activity
     last_message_at = models.DateTimeField(null=True, blank=True)
     last_message_preview = models.TextField(max_length=255, blank=True)
-    
+
     # Request fulfillment tracking
     is_request_fulfilled = models.BooleanField(
-        default=False, 
+        default=False,
         help_text="Whether the guest's request was successfully fulfilled"
     )
     fulfilled_at = models.DateTimeField(
@@ -100,8 +100,6 @@ class Conversation(models.Model):
             return "Not Fulfilled"
         else:
             return "Pending"
-
-
 class Message(models.Model):
     """
     Individual messages within a conversation
@@ -144,9 +142,9 @@ class Message(models.Model):
 
     # WhatsApp integration fields
     whatsapp_message_id = models.CharField(
-        max_length=100, 
-        blank=True, 
-        null=True, 
+        max_length=100,
+        blank=True,
+        null=True,
         db_index=True,
         help_text="WhatsApp message ID for deduplication of incoming guest messages only"
     )
@@ -193,20 +191,20 @@ class Message(models.Model):
     def save(self, *args, **kwargs):
         """Override save to handle media file and URL"""
         is_new = self.pk is None
-        
+
         if self.media_file:
             # Set media URL from file field
             self.media_url = self.media_file.url
             # Extract filename if not provided
             if not self.media_filename:
                 self.media_filename = self.media_file.name.split('/')[-1]
-        
+
         super().save(*args, **kwargs)
-        
+
         # Track outgoing messages for deduplication
         if is_new and self.sender_type == 'staff':
             from .utils.webhook_deduplication import create_outgoing_webhook_attempt
-            
+
             try:
                 whatsapp_number = self.conversation.guest.whatsapp_number
                 create_outgoing_webhook_attempt(
@@ -232,7 +230,7 @@ class WebhookAttempt(models.Model):
         ('flow', 'Flow Webhook'),
         ('outgoing', 'Outgoing Message'),
     ]
-    
+
     STATUSES = [
         ('pending', 'Pending'),
         ('processing', 'Processing'),
@@ -246,17 +244,17 @@ class WebhookAttempt(models.Model):
     whatsapp_message_id = models.CharField(max_length=100, db_index=True)
     whatsapp_number = models.CharField(max_length=20, db_index=True)
     status = models.CharField(max_length=20, choices=STATUSES, default='pending')
-    
+
     # Request/Response data for debugging
     request_data = models.JSONField(default=dict, blank=True)
     response_data = models.JSONField(default=dict, blank=True)
     error_message = models.TextField(blank=True, null=True)
-    
+
     # Processing metadata
     processing_time_ms = models.IntegerField(null=True, blank=True)
     message_id = models.IntegerField(null=True, blank=True, help_text="Created message ID if successful")
     conversation_id = models.IntegerField(null=True, blank=True, help_text="Related conversation ID")
-    
+
     # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -319,18 +317,18 @@ class MessageTemplate(models.Model):
     name = models.CharField(max_length=100, unique=True)
     template_type = models.CharField(max_length=20, choices=TEMPLATE_TYPE_CHOICES)
     text_content = models.TextField()
-    
+
     # Media for template
     media_file = models.FileField(upload_to=upload_to_chat_media, blank=True, null=True)
     media_filename = models.CharField(max_length=255, blank=True, null=True)
-    
+
     # Template customization
     is_customizable = models.BooleanField(default=True)
     is_active = models.BooleanField(default=True)
-    
+
     # Template variables that can be customized (e.g., {guest_name}, {room_number})
     variables = models.JSONField(default=list, blank=True, help_text="List of variable names that can be customized")
-    
+
     # Metadata
     description = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -374,24 +372,24 @@ class CustomMessageTemplate(models.Model):
     ]
 
     hotel = models.ForeignKey(Hotel, on_delete=models.CASCADE, related_name='custom_templates')
-    base_template = models.ForeignKey(MessageTemplate, on_delete=models.SET_NULL, null=True, blank=True, 
+    base_template = models.ForeignKey(MessageTemplate, on_delete=models.SET_NULL, null=True, blank=True,
                                       help_text="Base template this customization is derived from")
-    
+
     name = models.CharField(max_length=100)
     template_type = models.CharField(max_length=20, choices=TEMPLATE_TYPE_CHOICES)
     text_content = models.TextField()
-    
+
     # Media for template
     media_file = models.FileField(upload_to=upload_to_chat_media, blank=True, null=True)
     media_filename = models.CharField(max_length=255, blank=True, null=True)
-    
+
     # Template customization
     is_customizable = models.BooleanField(default=True)
     is_active = models.BooleanField(default=True)
-    
+
     # Template variables that can be customized
     variables = models.JSONField(default=list, blank=True, help_text="List of variable names that can be customized")
-    
+
     # Metadata
     description = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -423,20 +421,20 @@ class CustomMessageTemplate(models.Model):
     def get_rendered_content(self, context=None):
         """
         Render template content with provided context variables
-        
+
         Args:
             context: Dictionary of variables to replace in template
-            
+
         Returns:
             Rendered text content
         """
         if not context:
             context = {}
-        
+
         rendered_content = self.text_content
         for variable in self.variables:
             placeholder = f"{{{variable}}}"
             value = context.get(variable, placeholder)
             rendered_content = rendered_content.replace(placeholder, str(value))
-        
+
         return rendered_content

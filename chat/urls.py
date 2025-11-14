@@ -8,7 +8,15 @@ from .views import (
     GuestConversationTypeView,
     MarkMessagesReadView,
     ChatMediaUploadView,
+    TemplateMediaUploadView,
     send_typing_indicator,
+    MessageTemplateListCreateView,
+    MessageTemplateDetailView,
+    CustomMessageTemplateListCreateView,
+    CustomMessageTemplateDetailView,
+    template_types_view,
+    render_template_preview,
+    template_variables_view,
 )
 
 app_name = 'chat'
@@ -31,4 +39,16 @@ urlpatterns = [
 
     # Media upload (original views)
     path('upload-media/', ChatMediaUploadView.as_view(), name='upload-media'),
+    path('upload-template-media/', TemplateMediaUploadView.as_view(), name='upload-template-media'),
+
+    # Message Template management
+    path('templates/', MessageTemplateListCreateView.as_view(), name='message-template-list'),
+    path('templates/<int:pk>/', MessageTemplateDetailView.as_view(), name='message-template-detail'),
+    path('templates/types/', template_types_view, name='template-types'),
+    path('templates/<int:template_id>/preview/', render_template_preview, name='template-preview'),
+    path('templates/variables/', template_variables_view, name='template-variables'),
+
+    # Custom Message Template management
+    path('custom-templates/', CustomMessageTemplateListCreateView.as_view(), name='custom-template-list'),
+    path('custom-templates/<int:pk>/', CustomMessageTemplateDetailView.as_view(), name='custom-template-detail'),
 ]

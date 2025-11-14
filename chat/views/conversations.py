@@ -1,7 +1,7 @@
 """
 Conversation-related views for managing chat conversations.
 """
-
+from .flow_processsor import handle_incoming_whatsapp_message
 from rest_framework.permissions import IsAuthenticated
 from .base import (
     APIView,
@@ -38,7 +38,7 @@ from ..utils.webhook_deduplication import (
     check_and_create_webhook_attempt,
     update_webhook_attempt,
 )
-from .webhooks import process_guest_webhook, process_flow_webhook
+from .webhooks import process_guest_webhook
 from ..utils.whatsapp_payload_utils import convert_flow_response_to_whatsapp_payload
 from datetime import datetime,timezone
 class ConversationListView(APIView):
@@ -330,6 +330,7 @@ class GuestConversationTypeView(APIView):
                 {"error": "guest_whatsapp_number parameter is required"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        incoming_guest_whatsapp_number = request.data.get("guest_whatsapp_number")
 
         if not webhook_body:
             return Response(
@@ -384,13 +385,16 @@ class GuestConversationTypeView(APIView):
         if base_response.status_code != 200:
             # Update webhook attempt with error
             update_webhook_attempt(
-                webhook_attempt, 
-                'processing_failed', 
+                webhook_attempt,
+                'processing_failed',
                 error_message=f"Failed to get guest conversation info: {base_response.data}"
             )
             return base_response
 
         response_data = base_response.data
+
+        # Store guest_whatsapp_number for use in flow webhook preparation
+        response_data['guest_whatsapp_number'] = guest_whatsapp_number
 
         # Get message type information
         message_type_info = get_message_type_info(message_data)
@@ -402,11 +406,11 @@ class GuestConversationTypeView(APIView):
 
         # Handle special button reply interactions
         button_result = self._handle_button_reply_interactions(
-            message_data, 
-            message_type_info, 
+            message_data,
+            message_type_info,
             response_data
         )
-        
+
         if button_result:
             # Button was handled, return the result directly
             update_webhook_attempt(
@@ -430,14 +434,15 @@ class GuestConversationTypeView(APIView):
             routing_result=routing_result,
             guest_data=routing_result,
             message_data=message_data,
-            webhook_body=webhook_body
+            webhook_body=webhook_body,
+            guest_whatsapp_number=incoming_guest_whatsapp_number
         )
 
         # Update webhook attempt with success
         # Clean response data for JSON serialization
         import json
         from datetime import datetime
-        
+
         def clean_json_data(obj):
             """Recursively clean data to make JSON serializable"""
             if isinstance(obj, datetime):
@@ -448,7 +453,7 @@ class GuestConversationTypeView(APIView):
                 return [clean_json_data(item) for item in obj]
             else:
                 return obj
-        
+
         try:
             # Test JSON serialization and clean if needed
             json.dumps(routing_result)
@@ -456,7 +461,7 @@ class GuestConversationTypeView(APIView):
         except (TypeError, ValueError):
             # If serialization fails, clean the data
             clean_response_data = clean_json_data(routing_result)
-        
+
         update_webhook_attempt(
             webhook_attempt,
             'success',
@@ -567,12 +572,15 @@ class GuestConversationTypeView(APIView):
         Determine guest status based on guest's current status
 
         Returns:
-        - 'active_guest' for guests with status 'checked_in' or 'pending_checkin'
+        - 'active_guest' for guests with status 'checked_in' only
+        - 'pending_guest' for guests with status 'pending_checkin' (need to complete checkin)
         - 'old_guest' for guests with status 'checked_out'
         - 'anonymous' for guests that don't exist (handled in caller)
         """
-        if guest.status in ['checked_in', 'pending_checkin']:
+        if guest.status == 'checked_in':
             return 'active_guest'
+        elif guest.status == 'pending_checkin':
+            return 'pending_guest'
         elif guest.status == 'checked_out':
             return 'old_guest'
         else:
@@ -593,6 +601,14 @@ class GuestConversationTypeView(APIView):
         guest_name = guest_info.get('full_name', 'Guest') if guest_info else 'Guest'
 
         logger.info(f"Conversation routing: guest_exists={guest_exists}, has_conversations={has_conversations}, conversations_count={len(conversations)}")
+
+        # Route pending guests directly to flow webhook for automated checkin
+        if guest_status in ['pending_guest']:
+            logger.info(f"Pending guest {guest_name}, routing to flow webhook")
+            return {
+                **guest_data,
+                'action': 'flow'
+            }
 
         # Note: Access_denied logic removed since we now handle all messages through unified webhook system
 
@@ -639,23 +655,42 @@ class GuestConversationTypeView(APIView):
                 )
             }
 
-        # New guest with no conversations - show menu
-        if guest_exists and not has_conversations:
+        # Non-existent guest - route to flow webhook for automated flows like checkin
+        if not guest_exists:
+            logger.info(f"Non-existent guest {guest_name}, routing to flow webhook")
             return {
                 **guest_data,
-                'action': 'show_menu',
-                'whatsapp_payload': generate_department_menu_payload(
-                    recipient_number,
-                    guest_name
-                )
+                'action': 'flow'
             }
+
+        # New guest with no conversations - show menu only if they are checked-in
+        if guest_exists and not has_conversations:
+            guest_status = guest_data.get('guest_status', '')
+            logger.info(f"Routing decision: guest_status={guest_status}, guest_info status={guest_info.get('status') if guest_info else 'None'}")
+
+            if guest_status in ['active_guest']:  # Only show menu for checked-in guests
+                logger.info(f"Showing menu for active_guest: {guest_name}")
+                return {
+                    **guest_data,
+                    'action': 'show_menu',
+                    'whatsapp_payload': generate_department_menu_payload(
+                        recipient_number,
+                        guest_name
+                    )
+                }
+            else:
+                # Guest exists but not checked-in, route to flow webhook
+                logger.info(f"Routing to flow webhook - guest status: {guest_status}")
+                return {
+                    **guest_data,
+                    'action': 'flow'
+                }
 
         # Fallback (shouldn't reach here)
         logger.warning(f"Unexpected routing state for guest {guest_name}")
         return {
             **guest_data,
-            'action': 'relay',
-            'target_conversation': None
+            'action': 'flow'  # Default to flow webhook
         }
 
     def _handle_department_selection(self, guest_data, message_type_info,
@@ -728,7 +763,7 @@ class GuestConversationTypeView(APIView):
     def _extract_message_content(self, message_data, message_type_info):
         """
         Extract message content based on message type for GuestWebhookView compatibility
-        
+
         Returns a dictionary with 'message' and 'message_type' fields that match
         what GuestWebhookView expects
         """
@@ -737,31 +772,31 @@ class GuestConversationTypeView(APIView):
                 'message': '',
                 'message_type': 'text'
             }
-        
+
         msg_type = message_data.get('type')
-        
+
         # For text messages, return the text body
         if msg_type == 'text':
             return {
                 'message': message_data.get('text', ''),
                 'message_type': 'text'
             }
-        
+
         # For interactive messages (button replies, list replies), treat as text
         elif msg_type == 'interactive':
             interactive_data = message_data.get('interactive', {})
             interactive_type = interactive_data.get('type')
-            
+
             if interactive_type == 'button_reply':
                 button_reply = interactive_data.get('button_reply', {})
                 return {
-                    'message': button_reply.get('title', ''),
+                    'message': button_reply.get('id', ''),
                     'message_type': 'text'
                 }
             elif interactive_type == 'list_reply':
                 list_reply = interactive_data.get('list_reply', {})
                 return {
-                    'message': list_reply.get('title', ''),
+                    'message': list_reply.get('id', ''),
                     'message_type': 'text'
                 }
             else:
@@ -770,14 +805,21 @@ class GuestConversationTypeView(APIView):
                     'message': 'Interactive message received',
                     'message_type': 'text'
                 }
-        
+
         # For media messages, return the type name and a descriptive message
         elif msg_type in ['image', 'document', 'video', 'audio']:
+            # Extract media ID from the media object
+            media_id = None
+            media_obj = message_data.get(msg_type, {})
+            if media_obj:
+                media_id = media_obj.get('id')
+
             return {
                 'message': f'{msg_type.capitalize()} message received',
-                'message_type': msg_type
+                'message_type': msg_type,
+                'media_id': media_id
             }
-        
+
         # Fallback for unknown types
         else:
             return {
@@ -788,23 +830,23 @@ class GuestConversationTypeView(APIView):
     def _handle_button_reply_interactions(self, message_data, message_type_info, response_data):
         """
         Handle special button reply interactions for conversation management
-        
+
         Returns dict with response data if button was handled, None otherwise
         """
         msg_type = message_data.get('type')
-        
+
         if msg_type != 'interactive':
             return None
-            
+
         interactive_data = message_data.get('interactive', {})
         interactive_type = interactive_data.get('type')
-        
+
         if interactive_type != 'button_reply':
             return None
-            
+
         button_reply = interactive_data.get('button_reply', {})
         button_id = button_reply.get('id', '')
-        
+
         # Check if this is a special button ID we need to handle
         if button_id.startswith('accept_reopen_conversation_conv#'):
             return self._handle_accept_reopen_conversation(button_id, response_data)
@@ -812,7 +854,7 @@ class GuestConversationTypeView(APIView):
             return self._handle_fulfillment_response(button_id, True, response_data)
         elif button_id.startswith('req_unfulfilled_conv#'):
             return self._handle_fulfillment_response(button_id, False, response_data)
-            
+
         return None
 
     def _handle_accept_reopen_conversation(self, button_id, response_data):
@@ -820,7 +862,7 @@ class GuestConversationTypeView(APIView):
         try:
             # Extract conversation ID
             conversation_id = button_id.split('#', 1)[1]
-            
+
             # Verify conversation exists
             try:
                 conversation = Conversation.objects.get(id=conversation_id)
@@ -831,7 +873,7 @@ class GuestConversationTypeView(APIView):
                     'error': 'Conversation not found',
                     'message': 'The conversation you are trying to reopen could not be found.'
                 }
-            
+
             # Create a new message from guest to reactivate conversation
             guest_name = conversation.guest.full_name or 'Guest'
             guest_message = Message.objects.create(
@@ -840,20 +882,20 @@ class GuestConversationTypeView(APIView):
                 content=guest_name + " has reopened the conversation",
                 message_type='text'
             )
-            
+
             # Update conversation's last message timestamp and preview
             conversation.update_last_message(guest_message.content)
-            
+
             # Broadcast the "guest reopened conversation" message to staff via WebSocket
             try:
                 from .base import async_to_sync, get_channel_layer
                 channel_layer = get_channel_layer()
                 department_group_name = f"department_{conversation.department.lower()}"
-                
+
                 # Get guest stay info
                 from guest.models import Stay
                 active_stay = Stay.objects.filter(guest=conversation.guest, status='active').first()
-                
+
                 message_data = {
                     'id': guest_message.id,
                     'conversation_id': conversation.id,
@@ -874,7 +916,7 @@ class GuestConversationTypeView(APIView):
                         'room_number': active_stay.room.room_number if active_stay else None
                     }
                 }
-                
+
                 async_to_sync(channel_layer.group_send)(
                     department_group_name,
                     {
@@ -896,9 +938,9 @@ class GuestConversationTypeView(APIView):
                 logger.info(f"Sent reconnection message to {conversation.guest.whatsapp_number}")
             except Exception as e:
                 logger.error(f"Failed to send reconnection message: {e}")
-            
+
             logger.info(f"Conversation {conversation_id} reopened by guest")
-            
+
             return {
                 'success': True,
                 'message': 'Conversation reopened successfully',
@@ -906,7 +948,7 @@ class GuestConversationTypeView(APIView):
                 'message_id': guest_message.id,
                 'action': 'conversation_reopened'
             }
-            
+
         except Exception as e:
             logger.error(f"Error handling accept_reopen_conversation: {e}", exc_info=True)
             return {
@@ -920,7 +962,7 @@ class GuestConversationTypeView(APIView):
         try:
             # Extract conversation ID
             conversation_id = button_id.split('#', 1)[1]
-            
+
             # Verify conversation exists
             try:
                 conversation = Conversation.objects.get(id=conversation_id)
@@ -931,7 +973,7 @@ class GuestConversationTypeView(APIView):
                     'error': 'Conversation not found',
                     'message': 'The conversation could not be found.'
                 }
-            
+
             # Update conversation fulfillment status
             if is_fulfilled:
                 conversation.mark_fulfilled(True)
@@ -939,7 +981,7 @@ class GuestConversationTypeView(APIView):
             else:
                 conversation.mark_fulfilled(False)
                 feedback_text = "not fulfilled"
-            
+
             # Send WhatsApp feedback confirmation
             try:
                 from ..utils.whatsapp_utils import send_whatsapp_message_with_media
@@ -950,9 +992,9 @@ class GuestConversationTypeView(APIView):
                 logger.info(f"Sent feedback confirmation to {conversation.guest.whatsapp_number}")
             except Exception as e:
                 logger.error(f"Failed to send feedback confirmation: {e}")
-            
+
             logger.info(f"Conversation {conversation_id} marked as {feedback_text} by guest")
-            
+
             return {
                 'success': True,
                 'message': f'Feedback recorded - request marked as {feedback_text}',
@@ -960,7 +1002,7 @@ class GuestConversationTypeView(APIView):
                 'action': 'feedback_recorded',
                 'is_fulfilled': is_fulfilled
             }
-            
+
         except Exception as e:
             logger.error(f"Error handling fulfillment response: {e}", exc_info=True)
             return {
@@ -972,22 +1014,22 @@ class GuestConversationTypeView(APIView):
     def _prepare_guest_webhook_data(self, guest_data, message_data, webhook_body=None, target_conversation=None):
         """
         Prepare data for process_guest_webhook function
-        
+
         Returns a dictionary compatible with GuestMessageSerializer
         """
         guest_info = guest_data.get('guest_info')
         if not guest_info:
             return None
-            
+
         message_data = guest_data.get('message', {})
-        
+
         # Prepare webhook data
         webhook_data = {
             'whatsapp_number': guest_info.get('whatsapp_number'),
             'message': message_data.get('message', ''),
             'message_type': message_data.get('message_type', 'text'),
         }
-        
+
         # Add WhatsApp message ID for deduplication
         if webhook_body and 'entry' in webhook_body:
             try:
@@ -1001,7 +1043,7 @@ class GuestConversationTypeView(APIView):
                             webhook_data['whatsapp_message_id'] = messages[0].get('id')
             except Exception as e:
                 logger.warning(f"GuestConversationTypeView: Error extracting WhatsApp message ID: {e}")
-        
+
         # Add conversation info if provided
         if target_conversation:
             if target_conversation.get('use_existing', True) and target_conversation.get('id'):
@@ -1010,58 +1052,112 @@ class GuestConversationTypeView(APIView):
             else:
                 # Create new conversation - need department
                 webhook_data['department'] = target_conversation.get('department')
-        
+
         # Add media info if present
         if message_data.get('message_type') in ['image', 'document', 'video', 'audio']:
             webhook_data['media_url'] = message_data.get('media_url')
             webhook_data['media_filename'] = message_data.get('media_filename')
-        
+
         return webhook_data
 
-    def _prepare_flow_webhook_data(self, guest_data, message_data):
+    def _prepare_flow_webhook_data(self, guest_data, message_data, guest_whatsapp_number=None):
         """
         Prepare data for process_flow_webhook function
-        
+
         Returns a dictionary compatible with FlowMessageSerializer
         """
-        guest_info = guest_data.get('guest_info')
-        if not guest_info:
+        # Use the guest_whatsapp_number parameter that was passed to this method
+        whatsapp_number = guest_whatsapp_number
+
+        if not whatsapp_number:
+            logger.error("GuestConversationTypeView: No whatsapp number available for flow webhook")
             return None
-            
-        message_content = message_data.get('message', '')
-        message_type = message_data.get('message_type', 'text')
-        
+
+        # Use the already extracted message from guest_data
+        extracted_message = guest_data.get('message', {})
+        message_content = extracted_message.get('message', '')
+        message_type = extracted_message.get('message_type', 'text')
+
+        logger.info(f"GuestConversationTypeView: Preparing flow webhook - message_content: {message_content}, message_type: {message_type}")
+
         # Prepare webhook data
         webhook_data = {
-            'whatsapp_number': guest_info.get('whatsapp_number'),
+            'whatsapp_number': whatsapp_number,
             'message': message_content,
             'message_type': message_type,
         }
-        
+
         # Add media info if present
         if message_type in ['image', 'document', 'video', 'audio']:
             webhook_data['media_url'] = message_data.get('media_url')
             webhook_data['media_filename'] = message_data.get('media_filename')
-        
+            # Include media_id for downloading
+            if 'media_id' in extracted_message:
+                webhook_data['media_id'] = extracted_message['media_id']
+
         return webhook_data
 
-    def _execute_webhook_and_merge_result(self, routing_result, guest_data, message_data, webhook_body=None):
+    def _execute_webhook_and_merge_result(self, routing_result, guest_data, message_data, webhook_body=None, guest_whatsapp_number=None):
         """
         Execute the appropriate webhook function and merge its result with routing_result
-        
+
         Args:
             routing_result: The current routing result from _determine_routing_action
             guest_data: Guest information for preparing webhook data
             message_data: Message data from WhatsApp
             webhook_body: Original webhook body for extracting media ID
-            
+
         Returns:
             Updated routing_result with webhook execution result
         """
         try:
             action = routing_result.get('action')
-            
-            if action == 'relay':
+            logger.info(f"GuestConversationTypeView: Executing webhook with action: {action}")
+
+            if action == 'flow':
+                # Handle flow action with flow webhook for automated flows
+                logger.info(f"GuestConversationTypeView: Processing flow action")
+                logger.info(f"GuestConversationTypeView: guest_whatsapp_number available: {guest_whatsapp_number is not None}")
+                if guest_whatsapp_number:
+                    logger.info(f"GuestConversationTypeView: Using whatsapp_number: {guest_whatsapp_number}")
+
+                # Prepare flow webhook data
+                logger.info(f"GuestConversationTypeView: Preparing flow webhook data")
+                flow_webhook_data = self._prepare_flow_webhook_data(
+                    guest_data=guest_data,
+                    message_data=message_data,
+                    guest_whatsapp_number=guest_whatsapp_number
+                )
+                logger.info(f"GuestConversationTypeView: Flow webhook data prepared: {flow_webhook_data is not None}")
+
+                if flow_webhook_data:
+                    logger.info(f"GuestConversationTypeView: Calling handle_incoming_whatsapp_message")
+                    logger.info(f"GuestConversationTypeView: DEBUG - whatsapp_number value: {repr(guest_whatsapp_number)}")
+                    logger.info(f"GuestConversationTypeView: DEBUG - flow_webhook_data: {flow_webhook_data}")
+                    media_id = webhook_body.get('media_id') if webhook_body else None
+                    try:
+                        logger.info(f"GuestConversationTypeView: About to call handle_incoming_whatsapp_message")
+                        flow_response, status_code = handle_incoming_whatsapp_message(
+                            guest_whatsapp_number,
+                            flow_webhook_data
+                        )
+                        logger.info(f"GuestConversationTypeView: handle_incoming_whatsapp_message completed with status: {status_code}")
+                    except Exception as e:
+                        logger.error(f"GuestConversationTypeView: Error in handle_incoming_whatsapp_message: {e}", exc_info=True)
+                        logger.error(f"GuestConversationTypeView: DEBUG - guest_whatsapp_number type: {type(guest_whatsapp_number)}")
+                        logger.error(f"GuestConversationTypeView: DEBUG - guest_whatsapp_number value: {repr(guest_whatsapp_number)}")
+                        raise
+
+                    # Merge flow webhook result into routing result
+                    # flow_response is now always a properly formatted WhatsApp payload
+                    routing_result.update({
+                        'webhook_executed': True,
+                        'webhook_result': flow_response,
+                        'webhook_status_code': status_code,
+                        'whatsapp_payload': flow_response
+                    })
+
+            elif action == 'relay':
                 # Handle relay action with guest webhook
                 webhook_data = self._prepare_guest_webhook_data(
                     guest_data=guest_data,
@@ -1069,14 +1165,14 @@ class GuestConversationTypeView(APIView):
                     webhook_body=webhook_body,
                     target_conversation=routing_result.get('target_conversation')
                 )
-                
+
                 if webhook_data:
                     media_id = webhook_body.get('media_id') if webhook_body else None
                     webhook_response, status_code = process_guest_webhook(
                         request_data=webhook_data,
                         media_id=media_id
                     )
-                    
+
                     # Merge webhook result into routing result
                     if webhook_response.get('success'):
                         routing_result.update({
@@ -1094,17 +1190,18 @@ class GuestConversationTypeView(APIView):
                             'webhook_error': webhook_response,
                             'webhook_status_code': status_code
                         })
-                        
+
             else:
                 # For non-relay actions, we could process through flow webhook if needed
                 # For now, the WhatsApp payload is already prepared in the routing result
                 # These are typically interactive menu responses
                 pass
-            
+
             return routing_result
-            
+
         except Exception as e:
             logger.error(f"GuestConversationTypeView: Error executing webhook: {e}", exc_info=True)
+            logger.error(f"GuestConversationTypeView: Error type: {type(e).__name__}")
             routing_result.update({
                 'webhook_executed': False,
                 'webhook_error': str(e)

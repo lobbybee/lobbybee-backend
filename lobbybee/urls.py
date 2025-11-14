@@ -24,7 +24,7 @@ urlpatterns = [
     path('api/', include('user.urls')),
     path('api/', include('hotel.urls')),
     path('api/', include('guest.urls')),
-    path('api/', include('hotelstat.urls')),
+    path('api/hotel_stat/', include('hotelstat.urls')),
     path('api/', include('payments.urls')),
     path('api/chat/', include('chat.urls')),
     # path('api/context/', include('context_manager.urls')),

@@ -27,7 +27,6 @@ def decode_aadhaar_qr_from_image(image_bytes: bytes) -> dict:
                 # Aadhaar QR data is numeric
                 if qr_data.isdigit():
                     aadhaar = AadhaarSecureQr(int(qr_data))
-        
         # Use the correct method name
                     if hasattr(aadhaar, 'decodeddata'):
                         return aadhaar.decodeddata()
