@@ -41,7 +41,16 @@ def send_typing_indicator(request):
         # Validate conversation access
         conversation = Conversation.objects.get(id=conversation_id)
         
-        user_departments = user.department or []
+        departments = user.department or []
+        
+        # Ensure departments is always a list
+        if isinstance(departments, str):
+            user_departments = [departments]
+        elif isinstance(departments, list):
+            user_departments = departments
+        else:
+            user_departments = []
+            
         if (conversation.hotel != user.hotel or
             conversation.department not in user_departments):
             return Response(

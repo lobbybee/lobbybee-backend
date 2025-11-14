@@ -51,16 +51,27 @@ class ConversationListView(APIView):
     def get(self, request):
         user = request.user
 
-        if user.user_type != "department_staff":
+        # Allow access for receptionist, management, and department staff
+        allowed_user_types = ["department_staff", "receptionist", "manager", "hotel_admin"]
+        if user.user_type not in allowed_user_types:
             return Response(
                 {
-                    "error": "Access denied. Only department staff can view conversations."
+                    "error": "Access denied. Only staff members can view conversations."
                 },
                 status=status.HTTP_403_FORBIDDEN,
             )
 
         # Get conversations for user's departments
-        user_departments = user.department or []
+        departments = user.department or []
+        
+        # Ensure departments is always a list
+        if isinstance(departments, str):
+            user_departments = [departments]
+        elif isinstance(departments, list):
+            user_departments = departments
+        else:
+            user_departments = []
+            
         conversations = (
             Conversation.objects.filter(
                 hotel=user.hotel, department__in=user_departments, status="active"
@@ -85,10 +96,12 @@ class ConversationDetailView(APIView):
     def get(self, request, conversation_id):
         user = request.user
 
-        if user.user_type != "department_staff":
+        # Allow access for receptionist, management, and department staff
+        allowed_user_types = ["department_staff", "receptionist", "manager", "hotel_admin"]
+        if user.user_type not in allowed_user_types:
             return Response(
                 {
-                    "error": "Access denied. Only department staff can view conversations."
+                    "error": "Access denied. Only staff members can view conversations."
                 },
                 status=status.HTTP_403_FORBIDDEN,
             )
@@ -99,7 +112,16 @@ class ConversationDetailView(APIView):
             )
 
             # Validate user can access this conversation
-            user_departments = user.department or []
+            departments = user.department or []
+            
+            # Ensure departments is always a list
+            if isinstance(departments, str):
+                user_departments = [departments]
+            elif isinstance(departments, list):
+                user_departments = departments
+            else:
+                user_departments = []
+                
             if (
                 conversation.hotel != user.hotel
                 or conversation.department not in user_departments
@@ -151,10 +173,12 @@ class CreateConversationView(APIView):
     def post(self, request):
         user = request.user
 
-        if user.user_type != "department_staff":
+        # Allow access for receptionist, management, and department staff
+        allowed_user_types = ["department_staff", "receptionist", "manager", "hotel_admin"]
+        if user.user_type not in allowed_user_types:
             return Response(
                 {
-                    "error": "Access denied. Only department staff can create conversations."
+                    "error": "Access denied. Only staff members can create conversations."
                 },
                 status=status.HTTP_403_FORBIDDEN,
             )
@@ -240,10 +264,12 @@ class CloseConversationView(APIView):
     def post(self, request):
         user = request.user
 
-        if user.user_type != "department_staff":
+        # Allow access for receptionist, management, and department staff
+        allowed_user_types = ["department_staff", "receptionist", "manager", "hotel_admin"]
+        if user.user_type not in allowed_user_types:
             return Response(
                 {
-                    "error": "Access denied. Only department staff can close conversations."
+                    "error": "Access denied. Only staff members can close conversations."
                 },
                 status=status.HTTP_403_FORBIDDEN,
             )
@@ -260,7 +286,16 @@ class CloseConversationView(APIView):
                 conversation = Conversation.objects.get(id=conversation_id)
 
                 # Validate user can access this conversation
-                user_departments = user.department or []
+                departments = user.department or []
+                
+                # Ensure departments is always a list
+                if isinstance(departments, str):
+                    user_departments = [departments]
+                elif isinstance(departments, list):
+                    user_departments = departments
+                else:
+                    user_departments = []
+                    
                 if (
                     conversation.hotel != user.hotel
                     or conversation.department not in user_departments
@@ -663,11 +698,18 @@ class GuestConversationTypeView(APIView):
                 'action': 'flow'
             }
 
-        # New guest with no conversations - show menu only if they are checked-in
+        # New guest with no conversations - check for department selection or show menu
         if guest_exists and not has_conversations:
             guest_status = guest_data.get('guest_status', '')
             logger.info(f"Routing decision: guest_status={guest_status}, guest_info status={guest_info.get('status') if guest_info else 'None'}")
 
+            # Check for department selection (list reply) first
+            if message_type_info.get('is_list_reply'):
+                logger.info(f"Department selection detected for guest with no conversations: {guest_name}")
+                return self._handle_department_selection(
+                    guest_data, message_type_info, recipient_number, guest_name, []
+                )
+            
             if guest_status in ['active_guest']:  # Only show menu for checked-in guests
                 logger.info(f"Showing menu for active_guest: {guest_name}")
                 return {

@@ -34,18 +34,29 @@ class UserSerializer(serializers.ModelSerializer):
         read_only_fields = ['hotel', 'created_by', 'is_active_hotel_user', 'is_verified'] # These fields are set by the system, not directly by the user
 
     def create(self, validated_data):
+        # Auto-assign department based on user_type
+        user_type = validated_data.get('user_type')
+        department = validated_data.get('department')
+        
+        # Auto-assign departments if not provided
+        if not department:
+            if user_type == 'receptionist':
+                department = 'Reception'
+            elif user_type in ['manager', 'hotel_admin']:
+                department = 'Management'
+        
         # For staff creation, hotel and created_by are passed directly to serializer.save()
         user = User.objects.create_user(
             username=validated_data['username'],
             email=validated_data['email'],
             password=validated_data['password'],
-            user_type=validated_data.get('user_type'),
+            user_type=user_type,
             phone_number=validated_data.get('phone_number', ''),
             hotel=validated_data.get('hotel'), # Added hotel
             created_by=validated_data.get('created_by'), # Added created_by
             is_active_hotel_user=validated_data.get('is_active_hotel_user', True), # Added is_active_hotel_user
             is_verified=validated_data.get('is_verified', False),
-            department=validated_data.get('department')
+            department=department
         )
         return user
 

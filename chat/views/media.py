@@ -82,7 +82,16 @@ class ChatMediaUploadView(APIView):
                 conversation = Conversation.objects.select_related('hotel', 'guest').get(id=conversation_id)
                 
                 # Validate user can access this conversation
-                user_departments = user.department or []
+                departments = user.department or []
+                
+                # Ensure departments is always a list
+                if isinstance(departments, str):
+                    user_departments = [departments]
+                elif isinstance(departments, list):
+                    user_departments = departments
+                else:
+                    user_departments = []
+                    
                 if (conversation.hotel != user.hotel or
                     conversation.department not in user_departments):
                     logger.error(f"ChatMediaUploadView: Access denied for user {user.username} to conversation {conversation_id}")

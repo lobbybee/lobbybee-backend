@@ -29,14 +29,16 @@ class ChatConsumer(AsyncWebsocketConsumer):
         logger.info(f"User type: {getattr(self.user, 'user_type', 'NOT_SET')}")
         logger.info(f"User departments: {getattr(self.user, 'department', 'NOT_SET')}")
 
-        # Validate user is authenticated and is department staff
+        # Validate user is authenticated and is staff member
         if not self.user.is_authenticated:
             logger.error("Connection rejected: User not authenticated")
             await self.close()
             return
 
-        if self.user.user_type != 'department_staff':
-            logger.error(f"Connection rejected: Invalid user type '{self.user.user_type}', expected 'department_staff'")
+        # Allow access for receptionist, management, and department staff
+        allowed_user_types = ['department_staff', 'receptionist', 'manager', 'hotel_admin']
+        if self.user.user_type not in allowed_user_types:
+            logger.error(f"Connection rejected: Invalid user type '{self.user.user_type}', allowed types: {allowed_user_types}")
             await self.close()
             return
 
@@ -617,8 +619,16 @@ class ChatConsumer(AsyncWebsocketConsumer):
     @database_sync_to_async
     def get_user_departments(self):
         """Get all departments for the user"""
-        # Return user's department list or empty list
-        return self.user.department or []
+        # Ensure department is always returned as a list
+        departments = self.user.department or []
+        
+        # If department is a string, convert it to a list
+        if isinstance(departments, str):
+            return [departments]
+        elif isinstance(departments, list):
+            return departments
+        else:
+            return []
 
     @database_sync_to_async
     def get_conversation(self, conversation_id):

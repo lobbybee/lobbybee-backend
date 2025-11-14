@@ -19,9 +19,11 @@ class MarkMessagesReadView(APIView):
     def post(self, request):
         user = request.user
 
-        if user.user_type != 'department_staff':
+        # Allow access for receptionist, management, and department staff
+        allowed_user_types = ['department_staff', 'receptionist', 'manager', 'hotel_admin']
+        if user.user_type not in allowed_user_types:
             return Response(
-                {'error': 'Access denied. Only department staff can mark messages as read.'},
+                {'error': 'Access denied. Only staff members can mark messages as read.'},
                 status=status.HTTP_403_FORBIDDEN
             )
 
@@ -40,7 +42,16 @@ class MarkMessagesReadView(APIView):
                 # Validate conversation access
                 conversation = Conversation.objects.get(id=conversation_id)
                 
-                user_departments = user.department or []
+                departments = user.department or []
+                
+                # Ensure departments is always a list
+                if isinstance(departments, str):
+                    user_departments = [departments]
+                elif isinstance(departments, list):
+                    user_departments = departments
+                else:
+                    user_departments = []
+                    
                 if (conversation.hotel != user.hotel or
                     conversation.department not in user_departments):
                     return Response(
