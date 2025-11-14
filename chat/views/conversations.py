@@ -654,22 +654,31 @@ class GuestConversationTypeView(APIView):
 
             # If most recent conversation is expired, all conversations will be expired
             if most_recent_conv.get('is_expired', False):
-                logger.info("Conversation is expired, showing menu")
+                logger.info("Conversation is expired, checking guest status")
                 # Handle list reply to create new conversation with selected department
                 if message_type_info.get('is_list_reply'):
                     return self._handle_department_selection(
                         guest_data, message_type_info, recipient_number, guest_name, conversations
                     )
                 else:
-                    # Show menu for user to select a department
-                    return {
-                        **guest_data,
-                        'action': 'show_menu',
-                        'whatsapp_payload': generate_department_menu_payload(
-                            recipient_number,
-                            guest_name
-                        )
-                    }
+                    # Check guest status before showing menu - only checked-in guests should see menu
+                    if guest_status == 'active_guest':
+                        logger.info(f"Showing menu for checked-in guest: {guest_name}")
+                        return {
+                            **guest_data,
+                            'action': 'show_menu',
+                            'whatsapp_payload': generate_department_menu_payload(
+                                recipient_number,
+                                guest_name
+                            )
+                        }
+                    else:
+                        # Guest is not checked-in, route to flow webhook
+                        logger.info(f"Routing to flow webhook - guest not checked-in: {guest_name}, status: {guest_status}")
+                        return {
+                            **guest_data,
+                            'action': 'flow'
+                        }
 
             # Most recent conversation is active, handle based on message type
             logger.info("Conversation is active, checking message type")

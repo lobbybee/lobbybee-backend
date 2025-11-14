@@ -28,8 +28,8 @@ class Conversation(models.Model):
         ('checked_in', 'Checked In'),
         ('general', 'General'),
     ]
-    guest = models.ForeignKey(Guest, on_delete=models.CASCADE, related_name='conversations')
-    hotel = models.ForeignKey(Hotel, on_delete=models.CASCADE, related_name='conversations')
+    guest = models.ForeignKey(Guest, on_delete=models.CASCADE, related_name='conversations', null=True, blank=True)
+    hotel = models.ForeignKey(Hotel, on_delete=models.CASCADE, related_name='conversations', null=True, blank=True)
     department = models.CharField(max_length=20, choices=DEPARTMENT_CHOICES, default='Reception')
     conversation_type = models.CharField(max_length=20, choices=CONVERSATION_TYPE_CHOICES, default='general')
 
@@ -58,11 +58,11 @@ class Conversation(models.Model):
 
     class Meta:
         constraints = [
-            # Only enforce uniqueness for active conversations to prevent duplicate open conversations
+            # Only enforce uniqueness for active conversations when guest and hotel are not null
             # Allow multiple closed conversations for the same guest/department combo
             models.UniqueConstraint(
                 fields=['guest', 'hotel', 'department', 'conversation_type'],
-                condition=models.Q(status='active'),
+                condition=models.Q(status='active') & models.Q(guest__isnull=False) & models.Q(hotel__isnull=False),
                 name='unique_active_conversation'
             )
         ]
@@ -74,7 +74,9 @@ class Conversation(models.Model):
         ]
 
     def __str__(self):
-        return f"Conversation: {self.guest.full_name} -> {self.department} ({self.get_conversation_type_display()})"
+        guest_name = self.guest.full_name if self.guest else "Unknown Guest"
+        hotel_name = self.hotel.name if self.hotel else "Unknown Hotel"
+        return f"Conversation: {guest_name} -> {self.department} ({self.get_conversation_type_display()})"
 
     def update_last_message(self, message_content):
         """Update the last message preview and timestamp"""
@@ -176,7 +178,10 @@ class Message(models.Model):
     def get_sender_display_name(self):
         """Get display name for sender"""
         if self.sender_type == 'guest':
-            return self.conversation.guest.full_name or 'Guest'
+            if self.conversation.guest:
+                return self.conversation.guest.full_name or 'Guest'
+            else:
+                return 'Guest'
         elif self.sender:
             return self.sender.get_full_name() or self.sender.username
         return self.sender_type.title()
@@ -206,14 +211,16 @@ class Message(models.Model):
             from .utils.webhook_deduplication import create_outgoing_webhook_attempt
 
             try:
-                whatsapp_number = self.conversation.guest.whatsapp_number
-                create_outgoing_webhook_attempt(
-                    webhook_type='outgoing',
-                    message_content=self.content,
-                    whatsapp_number=whatsapp_number,
-                    message_id=self.id,
-                    conversation_id=self.conversation.id
-                )
+                # Only track if guest exists and has whatsapp number
+                if self.conversation.guest and hasattr(self.conversation.guest, 'whatsapp_number'):
+                    whatsapp_number = self.conversation.guest.whatsapp_number
+                    create_outgoing_webhook_attempt(
+                        webhook_type='outgoing',
+                        message_content=self.content,
+                        whatsapp_number=whatsapp_number,
+                        message_id=self.id,
+                        conversation_id=self.conversation.id
+                    )
             except Exception as e:
                 # Don't fail the save if deduplication tracking fails
                 import logging

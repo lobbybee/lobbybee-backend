@@ -55,6 +55,13 @@ def handle_incoming_whatsapp_message(whatsapp_number, flow_data):
         whatsapp_payload = adapt_checkin_response_to_whatsapp(result, whatsapp_number)
         return whatsapp_payload, 200
 
+    if command_type == 'demo':
+        result = handle_demo_command(guest, flow_data)
+        logger.info(f"handle_demo_command returned: {result}, type: {type(result)}")
+        # Convert result to WhatsApp payload
+        whatsapp_payload = adapt_checkin_response_to_whatsapp(result, whatsapp_number)
+        return whatsapp_payload, 200
+
     # Check if guest has an active flow conversation
     active_flow_conversation = get_active_flow_conversation(guest) if guest else None
 
@@ -102,6 +109,11 @@ def detect_command(message_text):
         hotel_id = match.group(1)
         return ('checkin', {'hotel_id': hotel_id})
 
+    # Check for demo command: /demo
+    demo_pattern = r'^/demo$'
+    if re.match(demo_pattern, message_text, re.IGNORECASE):
+        return ('demo', {})
+
     return (None, {})
 
 
@@ -123,12 +135,12 @@ def get_active_flow_conversation(guest):
     if active_conversation:
         logger.info(f"Found active conversation: {active_conversation.id}, type: {active_conversation.conversation_type}")
         
-        # Check if it's a checkin flow conversation
-        if active_conversation.conversation_type == 'checkin':
-            logger.info(f"Found active checkin flow conversation: {active_conversation.id}")
+        # Check if it's a checkin or demo flow conversation
+        if active_conversation.conversation_type in ['checkin', 'demo']:
+            logger.info(f"Found active {active_conversation.conversation_type} flow conversation: {active_conversation.id}")
             return active_conversation
         else:
-            logger.info(f"Active conversation {active_conversation.id} is not a checkin flow (type: {active_conversation.conversation_type})")
+            logger.info(f"Active conversation {active_conversation.id} is not a checkin/demo flow (type: {active_conversation.conversation_type})")
     else:
         logger.info(f"No active conversation found for guest {guest.id}")
 
@@ -150,12 +162,36 @@ def handle_checkin_command(guest, hotel_id, flow_data):
     return result
 
 
+def handle_demo_command(guest, flow_data):
+    """Handle /demo command."""
+    from ..flows.demo_flow import process_demo_flow
+
+    # Let the demo flow handle everything
+    result = process_demo_flow(
+        guest=guest,
+        hotel_id=None,  # Demo doesn't need a real hotel
+        flow_data=flow_data,
+        is_fresh_demo_command=True
+    )
+    logger.info(f"process_demo_flow returned: {result}, type: {type(result)}")
+    return result
+
+
 def route_to_flow_handler(guest, conversation, flow_data):
     """Route message to appropriate flow handler."""
     from ..flows.checkin_flow import process_checkin_flow
+    from ..flows.demo_flow import process_demo_flow
 
     if conversation.conversation_type == 'checkin':
         result = process_checkin_flow(
+            conversation=conversation,
+            guest=guest,
+            flow_data=flow_data
+        )
+        return result
+
+    if conversation.conversation_type == 'demo':
+        result = process_demo_flow(
             conversation=conversation,
             guest=guest,
             flow_data=flow_data
