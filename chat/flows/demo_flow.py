@@ -205,9 +205,7 @@ def handle_service_menu_step(conversation, guest, message_text, flow_data):
             "body_text": body_text
         }
     
-    # Store selected service in conversation for context
-    conversation.metadata = {'selected_service': selected_service}
-    conversation.save(update_fields=['metadata'])
+    # Service selection is stored in the guest message content, no need for separate storage
     
     # Show service connection message
     service_name = DEMO_SERVICES[selected_service]
@@ -226,10 +224,33 @@ def handle_service_menu_step(conversation, guest, message_text, flow_data):
 def handle_service_selected_step(conversation, guest, message_text, flow_data):
     """Handle messages after service selection - simulate order processing."""
     
-    # Get the selected service from conversation metadata
+    # Get the selected service from the previous guest message
     selected_service = 'restaurant'  # Default
-    if conversation.metadata and 'selected_service' in conversation.metadata:
-        selected_service = conversation.metadata['selected_service']
+    
+    # Look at the last guest message from the service menu step to determine what service was selected
+    last_guest_message_from_service_menu = conversation.messages.filter(
+        sender_type='guest',
+        is_flow=True,
+        flow_step=DemoStep.SERVICE_MENU
+    ).order_by('-created_at').first()
+    
+    if last_guest_message_from_service_menu:
+        guest_response = last_guest_message_from_service_menu.content.strip().lower()
+        
+        # Parse the service selection from the guest's response
+        if guest_response in ['restaurant', 'management', 'housekeeping']:
+            selected_service = guest_response
+        elif guest_response.startswith('option_'):
+            try:
+                option_index = int(guest_response.split('_')[1])
+                service_keys = list(DEMO_SERVICES.keys())
+                if 0 <= option_index < len(service_keys):
+                    selected_service = service_keys[option_index]
+            except (ValueError, IndexError):
+                pass
+        elif guest_response in ['btn_0', 'btn_1', 'btn_2']:
+            button_map = {'btn_0': 'restaurant', 'btn_1': 'management', 'btn_2': 'housekeeping'}
+            selected_service = button_map.get(guest_response, 'restaurant')
     
     service_name = DEMO_SERVICES[selected_service]
     

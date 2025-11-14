@@ -635,15 +635,21 @@ class GuestConversationTypeView(APIView):
         recipient_number = message_data.get('from')
         guest_name = guest_info.get('full_name', 'Guest') if guest_info else 'Guest'
 
-        logger.info(f"Conversation routing: guest_exists={guest_exists}, has_conversations={has_conversations}, conversations_count={len(conversations)}")
+        logger.info(f"Conversation routing: guest_exists={guest_exists}, has_conversations={has_conversations}, guest_status={guest_status}")
 
-        # Route pending guests directly to flow webhook for automated checkin
-        if guest_status in ['pending_guest']:
-            logger.info(f"Pending guest {guest_name}, routing to flow webhook")
+        # SIMPLIFIED LOGIC: Single guest status check
+        is_checked_in_guest = guest_status == 'active_guest'
+        
+        # Any message from non-checked-in guest goes to flow logic
+        if not is_checked_in_guest:
+            logger.info(f"Non-checked-in guest {guest_name} (status: {guest_status}), routing to flow webhook")
             return {
                 **guest_data,
                 'action': 'flow'
             }
+
+        # At this point, we only deal with CHECKED-IN guests
+        logger.info(f"Checked-in guest {guest_name}, processing message")
 
         # Note: Access_denied logic removed since we now handle all messages through unified webhook system
 
@@ -654,31 +660,23 @@ class GuestConversationTypeView(APIView):
 
             # If most recent conversation is expired, all conversations will be expired
             if most_recent_conv.get('is_expired', False):
-                logger.info("Conversation is expired, checking guest status")
+                logger.info("Conversation is expired, showing menu for checked-in guest")
+                
                 # Handle list reply to create new conversation with selected department
                 if message_type_info.get('is_list_reply'):
                     return self._handle_department_selection(
                         guest_data, message_type_info, recipient_number, guest_name, conversations
                     )
                 else:
-                    # Check guest status before showing menu - only checked-in guests should see menu
-                    if guest_status == 'active_guest':
-                        logger.info(f"Showing menu for checked-in guest: {guest_name}")
-                        return {
-                            **guest_data,
-                            'action': 'show_menu',
-                            'whatsapp_payload': generate_department_menu_payload(
-                                recipient_number,
-                                guest_name
-                            )
-                        }
-                    else:
-                        # Guest is not checked-in, route to flow webhook
-                        logger.info(f"Routing to flow webhook - guest not checked-in: {guest_name}, status: {guest_status}")
-                        return {
-                            **guest_data,
-                            'action': 'flow'
-                        }
+                    # Show department menu (guest is already confirmed as checked-in)
+                    return {
+                        **guest_data,
+                        'action': 'show_menu',
+                        'whatsapp_payload': generate_department_menu_payload(
+                            recipient_number,
+                            guest_name
+                        )
+                    }
 
             # Most recent conversation is active, handle based on message type
             logger.info("Conversation is active, checking message type")
@@ -699,18 +697,9 @@ class GuestConversationTypeView(APIView):
                 )
             }
 
-        # Non-existent guest - route to flow webhook for automated flows like checkin
-        if not guest_exists:
-            logger.info(f"Non-existent guest {guest_name}, routing to flow webhook")
-            return {
-                **guest_data,
-                'action': 'flow'
-            }
-
-        # New guest with no conversations - check for department selection or show menu
-        if guest_exists and not has_conversations:
-            guest_status = guest_data.get('guest_status', '')
-            logger.info(f"Routing decision: guest_status={guest_status}, guest_info status={guest_info.get('status') if guest_info else 'None'}")
+        # New checked-in guest with no conversations - show menu
+        if is_checked_in_guest and not has_conversations:
+            logger.info(f"New checked-in guest with no conversations: {guest_name}")
 
             # Check for department selection (list reply) first
             if message_type_info.get('is_list_reply'):
@@ -719,23 +708,16 @@ class GuestConversationTypeView(APIView):
                     guest_data, message_type_info, recipient_number, guest_name, []
                 )
             
-            if guest_status in ['active_guest']:  # Only show menu for checked-in guests
-                logger.info(f"Showing menu for active_guest: {guest_name}")
-                return {
-                    **guest_data,
-                    'action': 'show_menu',
-                    'whatsapp_payload': generate_department_menu_payload(
-                        recipient_number,
-                        guest_name
-                    )
-                }
-            else:
-                # Guest exists but not checked-in, route to flow webhook
-                logger.info(f"Routing to flow webhook - guest status: {guest_status}")
-                return {
-                    **guest_data,
-                    'action': 'flow'
-                }
+            # Show department menu
+            logger.info(f"Showing menu for checked-in guest: {guest_name}")
+            return {
+                **guest_data,
+                'action': 'show_menu',
+                'whatsapp_payload': generate_department_menu_payload(
+                    recipient_number,
+                    guest_name
+                )
+            }
 
         # Fallback (shouldn't reach here)
         logger.warning(f"Unexpected routing state for guest {guest_name}")
