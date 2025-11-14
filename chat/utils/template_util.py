@@ -269,8 +269,8 @@ def process_template(
         context = _resolve_variables(hotel_id, guest_id, additional_context or {})
         
         # Step 6: Process template content
-        if hasattr(template, 'content'):
-            content = template.content
+        if hasattr(template, 'text_content'):
+            content = template.text_content
         else:
             content = template['content']
         

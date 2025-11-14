@@ -2,6 +2,7 @@
 
 import re
 import logging
+from tempfile import template
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +26,7 @@ def handle_incoming_whatsapp_message(whatsapp_number, flow_data):
     Returns:
         tuple: (whatsapp_payload, status_code)
     """
+    from chat.utils.template_util import process_template
 
     # Validate core parameter
     if not whatsapp_number:
@@ -37,13 +39,13 @@ def handle_incoming_whatsapp_message(whatsapp_number, flow_data):
     # Extract data from flow_data
     message_text = flow_data.get('message', '')
     message_type = flow_data.get('message_type', 'text')
-    
+
     # Extract media_id from flow_data if it's media
     media_id = flow_data.get('media_id') if message_type != 'text' else None
 
     # Try to get existing guest (don't create)
     guest = get_existing_guest(whatsapp_number)
-    
+
     # Check if this is a command message
     command_type, extracted_data = detect_command(message_text)
 
@@ -75,10 +77,18 @@ def handle_incoming_whatsapp_message(whatsapp_number, flow_data):
         whatsapp_payload = adapt_checkin_response_to_whatsapp(result, whatsapp_number)
         return whatsapp_payload, 200
 
+    message_text = "Welcome to Lobbybee hotel CRM"
+    template_result = process_template(
+        hotel_id=1,
+        template_name='lobbybee_app_start'
+    )
+    if template_result.get('success') and template_result.get('processed_content'):
+        message_text = template_result['processed_content']
+
     # No command matched - fallback response
     return create_text_message_payload(
         whatsapp_number,
-        "Welcome to Lobbybee hotel CRM"
+        message_text
     ), 200
 
 
@@ -125,16 +135,16 @@ def get_active_flow_conversation(guest):
         return None
 
     logger.info(f"Looking for active flow conversation for guest: {guest.id}")
-    
+
     # First try to get any active conversation (prioritize checkin type)
     active_conversation = Conversation.objects.filter(
         guest=guest,
         status='active'
     ).order_by('-last_message_at').first()
-    
+
     if active_conversation:
         logger.info(f"Found active conversation: {active_conversation.id}, type: {active_conversation.conversation_type}")
-        
+
         # Check if it's a checkin or demo flow conversation
         if active_conversation.conversation_type in ['checkin', 'demo']:
             logger.info(f"Found active {active_conversation.conversation_type} flow conversation: {active_conversation.id}")
@@ -181,6 +191,7 @@ def route_to_flow_handler(guest, conversation, flow_data):
     """Route message to appropriate flow handler."""
     from ..flows.checkin_flow import process_checkin_flow
     from ..flows.demo_flow import process_demo_flow
+    from chat.utils.template_util import process_template
 
     if conversation.conversation_type == 'checkin':
         result = process_checkin_flow(
@@ -197,9 +208,17 @@ def route_to_flow_handler(guest, conversation, flow_data):
             flow_data=flow_data
         )
         return result
+    template_result = process_template(
+        hotel_id=1,
+        template_name='lobbybee_app_start'
+    )
 
-    # Unknown flow type
+    # Unknown flow type - use template result if successful, otherwise fallback to default
+    message_text = "Welcome to Lobbybee hotel CRM"
+    if template_result.get('success') and template_result.get('processed_content'):
+        message_text = template_result['processed_content']
+
     return {
         "type": "text",
-        "text": "Welcome to Lobbybee hotel CRM"
+        "text": message_text
     }

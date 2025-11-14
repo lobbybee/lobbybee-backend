@@ -288,7 +288,7 @@ class MessageTemplateSerializer(serializers.ModelSerializer):
             'media_filename', 'media_url', 'is_customizable', 'is_active',
             'variables', 'description', 'created_at', 'updated_at'
         ]
-        read_only_fields = ['created_at', 'updated_at', 'media_filename']
+        read_only_fields = ['created_at', 'updated_at', 'media_filename', 'hotel']
     
     def get_media_url(self, obj):
         """Get media URL from file field"""
@@ -309,7 +309,7 @@ class CustomMessageTemplateSerializer(serializers.ModelSerializer):
             'media_url', 'is_customizable', 'is_active', 'variables',
             'description', 'created_at', 'updated_at'
         ]
-        read_only_fields = ['created_at', 'updated_at', 'media_filename']
+        read_only_fields = ['created_at', 'updated_at', 'media_filename', 'hotel']
     
     def get_media_url(self, obj):
         """Get media URL from file field"""

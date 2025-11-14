@@ -9,6 +9,10 @@ import logging
 from django.conf import settings
 
 from .models import Hotel, HotelDocument, Room, RoomCategory, PaymentQRCode, WiFiCredential
+from guest.models import Guest
+from chat.utils.whatsapp_utils import send_whatsapp_image_with_link
+from django.db.models import ObjectDoesNotExist
+import threading
 from .serializers import (
     HotelSerializer,
     UserHotelSerializer,
@@ -23,6 +27,9 @@ from .serializers import (
 )
 from .permissions import IsHotelAdmin, IsSameHotelUser, CanManagePlatform, IsHotelStaffReadOnlyOrAdmin, RoomPermissions, CanManagePaymentQRCode
 from django_filters.rest_framework import DjangoFilterBackend
+
+# Set up logger
+logger = logging.getLogger(__name__)
 from .filters import RoomFilter
 
 
@@ -140,7 +147,6 @@ class HotelDocumentUploadView(generics.CreateAPIView):
     permission_classes = [permissions.IsAuthenticated, IsHotelAdmin]
 
     def perform_create(self, serializer):
-        logger = logging.getLogger(__name__)
         # Get the default storage backend from STORAGES setting
         storages_config = getattr(settings, 'STORAGES', {})
         default_storage_config = storages_config.get('default', {})
@@ -297,6 +303,68 @@ class PaymentQRCodeViewSet(viewsets.ModelViewSet):
             {"status": f"QR code {status_text}"},
             status=status.HTTP_200_OK
         )
+
+    @action(detail=False, methods=['post'], url_path='send-to-whatsapp')
+    def send_to_whatsapp(self, request):
+        """
+        Send QR code to guest's WhatsApp number.
+        Takes qr_code_id and guest_id as parameters and sends the QR code image asynchronously.
+        """
+        qr_code_id = request.data.get('qr_code_id')
+        guest_id = request.data.get('guest_id')
+        
+        if not qr_code_id or not guest_id:
+            return Response(
+                {"detail": "Both qr_code_id and guest_id are required."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            # Get QR code
+            qr_code = PaymentQRCode.objects.get(id=qr_code_id, hotel=request.user.hotel)
+            
+            # Get guest
+            guest = Guest.objects.get(id=guest_id)
+            
+            # Validate QR code has image
+            if not qr_code.image:
+                return Response(
+                    {"detail": "QR code does not have an image."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            def send_whatsapp_async():
+                try:
+                    # Send QR code image to WhatsApp with UPI ID as caption
+                    send_whatsapp_image_with_link(
+                        recipient_number=guest.whatsapp_number,
+                        image_url=qr_code.image.url,
+                        caption=f"UPI ID: {qr_code.upi_id}"
+                    )
+                    logger.info(f"QR code {qr_code_id} sent to guest {guest.full_name} ({guest.whatsapp_number})")
+                except Exception as e:
+                    logger.error(f"Failed to send QR code {qr_code_id} to guest {guest.whatsapp_number}: {str(e)}")
+            
+            # Send asynchronously without waiting for the request
+            thread = threading.Thread(target=send_whatsapp_async)
+            thread.daemon = True
+            thread.start()
+            
+            return Response(
+                {"detail": f"QR code is being sent to {guest.full_name} at {guest.whatsapp_number}"},
+                status=status.HTTP_200_OK
+            )
+            
+        except PaymentQRCode.DoesNotExist:
+            return Response(
+                {"detail": "QR code not found."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Guest.DoesNotExist:
+            return Response(
+                {"detail": "Guest not found."},
+                status=status.HTTP_404_NOT_FOUND
+            )
 
 
 class WiFiCredentialViewSet(viewsets.ModelViewSet):
