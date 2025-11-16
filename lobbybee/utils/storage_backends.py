@@ -6,7 +6,7 @@ class MediaStorage(S3Boto3Storage):
     """Custom storage for media files (user uploads)"""
     bucket_name = settings.AWS_STORAGE_BUCKET_NAME
     location = 'media'
-    default_acl = 'public-read'
+    default_acl = None
     file_overwrite = False
     querystring_auth = False
 
@@ -15,5 +15,5 @@ class StaticStorage(S3Boto3Storage):
     """Custom storage for static files"""
     bucket_name = settings.AWS_STORAGE_BUCKET_NAME
     location = 'static'
-    default_acl = 'public-read'
+    default_acl = None
     file_overwrite = False
