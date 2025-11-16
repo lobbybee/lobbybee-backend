@@ -16,7 +16,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     libpq-dev \
     zbar-tools \
-    libgl1-mesa-glx \
+    libgl1 \
+    libglx-mesa0 \
     libglib2.0-0 \
     libsm6 \
     libxext6 \
@@ -47,6 +48,5 @@ USER app
 
 # Expose port
 EXPOSE 8000
-
 # Run the application
 CMD ["daphne", "-b", "0.0.0.0", "-p", "8000", "lobbybee.asgi:application"]
