@@ -65,11 +65,13 @@ INSTALLED_APPS = [
 
 ASGI_APPLICATION = 'lobbybee.asgi.application'
 
+REDIS_HOST=env('REDIS_HOST')
+
 CHANNEL_LAYERS = {
     'default': {
         'BACKEND': 'channels_redis.core.RedisChannelLayer',
         'CONFIG': {
-            "hosts": [('127.0.0.1', 6379)],
+            "hosts": [(REDIS_HOST, 6379)],
         },
     },
 }
