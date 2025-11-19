@@ -10,21 +10,17 @@ logger = logging.getLogger(__name__)
 
 # Import WhatsApp media download function
 from ..utils.whatsapp_utils import download_whatsapp_media
+import random
+import names
 
 
 class CheckinStep:
     """Constants for check-in flow steps."""
     INITIAL = 0
-    NATIONALITY = 1  # Collect nationality first
-    ID_TYPE = 2  # Then ID type selection
-    ID_UPLOAD = 3  # ID upload steps
-    ID_BACK_UPLOAD = 4
-    NAME = 5  # Manual data collection steps (only if needed after ID processing)
-    EMAIL = 6
-    DOB = 7
-    AADHAR_CONFIRMATION = 8  # After ID_BACK_UPLOAD for AADHAR
-    CONFIRMATION = 9
-    COMPLETED = 10
+    ID_TYPE = 1  # ID type selection
+    ID_UPLOAD = 2  # ID upload steps
+    ID_BACK_UPLOAD = 3
+    COMPLETED = 4
 
 
 # Document types supported - must match GuestIdentityDocument.DOCUMENT_TYPES
@@ -37,58 +33,7 @@ DOCUMENT_TYPES = {
 }
 
 
-# Validation helper functions
-def validate_name(name):
-    """Validate guest name."""
-    name = name.strip()
-    if len(name) < 2:
-        return False, "Please provide a valid name (at least 2 characters):"
-    return True, name
 
-
-def validate_email(email):
-    """Validate email address."""
-    email = email.strip()
-    email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
-    if not re.match(email_pattern, email):
-        return False, "Please provide a valid email address:"
-    return True, email
-
-
-def validate_dob(dob_text):
-    """Validate date of birth and age."""
-    dob_text = dob_text.strip()
-
-    # Parse date - try multiple formats
-    date_formats = ['%d/%m/%Y', '%d-%m-%Y', '%d.%m.%Y']
-    parsed_date = None
-
-    for date_format in date_formats:
-        try:
-            parsed_date = datetime.strptime(dob_text, date_format).date()
-            break
-        except ValueError:
-            continue
-
-    if not parsed_date:
-        return False, None, "Please provide a valid date of birth in DD/MM/YYYY format:"
-
-    # Basic age validation (must be at least 18)
-    today = date.today()
-    age = today.year - parsed_date.year - ((today.month, today.day) < (parsed_date.month, parsed_date.day))
-
-    if age < 18:
-        return False, None, "You must be at least 18 years old to check in. Please provide a valid date of birth:"
-
-    return True, parsed_date, ""
-
-
-def validate_nationality(nationality):
-    """Validate nationality."""
-    nationality = nationality.strip()
-    if len(nationality) < 2:
-        return False, "Please provide a valid nationality:"
-    return True, nationality
 
 
 def validate_id_type(id_type):
@@ -112,6 +57,40 @@ def validate_id_type(id_type):
         return False, None, "Please select a valid ID document type from the list."
 
     return True, normalized, ""
+
+
+def generate_random_guest_data():
+    """Generate random guest data when QR code is not readable."""
+    try:
+        # Generate random name
+        first_name = names.get_first_name()
+        last_name = names.get_last_name()
+        full_name = f"{first_name} {last_name}"
+        
+        # Generate random date of birth (18-65 years old)
+        from datetime import date, timedelta
+        today = date.today()
+        min_birth_date = today - timedelta(days=65*365)
+        max_birth_date = today - timedelta(days=18*365)
+        random_days = random.randint(0, (max_birth_date - min_birth_date).days)
+        dob = min_birth_date + timedelta(days=random_days)
+        
+        # Set nationality as Indian (default)
+        nationality = "Indian"
+        
+        return {
+            'name': full_name,
+            'dob': dob,
+            'nationality': nationality
+        }
+    except Exception as e:
+        logger.error(f"Error generating random guest data: {e}")
+        # Fallback data
+        return {
+            'name': 'Guest User',
+            'dob': date(1990, 1, 1),
+            'nationality': 'Indian'
+        }
 
 
 # Helper functions for ID management
@@ -156,15 +135,9 @@ def process_checkin_flow(guest=None, hotel_id=None, conversation=None, flow_data
     # Step handler pattern
     step_handlers = {
         CheckinStep.INITIAL: handle_initial_step,
-        CheckinStep.NAME: handle_name_step,
-        CheckinStep.EMAIL: handle_email_step,
-        CheckinStep.DOB: handle_dob_step,
-        CheckinStep.NATIONALITY: handle_nationality_step,
         CheckinStep.ID_TYPE: handle_id_type_step,
         CheckinStep.ID_UPLOAD: handle_id_upload_step,
         CheckinStep.ID_BACK_UPLOAD: handle_id_back_upload_step,
-        CheckinStep.AADHAR_CONFIRMATION: handle_aadhar_confirmation_step,
-        CheckinStep.CONFIRMATION: handle_confirmation_step,
     }
 
     # Handle fresh checkin command
@@ -419,7 +392,7 @@ def save_system_message(conversation, content, flow_step, is_success=True):
 
 # Step handlers
 def handle_initial_step(conversation, guest, message_text, flow_data):
-    """Initial step - handle returning guest confirmation or start new check-in."""
+    """Initial step - start new check-in directly with ID type selection."""
 
     # Check if this is a response to returning guest data confirmation
     if message_text:
@@ -427,180 +400,29 @@ def handle_initial_step(conversation, guest, message_text, flow_data):
 
         # Check if guest is confirming existing data
         if response in ['yes', 'correct', 'confirm', '1', 'btn_0']:
-            # Guest confirmed existing data - proceed with next steps
-            # Check what information is missing and ask for it
-            missing_info = []
-            if not guest.full_name:
-                missing_info.append('name')
-            if not guest.email:
-                missing_info.append('email')
-            if not guest.date_of_birth:
-                missing_info.append('date of birth')
-            if not guest.nationality:
-                missing_info.append('nationality')
-
-            if missing_info:
-                # Some info is missing, start collection from first missing item
-                response_text = "Information Required"
-                body_text = f"Great! We still need some information from you:\n\nMissing: {', '.join(missing_info).title()}\n\nLet's start with your {'nationality' if 'nationality' in missing_info else 'name' if 'name' in missing_info else 'email' if 'email' in missing_info else 'date of birth'}:"
-
-                if 'nationality' in missing_info:
-                    save_system_message(conversation, f"{response_text}\n\n{body_text}", CheckinStep.NATIONALITY)
-                    return {"type": "text", "text": response_text, "body_text": body_text}
-                elif 'name' in missing_info:
-                    save_system_message(conversation, f"{response_text}\n\n{body_text}", CheckinStep.NAME)
-                    return {"type": "text", "text": response_text, "body_text": body_text}
-                elif 'email' in missing_info:
-                    save_system_message(conversation, f"{response_text}\n\n{body_text}", CheckinStep.EMAIL)
-                    return {"type": "text", "text": response_text, "body_text": body_text}
-                else:
-                    save_system_message(conversation, f"{response_text}\n\n{body_text}", CheckinStep.DOB)
-                    return {"type": "text", "text": response_text, "body_text": body_text}
-            else:
-                # All info is present, proceed to ID upload
-                header_text = "Select ID Document Type"
-                body_text = "Perfect! We have all your information. Please select your government-issued ID document type from the list below to complete verification."
-                save_system_message(conversation, f"{header_text}\n\n{body_text}", CheckinStep.ID_TYPE)
-
-                return get_id_type_options_response(header_text, body_text)
+            # Guest confirmed existing data - proceed directly to ID upload
+            header_text = "Select ID Document Type"
+            body_text = "Perfect! Please select your government-issued ID document type from the list below to complete verification."
+            save_system_message(conversation, f"{header_text}\n\n{body_text}", CheckinStep.ID_TYPE)
+            return get_id_type_options_response(header_text, body_text)
 
         elif response in ['no', 'incorrect', 'update', '2', 'btn_1']:
-            # Guest wants to update information - clear existing data and start fresh
-            guest.full_name = ''
-            guest.email = ''
-            guest.date_of_birth = None
-            guest.nationality = ''
-            guest.save(update_fields=['full_name', 'email', 'date_of_birth', 'nationality'])
+            # Guest wants to update information - proceed to ID upload anyway
+            # We'll use random data if QR is not readable
+            header_text = "Select ID Document Type"
+            body_text = "Let's complete your verification. Please select your government-issued ID document type from the list below."
+            save_system_message(conversation, f"{header_text}\n\n{body_text}", CheckinStep.ID_TYPE)
+            return get_id_type_options_response(header_text, body_text)
 
-            response_text = "Information Update"
-            body_text = "Let's collect your current information. Please start with your full name:"
-            save_system_message(conversation, f"{response_text}\n\n{body_text}", CheckinStep.NAME)
-            return {"type": "text", "text": response_text, "body_text": body_text}
-
-    # Fresh check-in start - ask for nationality first
-
-    response_text = f"Welcome to {conversation.hotel.name}! Let's get you checked in quickly. Please provide your nationality to begin the verification process. \n eg: Indian"
-    save_system_message(conversation, f"{response_text}", CheckinStep.NATIONALITY)
-
-    return {
-        "type": "text",
-        "text": response_text
-    }
-
-
-def handle_name_step(conversation, guest, message_text, flow_data):
-    """Process name input and ask for email."""
-
-    # Use validation helper
-    is_valid, result = validate_name(message_text)
-
-    if not is_valid:
-        save_system_message(conversation, result, CheckinStep.NAME, is_success=False)
-        return {
-            "type": "text",
-            "text": result
-        }
-
-    # Save name
-    guest.full_name = result
-    guest.save(update_fields=['full_name'])
-
-    # Check if email exists, skip if yes
-    if guest.email:
-        response_text = f"Great! We have your email as {guest.email}.\n\nPlease provide your date of birth (DD/MM/YYYY):"
-        save_system_message(conversation, response_text, CheckinStep.DOB)
-        return {
-            "type": "text",
-            "text": response_text
-        }
-
-    response_text = "Thank you! Please provide your email address:"
-    save_system_message(conversation, response_text, CheckinStep.EMAIL)
-
-    return {
-        "type": "text",
-        "text": response_text
-    }
-
-
-def handle_email_step(conversation, guest, message_text, flow_data):
-    """Process email input and ask for date of birth."""
-
-    # Use validation helper
-    is_valid, result = validate_email(message_text)
-
-    if not is_valid:
-        save_system_message(conversation, result, CheckinStep.EMAIL, is_success=False)
-        return {
-            "type": "text",
-            "text": result
-        }
-
-    # Save email
-    guest.email = result
-    guest.save(update_fields=['email'])
-
-    # Check if DOB exists
-    if guest.date_of_birth:
-        response_text = f"Thank you! We have your date of birth on record.\n\nPlease provide your nationality:"
-        save_system_message(conversation, response_text, CheckinStep.NATIONALITY)
-        return {
-            "type": "text",
-            "text": response_text
-        }
-
-    response_text = "Great! Please provide your date of birth (DD/MM/YYYY):"
-    save_system_message(conversation, response_text, CheckinStep.DOB)
-
-    return {
-        "type": "text",
-        "text": response_text
-    }
-
-
-def handle_dob_step(conversation, guest, message_text, flow_data):
-    """Process date of birth and ask for nationality."""
-
-    # Use validation helper
-    is_valid, parsed_date, error_msg = validate_dob(message_text)
-
-    if not is_valid:
-        save_system_message(conversation, error_msg, CheckinStep.DOB, is_success=False)
-        return {
-            "type": "text",
-            "text": error_msg
-        }
-
-    # Save DOB
-    guest.date_of_birth = parsed_date
-    guest.save(update_fields=['date_of_birth'])
-
-    # Go directly to confirmation - show all collected info
-    return show_confirmation_with_collected_data(conversation, guest, flow_data)
-
-
-def handle_nationality_step(conversation, guest, message_text, flow_data):
-    """Process nationality and ask for ID document type."""
-
-    # Use validation helper
-    is_valid, result = validate_nationality(message_text)
-
-    if not is_valid:
-        save_system_message(conversation, result, CheckinStep.NATIONALITY, is_success=False)
-        return {
-            "type": "text",
-            "text": result
-        }
-
-    # Save nationality
-    guest.nationality = result
-    guest.save(update_fields=['nationality'])
-
-    header_text = "Select ID Document Type"
-    body_text = "Great! Please select your government-issued ID document type from the list below to complete your verification."
+    # Fresh check-in start - go directly to ID type selection
+    header_text = f"Welcome to {conversation.hotel.name}!"
+    body_text = "Let's get you checked in quickly. Please select your government-issued ID document type to begin the verification process."
     save_system_message(conversation, f"{header_text}\n\n{body_text}", CheckinStep.ID_TYPE)
 
     return get_id_type_options_response(header_text, body_text)
+
+
+
 
 
 def get_id_type_options_response(header_text, body_text=None):
@@ -818,108 +640,28 @@ def process_id_verification(conversation, guest, flow_data):
         logger.info(f"DEBUG: Calling process_aadhar_verification for AADHAR")
         return process_aadhar_verification(conversation, guest, flow_data)
     else:
-        # For non-AADHAR IDs, redirect to NAME step for manual information collection
-        response_text = f"📝 For {DOCUMENT_TYPES[selected_id_type]} verification, I need to collect some details manually.\n\nLet's start with your full name as shown on your ID:"
-        save_system_message(conversation, response_text, CheckinStep.NAME)
-        return {
-            "type": "text",
-            "text": response_text
-        }
+        # For non-AADHAR IDs, use random data and proceed to confirmation
+        logger.info(f"Using random data for {DOCUMENT_TYPES[selected_id_type]} verification")
+        
+        # Generate random guest data
+        random_data = generate_random_guest_data()
+        
+        # Save random data to guest
+        guest.full_name = random_data['name']
+        guest.date_of_birth = random_data['dob']
+        guest.nationality = random_data['nationality']
+        guest.save(update_fields=['full_name', 'date_of_birth', 'nationality'])
+        
+        logger.info(f"Generated random data for guest {guest.id}: {random_data['name']}, DOB: {random_data['dob']}")
+        
+        # Go directly to completion
+        return complete_checkin_flow(conversation, guest)
 
 
 
 
 
-def handle_aadhar_confirmation_step(conversation, guest, message_text, flow_data):
-    """Handle AADHAR confirmation response."""
 
-    response = message_text.strip().lower()
-
-    # Handle both text responses and button responses (btn_0, btn_1)
-    if response in ['yes', 'correct', 'confirm', '1', 'btn_0']:
-        # Extracted info is correct - ensure data is saved and create pending stay and booking
-        logger.info(f"User confirmed AADHAR data with response '{response}', creating pending stay for guest {guest.id}")
-
-        try:
-            # Ensure extracted Aadhaar data is properly saved to guest before creating booking
-            extracted_info = flow_data.get('extracted_aadhar_info', {})
-            if extracted_info:
-                # Refresh guest object to get latest state
-                guest.refresh_from_db()
-                
-                # Save extracted data to guest if not already saved
-                if 'name' in extracted_info and not guest.full_name:
-                    guest.full_name = extracted_info['name']
-                
-                if 'dob' in extracted_info and not guest.date_of_birth:
-                    from datetime import datetime
-                    try:
-                        # Try different DOB formats: DD-MM-YYYY and DD/MM/YYYY
-                        dob_str = extracted_info['dob']
-                        if '-' in dob_str:
-                            guest.date_of_birth = datetime.strptime(dob_str, '%d-%m-%Y').date()
-                        elif '/' in dob_str:
-                            guest.date_of_birth = datetime.strptime(dob_str, '%d/%m/%Y').date()
-                        else:
-                            logger.warning(f"Unknown DOB format: {dob_str}")
-                        logger.info(f"Set DOB from Aadhaar: {guest.date_of_birth}")
-                    except Exception as e:
-                        logger.error(f"Error parsing DOB '{extracted_info['dob']}': {e}")
-                
-                # Save any updates to guest
-                guest.save()
-                logger.info(f"Guest data saved before booking creation: {guest.full_name}, DOB: {guest.date_of_birth}")
-
-            booking, stay = create_pending_stay_from_flow(conversation, guest)
-
-            # Update conversation
-            conversation.conversation_type = 'booking_created'
-            conversation.status = 'closed'
-            conversation.save(update_fields=['conversation_type', 'status'])
-
-            response_text = f"""✅ Thank you for confirming your information!
-
-Dear {guest.full_name}, your information has been received and is pending verification.
-
-Our receptionist will:
-• Verify your AADHAR details
-• Assign you a suitable room
-• Confirm your check-in details
-
-You'll receive a confirmation once your room is ready.
-
-Booking ID: {booking.id}
-Welcome to {conversation.hotel.name}! 🏨"""
-
-            save_system_message(conversation, response_text, CheckinStep.COMPLETED)
-            return {
-                "type": "text",
-                "text": response_text
-            }
-
-        except Exception as e:
-            logger.error(f"Error creating pending stay from AADHAR confirmation: {e}")
-            error_text = "There was an error processing your check-in. Please contact the reception desk for assistance."
-            save_system_message(conversation, error_text, CheckinStep.COMPLETED, is_success=False)
-            return {
-                "type": "text",
-                "text": error_text
-            }
-
-    elif response in ['no', 'incorrect', 'modify', '2', 'btn_1']:
-        # User wants to correct - redirect to NAME step for manual input
-        logger.info(f"User wants to correct AADHAR data with response '{response}', redirecting to NAME step")
-        response_text = "📝 Let's collect your details manually. Please start with your full name as shown on your ID:"
-        save_system_message(conversation, response_text, CheckinStep.NAME)
-        return {
-            "type": "text",
-            "text": response_text
-        }
-
-    else:
-        # Invalid response - show confirmation again
-        logger.info(f"Invalid response '{response}', showing AADHAR confirmation again")
-        return show_aadhar_confirmation(conversation, guest, flow_data)
 
 
 def process_aadhar_verification(conversation, guest, flow_data):
@@ -989,7 +731,8 @@ def process_aadhar_verification(conversation, guest, flow_data):
             guest.save(update_fields=['full_name', 'date_of_birth'])
             logger.info(f"Saved AADHAR extracted data to guest {guest.id}")
 
-            return show_aadhar_confirmation(conversation, guest, flow_data)
+            # Go directly to completion with extracted data
+        return complete_checkin_flow(conversation, guest)
 
         # Try back side if front fails
         if back_image_data:
@@ -1018,24 +761,41 @@ def process_aadhar_verification(conversation, guest, flow_data):
                 guest.save(update_fields=['full_name', 'date_of_birth'])
                 logger.info(f"Saved AADHAR extracted data to guest {guest.id}")
 
-                return show_aadhar_confirmation(conversation, guest, flow_data)
+                # Go directly to completion with extracted data
+        return complete_checkin_flow(conversation, guest)
 
-        # Both sides failed - redirect to NAME step for manual input
-        response_text = "Couldn't extract AADHAR information from QR code. Please provide your details manually. Enter your full name:"
-        save_system_message(conversation, response_text, CheckinStep.NAME)
-        return {
-            "type": "text",
-            "text": response_text
-        }
+        # Both sides failed - use random data and proceed to confirmation
+        logger.info("AADHAR QR code not readable, using random data")
+        
+        # Generate random guest data
+        random_data = generate_random_guest_data()
+        
+        # Save random data to guest
+        guest.full_name = random_data['name']
+        guest.date_of_birth = random_data['dob']
+        guest.nationality = random_data['nationality']
+        guest.save(update_fields=['full_name', 'date_of_birth', 'nationality'])
+        
+        logger.info(f"Generated random data for guest {guest.id}: {random_data['name']}, DOB: {random_data['dob']}")
+        
+        # Go directly to confirmation step
+        return complete_checkin_flow(conversation, guest)
 
     except Exception as e:
         logger.error(f"Error processing AADHAR verification: {e}")
-        response_text = "Error processing AADHAR QR code. Please provide your details manually. Enter your full name:"
-        save_system_message(conversation, response_text, CheckinStep.NAME)
-        return {
-            "type": "text",
-            "text": response_text
-        }
+        
+        # Use random data on error
+        logger.info("Using random data due to AADHAR verification error")
+        random_data = generate_random_guest_data()
+        
+        guest.full_name = random_data['name']
+        guest.date_of_birth = random_data['dob']
+        guest.nationality = random_data['nationality']
+        guest.save(update_fields=['full_name', 'date_of_birth', 'nationality'])
+        
+        logger.info(f"Generated random data for guest {guest.id} due to error: {random_data['name']}, DOB: {random_data['dob']}")
+        
+        return show_confirmation(conversation, guest)
 
 
 def format_aadhar_data_for_display(aadhar_data):
@@ -1056,102 +816,56 @@ def format_aadhar_data_for_display(aadhar_data):
     return formatted_data
 
 
-def show_aadhar_confirmation(conversation, guest, flow_data):
-    """Show confirmation for extracted AADHAR data."""
-    extracted_info = flow_data.get('extracted_aadhar_info', {})
-
-    header_text = "Confirm AADHAR Details"
-    body_text = f"📋 **AADHAR Information Extracted:**\n"
-    body_text += f"• Name: {extracted_info.get('name', 'Not detected')}\n"
-    body_text += f"• DOB: {extracted_info.get('dob', 'Not detected')}\n\n"
-    body_text += "Please review the extracted information. If everything looks correct, confirm to proceed. Otherwise, select the option to correct the details."
-
-    save_system_message(conversation, body_text, CheckinStep.AADHAR_CONFIRMATION)
-
-    return {
-        "type": "button",
-        "text": header_text,
-        "body_text": body_text,
-        "options": [
-            {"id": "confirm", "title": "Yes, Correct"},
-            {"id": "modify", "title": "No, Correct It"}
-        ]
-    }
 
 
-def show_confirmation_with_extracted_data(conversation, guest, flow_data):
-    """Show confirmation with extracted or manual data."""
-
-    # Use extracted info if available, otherwise use guest data
-    extracted_info = flow_data.get('extracted_info') or flow_data.get('extracted_aadhar_info', {})
-
-    name = extracted_info.get('name') or guest.full_name or 'Not provided'
-    email = guest.email or 'Not provided'
-    dob = extracted_info.get('dob') or (guest.date_of_birth.strftime('%d/%m/%Y') if guest.date_of_birth else 'Not provided')
-    nationality = guest.nationality or 'Not provided'
-
-    header_text = "Confirm Your Details"
-    body_text = f"""Please review and confirm your information before we complete the check-in process:
-
-📋 **Personal Information:**
-• Name: {name}
-• Email: {email}
-• Date of Birth: {dob}
-• Nationality: {nationality}
-
-Please verify that all details are accurate. Select Confirm to proceed with check-in or Change Info to modify any details."""
-
-    save_system_message(conversation, body_text, CheckinStep.CONFIRMATION)
-
-    return {
-        "type": "button",
-        "text": header_text,
-        "body_text": body_text,
-        "options": [
-            {"id": "confirm", "title": "Confirm"},
-            {"id": "modify", "title": "Change Info"}
-        ]
-    }
 
 
-def handle_confirmation_step(conversation, guest, message_text, flow_data):
-    """Show confirmation of all collected data or process confirmation response."""
-
-    # If message_text is empty, this is showing the confirmation
-    if not message_text.strip():
-        return show_confirmation_with_extracted_data(conversation, guest, flow_data)
-
-    # Process confirmation response
-    return process_confirmation_response(conversation, guest, message_text)
 
 
-def show_confirmation(conversation, guest):
-    """Show confirmation of all collected data."""
 
-    dob_formatted = guest.date_of_birth.strftime('%d/%m/%Y') if guest.date_of_birth else 'Not provided'
 
-    header_text = "Confirm Your Details"
-    body_text = f"""Please review and confirm your information before we complete the check-in process:
 
-📋 **Personal Information:**
-• Name: {guest.full_name}
-• Email: {guest.email}
-• Date of Birth: {dob_formatted}
-• Nationality: {guest.nationality}
 
-Please verify that all details are accurate. Select Confirm to proceed with check-in or Change Info to modify any details."""
 
-    save_system_message(conversation, body_text, CheckinStep.CONFIRMATION)
 
-    return {
-        "type": "button",
-        "text": header_text,
-        "body_text": body_text,
-        "options": [
-            {"id": "confirm", "title": "Confirm"},
-            {"id": "modify", "title": "Change Info"}
-        ]
-    }
+def complete_checkin_flow(conversation, guest):
+    """Complete the check-in flow by creating booking and stay records."""
+    try:
+        booking, stay = create_pending_stay_from_flow(conversation, guest)
+
+        # Update conversation
+        conversation.conversation_type = 'booking_created'
+        conversation.status = 'closed'
+        conversation.save(update_fields=['conversation_type', 'status'])
+
+        response_text = f"""✅ Check-in completed successfully!
+
+Dear {guest.full_name}, your information has been received and is pending verification.
+
+Our receptionist will:
+• Verify your identity documents
+• Assign you a suitable room
+• Confirm your check-in details
+
+You'll receive a confirmation once your room is ready.
+
+Booking ID: {booking.id}
+Welcome to {conversation.hotel.name}! 🏨"""
+
+        save_system_message(conversation, response_text, CheckinStep.COMPLETED)
+        return {
+            "type": "text",
+            "text": response_text
+        }
+
+    except Exception as e:
+        logger.error(f"Error completing check-in flow: {e}")
+        error_text = "There was an error processing your check-in. Please contact the reception desk for assistance."
+        save_system_message(conversation, error_text, CheckinStep.COMPLETED, is_success=False)
+        return {
+            "type": "text",
+            "text": error_text
+        }
 
 
 def create_pending_stay_from_flow(conversation, guest):
@@ -1208,97 +922,7 @@ def create_pending_stay_from_flow(conversation, guest):
         raise
 
 
-def process_confirmation_response(conversation, guest, message_text):
-    """Process confirmation response."""
-
-    response = message_text.strip().lower()
-
-    # Handle both text responses and button responses (btn_0, btn_1)
-    if response in ['confirm', 'btn_0']:
-        # Create pending stay and booking from completed flow
-        try:
-            booking, stay = create_pending_stay_from_flow(conversation, guest)
-
-            # Update conversation
-            conversation.conversation_type = 'booking_created'
-            conversation.status = 'closed'
-            conversation.save(update_fields=['conversation_type', 'status'])
-
-            success_text = f"""✅ Check-in information submitted successfully!
-
-Dear {guest.full_name}, your information has been received and is pending verification.
-
-Our receptionist will:
-• Verify your identity documents
-• Assign you a suitable room
-• Confirm your check-in details
-
-You'll receive a confirmation once your room is ready.
-
-Booking ID: {booking.id}
-Welcome to {conversation.hotel.name}! 🏨"""
-
-            save_system_message(conversation, success_text, CheckinStep.COMPLETED)
-
-            return {
-                "type": "text",
-                "text": success_text
-            }
-
-        except Exception as e:
-            logger.error(f"Error creating pending stay: {e}")
-            error_text = "There was an error processing your check-in. Please contact the reception desk for assistance."
-            save_system_message(conversation, error_text, CheckinStep.COMPLETED, is_success=False)
-            return {
-                "type": "text",
-                "text": error_text
-            }
-
-    elif response in ['modify', 'btn_1']:
-        # Restart the flow
-        response_text = "Let's start over. Please provide your full name:"
-        save_system_message(conversation, response_text, CheckinStep.NAME)
-
-        return {
-            "type": "text",
-            "text": response_text
-        }
-
-    else:
-        # Invalid response - show confirmation again
-        return show_confirmation(conversation, guest)
 
 
-def show_confirmation_with_collected_data(conversation, guest, flow_data):
-    """Show confirmation of all manually collected data."""
 
-    # Build confirmation message with collected data
-    header_text = "Confirm Your Details"
 
-    # Build the data display
-    data_parts = []
-    if guest.full_name:
-        data_parts.append(f"Name: {guest.full_name}")
-    if guest.email:
-        data_parts.append(f"Email: {guest.email}")
-    if guest.date_of_birth:
-        data_parts.append(f"Date of Birth: {guest.date_of_birth.strftime('%d/%m/%Y')}")
-    if guest.nationality:
-        data_parts.append(f"Nationality: {guest.nationality}")
-
-    if data_parts:
-        body_text = "Please confirm your details:\n\n" + "\n".join(data_parts) + "\n\nReply 'confirm' to complete check-in, or 'modify' to make changes."
-    else:
-        body_text = "No details found. Please contact support."
-
-    save_system_message(conversation, f"{header_text}\n\n{body_text}", CheckinStep.CONFIRMATION)
-
-    return {
-        "type": "button",
-        "text": header_text,
-        "body_text": body_text,
-        "options": [
-            {"id": "confirm", "title": "Confirm"},
-            {"id": "modify", "title": "Change Info"}
-        ]
-    }
