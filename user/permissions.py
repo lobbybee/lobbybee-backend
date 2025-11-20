@@ -44,3 +44,12 @@ class IsHotelManagerOrAdmin(BasePermission):
         return (request.user and 
                 (request.user.is_superuser or 
                  request.user.user_type in ['hotel_admin', 'manager']))
+
+class IsHotelStaffOrAdmin(BasePermission):
+    """
+    Allows access only to hotel receptionists, managers, and hotel admins.
+    """
+    def has_permission(self, request, view):
+        return (request.user and 
+                (request.user.is_superuser or 
+                 request.user.user_type in ['hotel_admin', 'manager', 'receptionist']))

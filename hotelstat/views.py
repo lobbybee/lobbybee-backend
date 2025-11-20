@@ -4,7 +4,7 @@ from rest_framework.response import Response
 from hotel.models import Hotel, Room, RoomCategory
 from guest.models import Guest, Stay, Booking
 from user.models import User
-from user.permissions import IsHotelManagerOrAdmin
+from user.permissions import IsHotelManagerOrAdmin, IsHotelStaffOrAdmin
 from django.db.models import Count, Q, Avg, Sum, F, ExpressionWrapper, DecimalField, Max
 from django.db.models.functions import Coalesce
 from django.utils import timezone
@@ -16,9 +16,9 @@ import calendar
 class HotelStatsViewSet(viewsets.ViewSet):
     """
     Comprehensive hotel statistics API with proper filtering by hotel and user type
-    Access restricted to hotel managers, hotel admins, and superusers only
+    Access restricted to hotel receptionists, managers, hotel admins, and superusers only
     """
-    permission_classes = [permissions.IsAuthenticated, IsHotelManagerOrAdmin]
+    permission_classes = [permissions.IsAuthenticated, IsHotelStaffOrAdmin]
 
     def list(self, request):
         """Get list of available hotels user can access stats for"""
@@ -489,10 +489,10 @@ class HotelStatsViewSet(viewsets.ViewSet):
 
 class HotelUserStatsViewSet(viewsets.ViewSet):
     """
-    Statistics for hotel users (managers, hotel admins)
+    Statistics for hotel users (receptionists, managers, hotel admins)
     Hotel is automatically extracted from the user model - no hotel_id needed
     """
-    permission_classes = [permissions.IsAuthenticated, IsHotelManagerOrAdmin]
+    permission_classes = [permissions.IsAuthenticated, IsHotelStaffOrAdmin]
 
     def get_hotel_for_user(self, user):
         """Get the hotel associated with the current user"""
