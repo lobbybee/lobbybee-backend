@@ -201,24 +201,33 @@ def download_whatsapp_media(media_id: str):
     url = f"https://graph.facebook.com/v22.0/{media_id}"
     headers = {"Authorization": f"Bearer {access_token}"}
 
-    # Add phone_number_id as query parameter
-    params = {"phone_number_id": phone_number_id}
-
     try:
         logger.info(f"download_whatsapp_media: Getting media info from URL: {url}")
-        response = requests.get(url, headers=headers, params=params)
+        response = requests.get(url, headers=headers)
         logger.info(f"download_whatsapp_media: Media info response status: {response.status_code}")
         response.raise_for_status()
         media_info = response.json()
         logger.info(f"download_whatsapp_media: Media info received: {media_info}")
+        
+        # Validate required fields in media info
+        if 'url' not in media_info:
+            logger.error(f"download_whatsapp_media: Media info missing 'url' field: {media_info}")
+            return None
+            
         media_url = media_info['url']
-        mime_type = media_info['mime_type']
+        mime_type = media_info.get('mime_type', 'application/octet-stream')
         file_size = media_info.get('file_size', 0)
         logger.info(f"download_whatsapp_media: Media details - URL exists: {bool(media_url)}, MIME type: {mime_type}, Size: {file_size} bytes")
 
         # Step 2: Download media content
         logger.info(f"download_whatsapp_media: Downloading media content from: {media_url}")
-        download_response = requests.get(media_url, headers=headers)
+        
+        # Validate media URL before downloading
+        if not media_url or not isinstance(media_url, str):
+            logger.error(f"download_whatsapp_media: Invalid media URL received: {media_url}")
+            return None
+            
+        download_response = requests.get(media_url, headers=headers, timeout=30)  # Add timeout
         logger.info(f"download_whatsapp_media: Download response status: {download_response.status_code}, Content-Length: {download_response.headers.get('Content-Length')}")
         download_response.raise_for_status()
         file_content = download_response.content
@@ -254,6 +263,16 @@ def download_whatsapp_media(media_id: str):
         if e.response:
             logger.error(f"download_whatsapp_media: Response status: {e.response.status_code}")
             logger.error(f"download_whatsapp_media: Response body: {e.response.text}")
+            
+            # Handle specific error cases
+            if e.response.status_code == 404:
+                logger.error(f"download_whatsapp_media: Media ID {media_id} not found or expired")
+            elif e.response.status_code == 401:
+                logger.error(f"download_whatsapp_media: Authentication failed - check access token")
+            elif e.response.status_code == 403:
+                logger.error(f"download_whatsapp_media: Permission denied - insufficient permissions")
+            elif e.response.status_code >= 500:
+                logger.error(f"download_whatsapp_media: Facebook server error - retry may be possible")
         else:
             logger.error(f"download_whatsapp_media: No response received: {e}")
         return None

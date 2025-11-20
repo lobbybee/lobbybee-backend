@@ -4,6 +4,7 @@ version = "0.1.0"
 description = ""
 authors = ["darkwebplayer <amrithanadhm@gmail.com>"]
 readme = "README.md"
+package-mode = false
 
 [tool.poetry.dependencies]
 python = "^3.12"
@@ -30,6 +31,7 @@ channels = "^4.3.1"
 channels-redis = "^4.3.0"
 daphne = "^4.2.1"
 pydub = "^0.25.1"
+faker = "^38.2.0"
 
 
 [tool.poetry.group.dev.dependencies]

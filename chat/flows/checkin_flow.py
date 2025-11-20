@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 # Import WhatsApp media download function
 from ..utils.whatsapp_utils import download_whatsapp_media
 import random
-import names
+from faker import Faker
 
 
 class CheckinStep:
@@ -62,10 +62,11 @@ def validate_id_type(id_type):
 def generate_random_guest_data():
     """Generate random guest data when QR code is not readable."""
     try:
+        # Initialize faker
+        fake = Faker()
+        
         # Generate random name
-        first_name = names.get_first_name()
-        last_name = names.get_last_name()
-        full_name = f"{first_name} {last_name}"
+        full_name = fake.name()
         
         # Generate random date of birth (18-65 years old)
         from datetime import date, timedelta

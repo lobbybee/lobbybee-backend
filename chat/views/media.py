@@ -71,10 +71,13 @@ class ChatMediaUploadView(APIView):
             # Validate user permissions and conversation access
             user = request.user
             
-            if user.user_type != 'department_staff':
-                logger.error(f"ChatMediaUploadView: Access denied for user {user.username} - not department staff")
+            # Allow all hotel staff types to upload media
+            allowed_user_types = ['hotel_admin', 'manager', 'receptionist', 'department_staff', 'other_staff']
+            
+            if user.user_type not in allowed_user_types:
+                logger.error(f"ChatMediaUploadView: Access denied for user {user.username} - not hotel staff")
                 return Response(
-                    {'error': 'Access denied. Only department staff can upload media.'},
+                    {'error': 'Access denied. Only hotel staff can upload media.'},
                     status=status.HTTP_403_FORBIDDEN
                 )
             
@@ -82,23 +85,33 @@ class ChatMediaUploadView(APIView):
                 conversation = Conversation.objects.select_related('hotel', 'guest').get(id=conversation_id)
                 
                 # Validate user can access this conversation
-                departments = user.department or []
-                
-                # Ensure departments is always a list
-                if isinstance(departments, str):
-                    user_departments = [departments]
-                elif isinstance(departments, list):
-                    user_departments = departments
+                # Hotel admins and managers can access all conversations in their hotel
+                if user.user_type in ['hotel_admin', 'manager']:
+                    if conversation.hotel != user.hotel:
+                        logger.error(f"ChatMediaUploadView: Access denied for user {user.username} - different hotel")
+                        return Response(
+                            {'error': 'Access denied to this conversation'},
+                            status=status.HTTP_403_FORBIDDEN
+                        )
                 else:
-                    user_departments = []
+                    # Receptionists, department staff, and other staff can only access conversations in their departments
+                    departments = user.department or []
                     
-                if (conversation.hotel != user.hotel or
-                    conversation.department not in user_departments):
-                    logger.error(f"ChatMediaUploadView: Access denied for user {user.username} to conversation {conversation_id}")
-                    return Response(
-                        {'error': 'Access denied to this conversation'},
-                        status=status.HTTP_403_FORBIDDEN
-                    )
+                    # Ensure departments is always a list
+                    if isinstance(departments, str):
+                        user_departments = [departments]
+                    elif isinstance(departments, list):
+                        user_departments = departments
+                    else:
+                        user_departments = []
+                        
+                    if (conversation.hotel != user.hotel or
+                        conversation.department not in user_departments):
+                        logger.error(f"ChatMediaUploadView: Access denied for user {user.username} to conversation {conversation_id}")
+                        return Response(
+                            {'error': 'Access denied to this conversation'},
+                            status=status.HTTP_403_FORBIDDEN
+                        )
                     
             except Conversation.DoesNotExist:
                 logger.error(f"ChatMediaUploadView: Conversation {conversation_id} not found")
