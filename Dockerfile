@@ -23,6 +23,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxext6 \
     libxrender-dev \
     libgomp1 \
+    ffmpeg \
     && rm -rf /var/lib/apt/lists/* \
     && pip install poetry
 

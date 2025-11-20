@@ -1073,7 +1073,14 @@ class GuestConversationTypeView(APIView):
                         value = changes[0].get('value', {})
                         messages = value.get('messages', [])
                         if messages and len(messages) > 0:
-                            webhook_data['whatsapp_message_id'] = messages[0].get('id')
+                            message = messages[0]
+                            webhook_data['whatsapp_message_id'] = message.get('id')
+                            # Extract media_id for media messages
+                            message_type = message.get('type')
+                            if message_type in ['image', 'document', 'video', 'audio']:
+                                media_content = message.get(message_type, {})
+                                if media_content:
+                                    webhook_data['media_id'] = media_content.get('id')
             except Exception as e:
                 logger.warning(f"GuestConversationTypeView: Error extracting WhatsApp message ID: {e}")
 
