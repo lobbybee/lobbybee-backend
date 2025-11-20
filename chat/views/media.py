@@ -177,7 +177,17 @@ class ChatMediaUploadView(APIView):
             # Convert audio for WhatsApp compatibility
             try:
                 logger.info(f"ChatMediaUploadView: Converting audio file {filename} for WhatsApp compatibility")
-                converted_content, converted_filename = convert_audio_for_whatsapp(uploaded_file)
+                # Read the file content as bytes
+                audio_content = uploaded_file.read()
+                converted_content = convert_audio_for_whatsapp(audio_content, content_type)
+                
+                # Generate new filename for converted audio
+                file_extension = os.path.splitext(filename)[1]
+                if converted_content != audio_content:  # Audio was converted
+                    converted_filename = f"{uuid.uuid4().hex}.ogg"
+                else:
+                    converted_filename = f"{uuid.uuid4().hex}{file_extension}"
+                
                 processed_file = ContentFile(converted_content, name=converted_filename)
                 unique_filename = converted_filename
                 logger.info(f"ChatMediaUploadView: Audio conversion completed: {converted_filename}")
