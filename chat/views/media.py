@@ -198,12 +198,17 @@ class ChatMediaUploadView(APIView):
                 file_extension = os.path.splitext(filename)[1]
                 if converted_content != audio_content:  # Audio was converted
                     converted_filename = f"{uuid.uuid4().hex}.ogg"
+                    # Set correct content type for OGG audio files
+                    processed_file = ContentFile(converted_content, name=converted_filename)
+                    processed_file.content_type = 'audio/ogg'
                 else:
                     converted_filename = f"{uuid.uuid4().hex}{file_extension}"
+                    processed_file = ContentFile(converted_content, name=converted_filename)
+                    # Preserve original content type for non-converted audio
+                    processed_file.content_type = content_type
                 
-                processed_file = ContentFile(converted_content, name=converted_filename)
                 unique_filename = converted_filename
-                logger.info(f"ChatMediaUploadView: Audio conversion completed: {converted_filename}")
+                logger.info(f"ChatMediaUploadView: Audio conversion completed: {converted_filename} with content type: {processed_file.content_type}")
             except Exception as audio_error:
                 logger.warning(f"ChatMediaUploadView: Audio conversion failed, using original: {audio_error}")
                 processed_file = uploaded_file
