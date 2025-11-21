@@ -103,12 +103,13 @@ class IsHotelStaff(BasePermission):
 class CanManagePaymentQRCode(BasePermission):
     """
     Allows hotel admin and manager to manage payment QR codes.
-    Receptionists can only view active QR codes (list and retrieve).
+    Receptionists can view active QR codes (list and retrieve) and send them to WhatsApp.
     """
     def has_permission(self, request, view):
         """
         All hotel staff (admin, manager, receptionist) can access list and retrieve views.
-        Only admin and manager can create, update, delete.
+        Admin and manager can create, update, delete.
+        Receptionist and manager can send QR codes to WhatsApp.
         """
         if not (request.user.is_authenticated and request.user.hotel is not None):
             return False
@@ -117,17 +118,24 @@ class CanManagePaymentQRCode(BasePermission):
         if request.method in permissions.SAFE_METHODS:
             return request.user.user_type in ['hotel_admin', 'manager', 'receptionist']
         
-        # Only admin and manager can modify
-        return request.user.user_type in ['hotel_admin', 'manager']
+        # Allow admin and manager to modify
+        if request.user.user_type in ['hotel_admin', 'manager']:
+            return True
+        
+        # Allow receptionist to send QR codes to WhatsApp
+        if view.action == 'send_to_whatsapp' and request.user.user_type == 'receptionist':
+            return True
+        
+        return False
     
     def has_object_permission(self, request, view, obj):
         # Ensure user belongs to the same hotel
         if obj.hotel != request.user.hotel:
             return False
         
-        # Receptionists can only view, not modify
+        # Receptionists can view and send to WhatsApp, but not modify
         if request.user.user_type == 'receptionist':
-            return request.method in permissions.SAFE_METHODS
+            return request.method in permissions.SAFE_METHODS or view.action == 'send_to_whatsapp'
         
         # Admin and Manager can do everything
         return True
