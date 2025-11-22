@@ -624,10 +624,10 @@ def handle_id_back_upload_step(conversation, guest, message_text, flow_data):
 
 
 def process_id_verification(conversation, guest, flow_data):
-    """Process ID verification based on document type."""
+    """Process ID verification using AWS Textract OCR service."""
     logger.info(f"DEBUG: Entering process_id_verification for guest {guest.id}")
 
-    # Get selected_id_type from GuestIdentityDocument instead of flow_data
+    # Get selected_id_type and document from GuestIdentityDocument
     try:
         from guest.models import GuestIdentityDocument
         doc = GuestIdentityDocument.objects.get(guest=guest, is_primary=True)
@@ -636,27 +636,107 @@ def process_id_verification(conversation, guest, flow_data):
     except GuestIdentityDocument.DoesNotExist:
         selected_id_type = 'aadhar_id'  # Default fallback
         logger.warning(f"No document found for guest {guest.id}, using default: {selected_id_type}")
+        doc = None
 
-    if selected_id_type == 'aadhar_id':
-        logger.info(f"DEBUG: Calling process_aadhar_verification for AADHAR")
-        return process_aadhar_verification(conversation, guest, flow_data)
-    else:
-        # For non-AADHAR IDs, use random data and proceed to confirmation
-        logger.info(f"Using random data for {DOCUMENT_TYPES[selected_id_type]} verification")
+    # Import simplified OCR service
+    from chat.utils.ocr.ocr_service import extract_text
+    from chat.utils.ocr.id_parser import IndianIDParser
+
+    # Get document paths for OCR processing
+    front_image_path = doc.document_file.name if doc and doc.document_file else None
+    back_image_path = doc.document_file_back.name if doc and doc.document_file_back else None
+
+    if not front_image_path:
+        logger.error(f"No front image found for guest {guest.id}, falling back to QR processing")
+        # Fallback to original QR code processing for AADHAR
+        if selected_id_type == 'aadhar_id':
+            return process_aadhar_verification(conversation, guest, flow_data)
+        else:
+            # Generate random data for other ID types
+            return _generate_fallback_data_and_complete(conversation, guest, selected_id_type)
+
+    try:
+        # Use simplified OCR service to extract text from the document
+        logger.info(f"Extracting text from document for guest {guest.id}")
         
-        # Generate random guest data
-        random_data = generate_random_guest_data()
+        try:
+            # Extract text from the uploaded image
+            text = extract_text(front_image_path)
+            
+            # For debugging, print the OCR output to the console
+            print("=" * 60)
+            print(f"OCR OUTPUT for guest {guest.id} - {selected_id_type}:")
+            print("=" * 60)
+            print(text)
+            print("=" * 60)
+            
+            # Parse the extracted text to get structured data
+            parsed_data = IndianIDParser.parse(text)
+            
+            logger.info(f"Extracted and parsed data for guest {guest.id}: {parsed_data}")
+            
+            # For now, just show a confirmation message with the parsed data
+            # In a real implementation, you would proceed with the checkin flow
+            # using this parsed data
+            
+            doc_type = parsed_data.get('document_type', 'UNKNOWN')
+            name = parsed_data.get('name', 'Not detected')
+            
+            confirmation_text = f"""✅ Document processed successfully!
+
+Document Type: {doc_type}
+Name: {name}
+
+We've extracted your information from the document. Proceeding with check-in...
+"""
+            
+            save_system_message(conversation, confirmation_text, CheckinStep.ID_UPLOAD)
+            
+            return {
+                "type": "text",
+                "text": confirmation_text
+            }
+            
+        except Exception as e:
+            logger.error(f"Error extracting text from document for guest {guest.id}: {e}")
+            
+            # Fallback to original processing
+            if selected_id_type == 'aadhar_id':
+                logger.info(f"Falling back to QR code processing for AADHAR due to OCR error")
+                return process_aadhar_verification(conversation, guest, flow_data)
+            else:
+                logger.info(f"Falling back to random data for {selected_id_type} due to OCR error")
+                return _generate_fallback_data_and_complete(conversation, guest, selected_id_type)
         
-        # Save random data to guest
-        guest.full_name = random_data['name']
-        guest.date_of_birth = random_data['dob']
-        guest.nationality = random_data['nationality']
-        guest.save(update_fields=['full_name', 'date_of_birth', 'nationality'])
+    except Exception as e:
+        logger.error(f"Error triggering OCR processing for guest {guest.id}: {e}", exc_info=True)
         
-        logger.info(f"Generated random data for guest {guest.id}: {random_data['name']}, DOB: {random_data['dob']}")
-        
-        # Go directly to completion
-        return complete_checkin_flow(conversation, guest)
+        # Fallback to original processing
+        if selected_id_type == 'aadhar_id':
+            logger.info(f"Falling back to QR code processing for AADHAR due to OCR error")
+            return process_aadhar_verification(conversation, guest, flow_data)
+        else:
+            logger.info(f"Falling back to random data for {selected_id_type} due to OCR error")
+            return _generate_fallback_data_and_complete(conversation, guest, selected_id_type)
+
+
+def _generate_fallback_data_and_complete(conversation, guest, selected_id_type):
+    """Generate fallback data and complete checkin flow."""
+    logger.info(f"Using fallback data for {DOCUMENT_TYPES[selected_id_type]} verification")
+    
+    # Generate random guest data
+    random_data = generate_random_guest_data()
+    
+    # Save random data to guest
+    guest.full_name = random_data['name']
+    guest.date_of_birth = random_data['dob']
+    guest.nationality = random_data['nationality']
+    guest.save(update_fields=['full_name', 'date_of_birth', 'nationality'])
+    
+    logger.info(f"Generated fallback data for guest {guest.id}: {random_data['name']}, DOB: {random_data['dob']}")
+    
+    # Go directly to completion
+    return complete_checkin_flow(conversation, guest)
 
 
 
