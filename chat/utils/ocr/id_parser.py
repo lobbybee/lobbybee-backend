@@ -33,16 +33,12 @@ class IndianIDParser:
     def parse_aadhaar(text):
         """Parse Aadhaar Card to extract relevant fields."""
         fields = {}
+        lines = [line.strip() for line in text.split('\n') if line.strip()]
 
         # Aadhaar number (12 digits with spaces)
         aadhaar_match = re.search(r'\b(\d{4}\s\d{4}\s\d{4})\b', text)
         if aadhaar_match:
             fields['aadhaar_number'] = aadhaar_match.group(1).replace(' ', '')
-
-        # Name
-        name_match = re.search(r'(?:Name[:\s]*|^)([A-Z][a-z]+(?:\s[A-Z][a-z]+)*)', text, re.MULTILINE)
-        if name_match:
-            fields['name'] = name_match.group(1).strip()
 
         # Date of Birth / Year of Birth
         dob_match = re.search(r'(?:DOB|Birth|YOB)[:\s]*(\d{2}[/-]\d{2}[/-]\d{4}|\d{4})', text, re.IGNORECASE)
@@ -52,12 +48,82 @@ class IndianIDParser:
         # Gender
         gender_match = re.search(r'\b(Male|Female|MALE|FEMALE|M|F)\b', text)
         if gender_match:
-            fields['gender'] = gender_match.group(1).upper()
+            gender_str = gender_match.group(1).upper()
+            if gender_str.startswith('M'):
+                fields['gender'] = 'MALE'
+            elif gender_str.startswith('F'):
+                fields['gender'] = 'FEMALE'
 
-        # Address
-        address_match = re.search(r'(?:Address[:\s]*)?([A-Z0-9][^\n]+(?:\n[A-Z0-9][^\n]+)*?)(?=\d{4}\s\d{4}\s\d{4}|$)', text, re.IGNORECASE)
-        if address_match:
-            fields['address'] = address_match.group(1).strip()
+        # --- Name Extraction ---
+        name = None
+        dob_line_index = -1
+        gov_line_index = -1
+        
+        for i, line in enumerate(lines):
+            if 'DOB' in line.upper() or 'YOB' in line.upper():
+                dob_line_index = i
+            if 'GOVERNMENT' in line.upper() and 'INDIA' in line.upper():
+                gov_line_index = i
+
+        # Heuristic 1: Name is the line before DOB. This is very common.
+        if dob_line_index and dob_line_index > 0:
+            potential_name = lines[dob_line_index - 1]
+            # Basic validation to ensure it's a name-like string
+            if len(potential_name.split()) >= 2 and not re.search(r'\d', potential_name):
+                 if not any(keyword in potential_name.upper() for keyword in ['GOVERNMENT', 'INDIA', 'STATE']):
+                    name = potential_name
+        
+        # Heuristic 2: If name not found, search between "Government of India" and DOB
+        if not name:
+            start = gov_line_index + 1 if gov_line_index != -1 else 0
+            end = dob_line_index if dob_line_index != -1 else len(lines)
+            
+            for i in range(start, end):
+                line = lines[i]
+                # A name is typically 2-3 words, mostly alphabetic.
+                if re.match(r'^[A-Za-z\s.]{5,}$', line) and len(line.split()) >= 2:
+                     if not any(keyword in line.upper() for keyword in ['GOVERNMENT', 'INDIA', 'STATE', 'AADHAAR', 'UIDAI']):
+                        name = line
+                        break
+        
+        if name:
+            fields['name'] = name.strip()
+
+        # --- Address Extraction ---
+        address_lines = []
+        # Address usually starts after personal info (name, dob, gender)
+        # and ends before or contains the Aadhaar number.
+        # Let's find the last line of personal info.
+        last_personal_info_index = -1
+        name_line_index = -1
+        gender_line_index = -1
+
+        if name and name in text:
+            for i, line in enumerate(lines):
+                if name in line:
+                    name_line_index = i
+                    break
+        
+        for i, line in enumerate(lines):
+            if 'MALE' in line.upper() or 'FEMALE' in line.upper():
+                gender_line_index = i
+                break
+        
+        last_personal_info_index = max(name_line_index, dob_line_index, gender_line_index)
+
+        if last_personal_info_index != -1:
+            for i in range(last_personal_info_index + 1, len(lines)):
+                line = lines[i]
+                # Skip the aadhaar number line itself
+                if aadhaar_match and aadhaar_match.group(1) in line:
+                    continue
+                
+                # Basic filter for address lines
+                if len(line) > 4 and not any(keyword in line.upper() for keyword in ['AADHAAR', 'UIDAI']):
+                    address_lines.append(line)
+
+        if address_lines:
+            fields['address'] = ' '.join(address_lines).strip()
 
         fields['document_type'] = 'AADHAAR'
         return fields

@@ -670,22 +670,63 @@ def process_id_verification(conversation, guest, flow_data):
             print(text)
             print("=" * 60)
             
-            # Parse the extracted text to get structured data
-            parsed_data = IndianIDParser.parse(text)
+            # Parse the extracted text to get structured data using the selected ID type
+            parsed_data = IndianIDParser.parse_with_type(text, selected_id_type)
             
             logger.info(f"Extracted and parsed data for guest {guest.id}: {parsed_data}")
             
-            # For now, just show a confirmation message with the parsed data
-            # In a real implementation, you would proceed with the checkin flow
-            # using this parsed data
-            
+            # Extract and store relevant information
             doc_type = parsed_data.get('document_type', 'UNKNOWN')
             name = parsed_data.get('name', 'Not detected')
+            
+            # Extract ID number based on document type
+            id_number = None
+            if selected_id_type == 'aadhar_id' and 'aadhaar_number' in parsed_data:
+                id_number = parsed_data['aadhaar_number']
+            elif selected_id_type == 'driving_license' and 'dl_number' in parsed_data:
+                id_number = parsed_data['dl_number']
+            elif selected_id_type == 'voter_id' and 'epic_number' in parsed_data:
+                id_number = parsed_data['epic_number']
+            elif selected_id_type == 'pan' and 'pan_number' in parsed_data:
+                id_number = parsed_data['pan_number']
+            elif selected_id_type == 'passport' and 'passport_number' in parsed_data:
+                id_number = parsed_data['passport_number']
+            
+            # Update the document with the extracted ID number
+            if id_number and doc:
+                doc.document_number = id_number
+                # Note: Not setting is_verified=True - verification will be handled later
+                doc.save()
+                logger.info(f"Updated document {doc.id} with number: {id_number}")
+            
+            # Update guest information if we extracted name
+            if name and name != 'Not detected':
+                guest.full_name = name
+                guest.save()
+                logger.info(f"Updated guest {guest.id} name: {name}")
+            
+            # Extract DOB if available
+            dob_str = parsed_data.get('dob')
+            if dob_str:
+                try:
+                    # Parse different date formats
+                    for fmt in ['%d/%m/%Y', '%d-%m-%Y', '%Y']:
+                        try:
+                            parsed_dob = datetime.strptime(dob_str, fmt).date()
+                            guest.date_of_birth = parsed_dob
+                            guest.save()
+                            logger.info(f"Updated guest {guest.id} DOB: {parsed_dob}")
+                            break
+                        except ValueError:
+                            continue
+                except Exception as e:
+                    logger.warning(f"Failed to parse DOB '{dob_str}': {e}")
             
             confirmation_text = f"""✅ Document processed successfully!
 
 Document Type: {doc_type}
 Name: {name}
+ID Number: {id_number or 'Not detected'}
 
 We've extracted your information from the document. Proceeding with check-in...
 """
