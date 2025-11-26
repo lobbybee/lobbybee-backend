@@ -322,7 +322,7 @@ def show_guest_data_confirmation(conversation, guest, flow_data):
     """Show existing guest data for confirmation."""
 
     # Build confirmation message with existing data
-    response_text = "Welcome Back!"
+    header_text = "Welcome Back!"
 
     # Build the data display
     data_parts = []
@@ -336,17 +336,24 @@ def show_guest_data_confirmation(conversation, guest, flow_data):
         data_parts.append(f"Nationality: {guest.nationality}")
 
     if data_parts:
-        body_text = "We found your previous information:\n\n" + "\n".join(data_parts) + "\n\nIs this information still correct? Reply 'yes' to confirm, or 'no' to update."
+        body_text = "We found your previous information:\n\n" + "\n".join(data_parts) + "\n\nIs this information still correct?"
     else:
         body_text = "Welcome back! We'll need to collect your information for this check-in."
 
-    save_system_message(conversation, f"{response_text}\n\n{body_text}", CheckinStep.INITIAL)
-
-    return {
-        "type": "text",
-        "text": response_text,
-        "body_text": body_text
+    # Create interactive response with confirmation buttons
+    response = {
+        "type": "button",
+        "text": header_text,
+        "body_text": body_text,
+        "options": [
+            {"id": "confirm_data", "title": "✓ Confirm"},
+            {"id": "update_data", "title": "✏️ Update"}
+        ]
     }
+
+    save_system_message(conversation, f"{header_text}\n\n{body_text}\n\nOptions:\n1. Confirm\n2. Update", CheckinStep.INITIAL)
+
+    return response
 
 
 def handle_unknown_step(conversation, guest, message_text, flow_data):
@@ -401,11 +408,8 @@ def handle_initial_step(conversation, guest, message_text, flow_data):
 
         # Check if guest is confirming existing data
         if response in ['yes', 'correct', 'confirm', '1', 'btn_0']:
-            # Guest confirmed existing data - proceed directly to ID upload
-            header_text = "Select ID Document Type"
-            body_text = "Perfect! Please select your government-issued ID document type from the list below to complete verification."
-            save_system_message(conversation, f"{header_text}\n\n{body_text}", CheckinStep.ID_TYPE)
-            return get_id_type_options_response(header_text, body_text)
+            # Guest confirmed existing data - complete the checkin flow
+            return complete_checkin_flow(conversation, guest)
 
         elif response in ['no', 'incorrect', 'update', '2', 'btn_1']:
             # Guest wants to update information - proceed to ID upload anyway
