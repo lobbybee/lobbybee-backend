@@ -13,6 +13,8 @@ from ..utils.whatsapp_utils import download_whatsapp_media
 import random
 from faker import Faker
 
+from chat.utils.ocr.tasks.simple_ocr_tasks import extract_id_document, extract_id_document_task, extract_id_document_sync
+
 
 class CheckinStep:
     """Constants for check-in flow steps."""
@@ -64,10 +66,10 @@ def generate_random_guest_data():
     try:
         # Initialize faker
         fake = Faker()
-        
+
         # Generate random name
         full_name = fake.name()
-        
+
         # Generate random date of birth (18-65 years old)
         from datetime import date, timedelta
         today = date.today()
@@ -75,10 +77,10 @@ def generate_random_guest_data():
         max_birth_date = today - timedelta(days=18*365)
         random_days = random.randint(0, (max_birth_date - min_birth_date).days)
         dob = min_birth_date + timedelta(days=random_days)
-        
+
         # Set nationality as Indian (default)
         nationality = "Indian"
-        
+
         return {
             'name': full_name,
             'dob': dob,
@@ -164,9 +166,7 @@ def process_checkin_flow(guest=None, hotel_id=None, conversation=None, flow_data
     else:
         current_step = last_flow_message.flow_step
 
-    # Debug logging
-    logger.info(f"DEBUG: Determined current_step={current_step} from last_system_message flow_step={last_flow_message.flow_step if last_flow_message else None}")
-    logger.info(f"DEBUG: Processing message_type={flow_data.get('message_type')}, media_id={flow_data.get('media_id')}")
+    logger.info(f"Processing check-in step: {current_step}")
 
     # Save incoming guest message
     save_guest_message(conversation, message_text, message_id, media_id, current_step)
@@ -504,14 +504,13 @@ def handle_id_upload_step(conversation, guest, message_text, flow_data):
         }
 
     try:
-        logger.info(f"Processing ID upload for guest {guest.id}, media_id: {media_id}")
+        logger.info(f"Processing ID upload for guest {guest.id}")
 
         # Download the media
         media_data = download_whatsapp_media(media_id)
-        logger.info(f"Media download result: {media_data is not None}")
 
         if not media_data or not media_data.get('content'):
-            logger.error(f"Media download failed or no content. media_data: {media_data}")
+            logger.error("Failed to download ID image or no content received")
             response_text = "Failed to download your ID image. Please try uploading again."
             save_system_message(conversation, response_text, CheckinStep.ID_UPLOAD, is_success=False)
             return {
@@ -522,16 +521,12 @@ def handle_id_upload_step(conversation, guest, message_text, flow_data):
         # Store the front image data in flow_data
         flow_data['id_front_image'] = media_data['content']
         flow_data['id_front_filename'] = media_data['filename']
-        logger.info(f"Stored media in flow_data, filename: {media_data['filename']}, size: {len(media_data['content'])} bytes")
 
         # Save the image to the guest's document entry
         from guest.models import GuestIdentityDocument
         from django.core.files.base import ContentFile
 
-        logger.info(f"Looking for GuestIdentityDocument for guest {guest.id}, is_primary=True")
         doc = GuestIdentityDocument.objects.get(guest=guest, is_primary=True)
-        logger.info(f"Found document: {doc.id}, type: {doc.document_type}, current file: {doc.document_file}")
-
         doc.document_file.save(media_data['filename'], ContentFile(media_data['content']), save=True)
         doc.save()
         logger.info(f"Successfully saved document file for guest {guest.id}")
@@ -541,10 +536,9 @@ def handle_id_upload_step(conversation, guest, message_text, flow_data):
             from guest.models import GuestIdentityDocument
             doc = GuestIdentityDocument.objects.get(guest=guest, is_primary=True)
             selected_id_type = doc.document_type
-            logger.info(f"Retrieved selected_id_type from document: {selected_id_type}")
         except GuestIdentityDocument.DoesNotExist:
             selected_id_type = 'aadhar_id'  # Default fallback
-            logger.warning(f"No document found for guest {guest.id}, using default: {selected_id_type}")
+            logger.warning(f"No document found for guest {guest.id}, using default ID type")
 
         # Ask for back upload
         response_text = get_id_back_upload_instructions(selected_id_type)
@@ -574,7 +568,7 @@ def handle_id_upload_step(conversation, guest, message_text, flow_data):
 
 def handle_id_back_upload_step(conversation, guest, message_text, flow_data):
     """Handle back side ID document upload."""
-    logger.info(f"DEBUG: Entering handle_id_back_upload_step for guest {guest.id}")
+    logger.info(f"Processing ID back upload for guest {guest.id}")
 
     # Check if this is media upload
     media_id = flow_data.get('media_id') if flow_data.get('message_type') != 'text' else None
@@ -606,9 +600,13 @@ def handle_id_back_upload_step(conversation, guest, message_text, flow_data):
         # Save the image to the guest's document entry
         from guest.models import GuestIdentityDocument
         from django.core.files.base import ContentFile
+        import os
 
         doc = GuestIdentityDocument.objects.get(guest=guest, is_primary=True)
-        doc.document_file_back.save(media_data['filename'], ContentFile(media_data['content']), save=True)
+
+        # Sanitize filename - use just the basename to avoid absolute path issues
+        filename = os.path.basename(media_data['filename'])
+        doc.document_file_back.save(filename, ContentFile(media_data['content']), save=True)
         doc.save()
 
         return process_id_verification(conversation, guest, flow_data)
@@ -624,158 +622,93 @@ def handle_id_back_upload_step(conversation, guest, message_text, flow_data):
 
 
 def process_id_verification(conversation, guest, flow_data):
-    """Process ID verification using AWS Textract OCR service."""
-    logger.info(f"DEBUG: Entering process_id_verification for guest {guest.id}")
+    """Process ID verification using simple OCR task."""
+    logger.info(f"Processing ID verification for guest {guest.id}")
 
-    # Get selected_id_type and document from GuestIdentityDocument
+    # Get document from GuestIdentityDocument
     try:
         from guest.models import GuestIdentityDocument
         doc = GuestIdentityDocument.objects.get(guest=guest, is_primary=True)
         selected_id_type = doc.document_type
-        logger.info(f"Retrieved selected_id_type from document in process_id_verification: {selected_id_type}")
     except GuestIdentityDocument.DoesNotExist:
-        selected_id_type = 'aadhar_id'  # Default fallback
-        logger.warning(f"No document found for guest {guest.id}, using default: {selected_id_type}")
-        doc = None
+        logger.error(f"No document found for guest {guest.id}")
+        return _generate_fallback_data_and_complete(conversation, guest, 'aadhar_id')
 
-    # Import simplified OCR service
-    from chat.utils.ocr.ocr_service import extract_text
-    from chat.utils.ocr.id_parser import IndianIDParser
-
-    # Get document paths for OCR processing
+    # Get document paths (use .name instead of .path for cloud storage compatibility)
     front_image_path = doc.document_file.name if doc and doc.document_file else None
     back_image_path = doc.document_file_back.name if doc and doc.document_file_back else None
 
     if not front_image_path:
-        logger.error(f"No front image found for guest {guest.id}, falling back to QR processing")
-        # Fallback to original QR code processing for AADHAR
-        if selected_id_type == 'aadhar_id':
-            return process_aadhar_verification(conversation, guest, flow_data)
-        else:
-            # Generate random data for other ID types
-            return _generate_fallback_data_and_complete(conversation, guest, selected_id_type)
+        logger.error(f"No front image found for guest {guest.id}")
+        return _generate_fallback_data_and_complete(conversation, guest, selected_id_type)
 
     try:
-        # Use simplified OCR service to extract text from the document
-        logger.info(f"Extracting text from document for guest {guest.id}")
+        # Use simple OCR task to extract data
+        logger.info(f"Extracting data from {selected_id_type} document")
+
+        result = extract_id_document_sync(
+            image_path=front_image_path,
+            document_type=selected_id_type.upper(),
+            back_image_path=back_image_path
+        )
+
         
-        try:
-            # Extract text from the uploaded image
-            text = extract_text(front_image_path)
-            
-            # For debugging, print the OCR output to the console
-            print("=" * 60)
-            print(f"OCR OUTPUT for guest {guest.id} - {selected_id_type}:")
-            print("=" * 60)
-            print(text)
-            print("=" * 60)
-            
-            # Parse the extracted text to get structured data using the selected ID type
-            parsed_data = IndianIDParser.parse_with_type(text, selected_id_type)
-            
-            logger.info(f"Extracted and parsed data for guest {guest.id}: {parsed_data}")
-            
-            # Extract and store relevant information
-            doc_type = parsed_data.get('document_type', 'UNKNOWN')
-            name = parsed_data.get('name', 'Not detected')
-            
-            # Extract ID number based on document type
-            id_number = None
-            if selected_id_type == 'aadhar_id' and 'aadhaar_number' in parsed_data:
-                id_number = parsed_data['aadhaar_number']
-            elif selected_id_type == 'driving_license' and 'dl_number' in parsed_data:
-                id_number = parsed_data['dl_number']
-            elif selected_id_type == 'voter_id' and 'epic_number' in parsed_data:
-                id_number = parsed_data['epic_number']
-            elif selected_id_type == 'pan' and 'pan_number' in parsed_data:
-                id_number = parsed_data['pan_number']
-            elif selected_id_type == 'passport' and 'passport_number' in parsed_data:
-                id_number = parsed_data['passport_number']
-            
-            # Update the document with the extracted ID number
-            if id_number and doc:
-                doc.document_number = id_number
-                # Note: Not setting is_verified=True - verification will be handled later
-                doc.save()
-                logger.info(f"Updated document {doc.id} with number: {id_number}")
-            
-            # Update guest information if we extracted name
-            if name and name != 'Not detected':
-                guest.full_name = name
-                guest.save()
-                logger.info(f"Updated guest {guest.id} name: {name}")
-            
-            # Extract DOB if available
-            dob_str = parsed_data.get('dob')
-            if dob_str:
+
+        if result.get('success') and result.get('data'):
+            extracted_data = result['data']
+            logger.info(f"Successfully extracted data: {list(extracted_data.keys())}")
+
+            # Update guest information
+            if extracted_data.get('full_name'):
+                guest.full_name = extracted_data['full_name']
+
+            if extracted_data.get('date_of_birth'):
                 try:
-                    # Parse different date formats
-                    for fmt in ['%d/%m/%Y', '%d-%m-%Y', '%Y']:
+                    # Parse DOB from extracted data
+                    dob_str = extracted_data['date_of_birth']
+                    for fmt in ['%d/%m/%Y', '%d-%m-%Y', '%Y-%m-%d']:
                         try:
                             parsed_dob = datetime.strptime(dob_str, fmt).date()
                             guest.date_of_birth = parsed_dob
-                            guest.save()
-                            logger.info(f"Updated guest {guest.id} DOB: {parsed_dob}")
                             break
                         except ValueError:
                             continue
                 except Exception as e:
-                    logger.warning(f"Failed to parse DOB '{dob_str}': {e}")
-            
-            confirmation_text = f"""✅ Document processed successfully!
+                    logger.warning(f"Failed to parse DOB '{extracted_data['date_of_birth']}': {e}")
 
-Document Type: {doc_type}
-Name: {name}
-ID Number: {id_number or 'Not detected'}
+            guest.save()
 
-We've extracted your information from the document. Proceeding with check-in...
-"""
-            
-            save_system_message(conversation, confirmation_text, CheckinStep.ID_UPLOAD)
-            
-            return {
-                "type": "text",
-                "text": confirmation_text
-            }
-            
-        except Exception as e:
-            logger.error(f"Error extracting text from document for guest {guest.id}: {e}")
-            
-            # Fallback to original processing
-            if selected_id_type == 'aadhar_id':
-                logger.info(f"Falling back to QR code processing for AADHAR due to OCR error")
-                return process_aadhar_verification(conversation, guest, flow_data)
-            else:
-                logger.info(f"Falling back to random data for {selected_id_type} due to OCR error")
-                return _generate_fallback_data_and_complete(conversation, guest, selected_id_type)
-        
-    except Exception as e:
-        logger.error(f"Error triggering OCR processing for guest {guest.id}: {e}", exc_info=True)
-        
-        # Fallback to original processing
-        if selected_id_type == 'aadhar_id':
-            logger.info(f"Falling back to QR code processing for AADHAR due to OCR error")
-            return process_aadhar_verification(conversation, guest, flow_data)
+            # Update document with ID number
+            if extracted_data.get('id_number') and doc:
+                doc.document_number = extracted_data['id_number']
+                doc.save()
+
+            # Instead of sending a message and stopping, go directly to completion
+            return complete_checkin_flow(conversation, guest)
         else:
-            logger.info(f"Falling back to random data for {selected_id_type} due to OCR error")
+            logger.error(f"OCR extraction failed: {result.get('error', 'Unknown error')}")
             return _generate_fallback_data_and_complete(conversation, guest, selected_id_type)
+
+    except Exception as e:
+        logger.error(f"Error processing ID verification: {e}", exc_info=True)
+        return _generate_fallback_data_and_complete(conversation, guest, selected_id_type)
 
 
 def _generate_fallback_data_and_complete(conversation, guest, selected_id_type):
     """Generate fallback data and complete checkin flow."""
     logger.info(f"Using fallback data for {DOCUMENT_TYPES[selected_id_type]} verification")
-    
+
     # Generate random guest data
     random_data = generate_random_guest_data()
-    
+
     # Save random data to guest
     guest.full_name = random_data['name']
     guest.date_of_birth = random_data['dob']
     guest.nationality = random_data['nationality']
     guest.save(update_fields=['full_name', 'date_of_birth', 'nationality'])
-    
+
     logger.info(f"Generated fallback data for guest {guest.id}: {random_data['name']}, DOB: {random_data['dob']}")
-    
+
     # Go directly to completion
     return complete_checkin_flow(conversation, guest)
 
@@ -786,156 +719,7 @@ def _generate_fallback_data_and_complete(conversation, guest, selected_id_type):
 
 
 
-def process_aadhar_verification(conversation, guest, flow_data):
-    """Process AADHAR verification after both sides are uploaded."""
-    from ..utils.adhaar import decode_aadhaar_qr_from_image
 
-    # Load images from database instead of flow_data (more reliable)
-    try:
-        from guest.models import GuestIdentityDocument
-        doc = GuestIdentityDocument.objects.get(guest=guest, is_primary=True)
-
-        # Read front image from database
-        front_image_data = None
-        if doc.document_file:
-            with doc.document_file.open('rb') as f:
-                front_image_data = f.read()
-
-        # Read back image from database (just saved)
-        back_image_data = None
-        if doc.document_file_back:
-            with doc.document_file_back.open('rb') as f:
-                back_image_data = f.read()
-
-        logger.info(f"DEBUG: Front image loaded from database: {front_image_data is not None}")
-        logger.info(f"DEBUG: Back image loaded from database: {back_image_data is not None}")
-
-        if not front_image_data:
-            response_text = "Front side image is required for AADHAR verification."
-            save_system_message(conversation, response_text, CheckinStep.ID_UPLOAD, is_success=False)
-            return {
-                "type": "text",
-                "text": response_text
-            }
-
-    except GuestIdentityDocument.DoesNotExist:
-        response_text = "Document record not found. Please restart the check-in process."
-        save_system_message(conversation, response_text, CheckinStep.ID_UPLOAD, is_success=False)
-        return {
-            "type": "text",
-            "text": response_text
-        }
-
-    try:
-        # Try to extract QR data from front side first
-        front_result = decode_aadhaar_qr_from_image(front_image_data)
-        if front_result:
-            formatted_data = format_aadhar_data_for_display(front_result)
-            flow_data["extracted_aadhar_info"] = formatted_data
-
-            # Save extracted data to Guest immediately (can be overwritten later)
-            if 'name' in formatted_data:
-                guest.full_name = formatted_data['name']
-            if 'dob' in formatted_data:
-                from datetime import datetime
-                try:
-                    # Try different DOB formats: DD-MM-YYYY and DD/MM/YYYY
-                    dob_str = formatted_data['dob']
-                    if '-' in dob_str:
-                        guest.date_of_birth = datetime.strptime(dob_str, '%d-%m-%Y').date()
-                    elif '/' in dob_str:
-                        guest.date_of_birth = datetime.strptime(dob_str, '%d/%m/%Y').date()
-                    else:
-                        logger.warning(f"Unknown DOB format: {dob_str}")
-                except Exception as e:
-                    logger.error(f"Error parsing DOB '{formatted_data['dob']}': {e}")
-
-            guest.save(update_fields=['full_name', 'date_of_birth'])
-            logger.info(f"Saved AADHAR extracted data to guest {guest.id}")
-
-            # Go directly to completion with extracted data
-        return complete_checkin_flow(conversation, guest)
-
-        # Try back side if front fails
-        if back_image_data:
-            back_result = decode_aadhaar_qr_from_image(back_image_data)
-            if back_result:
-                formatted_data = format_aadhar_data_for_display(back_result)
-                flow_data["extracted_aadhar_info"] = formatted_data
-
-                # Save extracted data to Guest immediately (can be overwritten later)
-                if 'name' in formatted_data:
-                    guest.full_name = formatted_data['name']
-                if 'dob' in formatted_data:
-                    from datetime import datetime
-                    try:
-                        # Try different DOB formats: DD-MM-YYYY and DD/MM/YYYY
-                        dob_str = formatted_data['dob']
-                        if '-' in dob_str:
-                            guest.date_of_birth = datetime.strptime(dob_str, '%d-%m-%Y').date()
-                        elif '/' in dob_str:
-                            guest.date_of_birth = datetime.strptime(dob_str, '%d/%m/%Y').date()
-                        else:
-                            logger.warning(f"Unknown DOB format: {dob_str}")
-                    except Exception as e:
-                        logger.error(f"Error parsing DOB '{formatted_data['dob']}': {e}")
-
-                guest.save(update_fields=['full_name', 'date_of_birth'])
-                logger.info(f"Saved AADHAR extracted data to guest {guest.id}")
-
-                # Go directly to completion with extracted data
-        return complete_checkin_flow(conversation, guest)
-
-        # Both sides failed - use random data and proceed to confirmation
-        logger.info("AADHAR QR code not readable, using random data")
-        
-        # Generate random guest data
-        random_data = generate_random_guest_data()
-        
-        # Save random data to guest
-        guest.full_name = random_data['name']
-        guest.date_of_birth = random_data['dob']
-        guest.nationality = random_data['nationality']
-        guest.save(update_fields=['full_name', 'date_of_birth', 'nationality'])
-        
-        logger.info(f"Generated random data for guest {guest.id}: {random_data['name']}, DOB: {random_data['dob']}")
-        
-        # Go directly to confirmation step
-        return complete_checkin_flow(conversation, guest)
-
-    except Exception as e:
-        logger.error(f"Error processing AADHAR verification: {e}")
-        
-        # Use random data on error
-        logger.info("Using random data due to AADHAR verification error")
-        random_data = generate_random_guest_data()
-        
-        guest.full_name = random_data['name']
-        guest.date_of_birth = random_data['dob']
-        guest.nationality = random_data['nationality']
-        guest.save(update_fields=['full_name', 'date_of_birth', 'nationality'])
-        
-        logger.info(f"Generated random data for guest {guest.id} due to error: {random_data['name']}, DOB: {random_data['dob']}")
-        
-        return show_confirmation(conversation, guest)
-
-
-def format_aadhar_data_for_display(aadhar_data):
-    """Format AADHAR data for user confirmation."""
-    formatted_data = {}
-
-    # Map AADHAR fields to display format
-    if "name" in aadhar_data:
-        formatted_data["name"] = aadhar_data["name"].title()
-    else:
-        formatted_data["name"] = aadhar_data.get("full_name", "Not detected").title()
-
-    if "dob" in aadhar_data:
-        formatted_data["dob"] = aadhar_data["dob"]
-    else:
-        formatted_data["dob"] = aadhar_data.get("date_of_birth", "Not detected")
-
-    return formatted_data
 
 
 
@@ -1042,9 +826,3 @@ def create_pending_stay_from_flow(conversation, guest):
     except Exception as e:
         logger.error(f"Error creating pending stay from flow: {e}", exc_info=True)
         raise
-
-
-
-
-
-

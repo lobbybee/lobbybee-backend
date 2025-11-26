@@ -43,9 +43,8 @@ The `IndianIDParser` class parses text extracted from Indian ID documents to ext
 
 Celery tasks for asynchronous processing:
 
-- `extract_text_from_image_task`: Extract text from an image asynchronously
-- `parse_id_document_task`: Parse ID document from text asynchronously
-- `process_id_document_image_task`: Complete processing (extract + parse) asynchronously
+- `extract_id_document_task`: Extract ID document data asynchronously
+- `extract_id_document_sync`: Synchronous version for immediate results
 
 ## Usage Examples
 
@@ -77,18 +76,25 @@ print(f"Document type: {parsed_data.get('document_type')}")
 print(f"Name: {parsed_data.get('name')}")
 ```
 
-### Using Async Tasks
+### Using ID Document Extraction
 
 ```python
-from chat.utils.ocr.tasks.simple_ocr_tasks import process_id_document_image_task
+from chat.utils.ocr.tasks.simple_ocr_tasks import extract_id_document_task, extract_id_document_sync
 
-# Process an ID document asynchronously
-task = process_id_document_image_task.delay("/path/to/id/document.jpg")
+# Synchronous processing (for immediate results)
+result = extract_id_document_sync("/path/to/id/document.jpg", "AADHAR")
+
+if result.get('success'):
+    print(f"Extracted data: {result.get('data')}")
+    print(f"Name: {result['data'].get('full_name')}")
+    print(f"ID Number: {result['data'].get('id_number')}")
+
+# Asynchronous processing (for background processing)
+task = extract_id_document_task.delay("/path/to/id/document.jpg", "DRIVING_LICENSE")
 result = task.get()  # In production, you wouldn't use .get()
 
 if result.get('success'):
-    print(f"Document type: {result.get('document_type')}")
-    print(f"Parsed data: {result.get('parsed_data')}")
+    print(f"Extracted data: {result.get('data')}")
 ```
 
 ## Key Changes from Previous Implementation
