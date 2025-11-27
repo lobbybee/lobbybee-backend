@@ -6,6 +6,9 @@ Handles template processing, variable resolution, and fallback templates.
 from typing import Dict, List, Optional, Any
 from django.db.models import Model
 from datetime import datetime
+import logging
+
+logger = logging.getLogger(__name__)
 
 from ..models import MessageTemplate, CustomMessageTemplate
 from guest.models import Guest, Booking
@@ -218,34 +221,65 @@ def process_template(
     Returns:
         Dictionary with processed template content and metadata
     """
+    logger.info(f"Processing template '{template_name}' for hotel {hotel_id}, guest {guest_id}")
+    
     try:
         # Step 1: Try to get custom template first
         template = None
         template_type = None
         
         try:
+            logger.debug(f"Searching for custom template '{template_name}' for hotel {hotel_id}")
+            
+            # First try to find custom template by name
             template = CustomMessageTemplate.objects.get(
                 hotel_id=hotel_id,
                 name=template_name,
                 is_active=True
             )
             template_type = 'custom'
+            logger.info(f"Found custom template '{template_name}' for hotel {hotel_id}")
+            
         except CustomMessageTemplate.DoesNotExist:
-            pass
+            logger.info(f"No direct custom template '{template_name}' found for hotel {hotel_id}")
+            
+            # Check if there's a custom template that uses this as base template
+            try:
+                global_template = MessageTemplate.objects.get(name=template_name, is_active=True)
+                logger.debug(f"Found global template '{template_name}', checking for custom overrides")
+                
+                custom_templates = CustomMessageTemplate.objects.filter(
+                    hotel_id=hotel_id,
+                    base_template=global_template,
+                    is_active=True
+                )
+                
+                if custom_templates.exists():
+                    template = custom_templates.first()
+                    template_type = 'custom_override'
+                    logger.info(f"Found custom template override for '{template_name}' with name '{template.name}'")
+                
+            except MessageTemplate.DoesNotExist:
+                logger.debug(f"No global template '{template_name}' found to check for overrides")
+                pass
         
         # Step 2: Fallback to global template
         if template is None:
             try:
+                logger.debug(f"Searching for global template '{template_name}'")
                 template = MessageTemplate.objects.get(
                     name=template_name,
                     is_active=True
                 )
                 template_type = 'global'
+                logger.info(f"Found global template '{template_name}'")
             except MessageTemplate.DoesNotExist:
+                logger.info(f"No global template '{template_name}' found")
                 pass
         
         # Step 3: Fallback to essential template if available
         if template is None and template_name in ESSENTIAL_TEMPLATES:
+            logger.debug(f"Using essential template '{template_name}'")
             essential_template = ESSENTIAL_TEMPLATES[template_name]
             template = {
                 'content': essential_template['content'],
@@ -255,9 +289,11 @@ def process_template(
                 'category': essential_template['category'],
             }
             template_type = 'essential'
+            logger.info(f"Using essential template '{template_name}'")
         
         # Step 4: If no template found, raise error
         if template is None:
+            logger.error(f"Template '{template_name}' not found in any source")
             return {
                 'success': False,
                 'error': f'Template "{template_name}" not found',
@@ -265,29 +301,97 @@ def process_template(
                 'hotel_id': hotel_id,
             }
         
+        logger.info(f"Template '{template_name}' found, type: {template_type}")
+        logger.debug(f"Template object type: {type(template)}")
+        logger.debug(f"Template object attributes: {dir(template) if hasattr(template, '__dict__') else 'N/A'}")
+        
         # Step 5: Resolve variables
+        logger.info(f"Resolving variables for guest {guest_id}")
         context = _resolve_variables(hotel_id, guest_id, additional_context or {})
+        logger.info(f"Resolved context variables: {list(context.keys())}")
+        logger.debug(f"Context sample: {dict(list(context.items())[:5])}")
         
         # Step 6: Process template content
+        logger.info(f"Processing template content for '{template_name}'")
+        
         if hasattr(template, 'text_content'):
-            content = template.text_content
-        else:
+            logger.debug(f"Template has text_content attribute")
+            # Check if text_content is callable
+            if callable(template.text_content):
+                logger.debug(f"template.text_content is callable, calling it...")
+                content = template.text_content()
+            else:
+                logger.debug(f"template.text_content is not callable, using as property")
+                content = template.text_content
+            logger.info(f"Using template.text_content: {content[:50] if content else 'None'}...")
+        elif isinstance(template, dict) and 'content' in template:
+            logger.debug(f"Template is dict with 'content' key")
             content = template['content']
+            logger.info(f"Using template['content']: {content[:50] if content else 'None'}...")
+        else:
+            logger.error(f"Template object has no content! Template type: {type(template)}, Template: {template}")
+            return {
+                'success': False,
+                'error': f'Template "{template_name}" has no content field',
+                'template_name': template_name,
+                'hotel_id': hotel_id,
+            }
         
+        logger.info(f"Original content: {content}")
         processed_content = _render_template(content, context)
+        logger.info(f"Template processed successfully: {processed_content[:50] if processed_content else 'None'}...")
         
-        return {
+        # Step 7: Get media URL if template has media
+        logger.info(f"Checking for media in template '{template_name}'")
+        media_url = None
+        
+        # Check for get_media_url method or property
+        if hasattr(template, 'get_media_url'):
+            logger.debug(f"Template has get_media_url attribute")
+            if callable(template.get_media_url):
+                logger.debug(f"template.get_media_url is callable, calling it...")
+                try:
+                    media_url = template.get_media_url()
+                    logger.debug(f"template.get_media_url() returned: {media_url}")
+                except Exception as e:
+                    logger.error(f"Error calling template.get_media_url(): {str(e)}")
+                    media_url = None
+            else:
+                logger.debug(f"template.get_media_url is not callable, using as property")
+                media_url = template.get_media_url
+            logger.debug(f"Template media URL from get_media_url: {media_url}")
+        
+        # Check for media_file attribute
+        if hasattr(template, 'media_file'):
+            logger.debug(f"Template has media_file attribute")
+            if template.media_file:
+                if hasattr(template.media_file, 'url'):
+                    media_url = template.media_file.url
+                    logger.debug(f"Template media_file.url: {media_url}")
+                else:
+                    logger.debug(f"Template media_file has no url attribute")
+            else:
+                logger.debug(f"Template media_file is None/empty")
+        
+        logger.info(f"Final media URL: {media_url}")
+        
+        result = {
             'success': True,
             'template_name': template_name,
             'template_type': template_type,
             'original_content': content,
             'processed_content': processed_content,
+            'media_url': media_url,
             'context': context,
             'hotel_id': hotel_id,
             'guest_id': guest_id,
         }
         
+        logger.info(f"Template processing completed successfully for '{template_name}'")
+        return result
+        
     except Exception as e:
+        logger.error(f"Error processing template '{template_name}' for hotel {hotel_id}, guest {guest_id}: {str(e)}", exc_info=True)
         return {
             'success': False,
             'error': f'Error processing template: {str(e)}',
@@ -325,13 +429,28 @@ def _resolve_variables(
     try:
         # Get guest information
         if guest_id:
+            from guest.models import Stay  # Import here to avoid circular imports
+            
             guest = Guest.objects.get(id=guest_id)
             context.update(_extract_model_fields(guest, 'Guest'))
             
-            # Get current room information if available
-            if hasattr(guest, 'room') and guest.room:
-                room = guest.room
-                context.update(_extract_model_fields(room, 'Room'))
+            # Get current room information from the guest's active stay
+            try:
+                active_stay = Stay.objects.filter(guest=guest, status='active').first()
+                if active_stay and active_stay.room:
+                    room = active_stay.room
+                    context.update(_extract_model_fields(room, 'Room'))
+                    logger.debug(f"Found room {room.room_number} from active stay {active_stay.id}")
+                else:
+                    # Fallback: check if guest has a room attribute directly
+                    if hasattr(guest, 'room') and guest.room:
+                        room = guest.room
+                        context.update(_extract_model_fields(room, 'Room'))
+                        logger.debug(f"Found room {room.room_number} from guest.room attribute")
+                    else:
+                        logger.debug(f"No room found for guest {guest.id}")
+            except Exception as e:
+                logger.error(f"Error getting room from stay for guest {guest.id}: {str(e)}")
             
             # Get latest booking information if available
             latest_booking = guest.bookings.last()
@@ -370,20 +489,35 @@ def _extract_model_fields(model_instance: Model, model_name: str) -> Dict[str, A
     Returns:
         Dictionary with extracted field values
     """
+    logger.debug(f"Extracting fields from {model_name} model instance: {type(model_instance)}")
     fields = {}
     
     for var_name, var_info in TEMPLATE_VARIABLES.items():
         if var_info['model'] == model_name:
             field_name = var_info['field']
+            logger.debug(f"Processing field {field_name} for variable {var_name}")
             
             if hasattr(model_instance, field_name):
                 value = getattr(model_instance, field_name)
+                logger.debug(f"Field {field_name} found, value type: {type(value)}")
+                
                 if callable(value):
-                    # For methods like get_full_name()
-                    fields[var_name] = value()
+                    logger.debug(f"Field {field_name} is callable, executing...")
+                    try:
+                        # For methods like get_full_name()
+                        result = value()
+                        logger.debug(f"Callable field {field_name} returned: {type(result)} = {result}")
+                        fields[var_name] = result
+                    except Exception as e:
+                        logger.error(f"Error calling callable field {field_name}: {str(e)}")
+                        fields[var_name] = None
                 else:
+                    logger.debug(f"Field {field_name} is not callable, value: {value}")
                     fields[var_name] = value
+            else:
+                logger.debug(f"Field {field_name} not found in {model_name} model instance")
     
+    logger.debug(f"Extracted fields for {model_name}: {list(fields.keys())}")
     return fields
 
 
@@ -398,15 +532,26 @@ def _render_template(template_content: str, context: Dict[str, Any]) -> str:
     Returns:
         Rendered content string
     """
+    logger.debug(f"Rendering template: {template_content}")
+    logger.debug(f"Available context variables: {list(context.keys())}")
+    
     try:
         # Simple template rendering - replace {{variable}} with actual values
         rendered_content = template_content
+        replacements_made = 0
+        
         for var_name, value in context.items():
             placeholder = f'{{{{{var_name}}}}}'
-            rendered_content = rendered_content.replace(placeholder, str(value))
+            if placeholder in rendered_content:
+                rendered_content = rendered_content.replace(placeholder, str(value))
+                replacements_made += 1
+                logger.debug(f"Replaced {placeholder} with: {str(value)[:50]}")
         
+        logger.debug(f"Template rendering completed. Made {replacements_made} replacements.")
+        logger.debug(f"Final rendered content: {rendered_content}")
         return rendered_content
-    except Exception:
+    except Exception as e:
+        logger.error(f"Error rendering template: {str(e)}", exc_info=True)
         # If rendering fails, return original content
         return template_content
 

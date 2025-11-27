@@ -5,6 +5,7 @@ from django.db.models import Q
 from django.db import transaction
 from django.utils import timezone
 from django.shortcuts import get_object_or_404
+import threading
 
 from .models import Guest, GuestIdentityDocument, Stay, Booking
 from .serializers import (
@@ -14,6 +15,8 @@ from .serializers import (
 from hotel.models import Hotel, Room
 from hotel.permissions import IsHotelStaff, IsSameHotelUser
 from .permissions import CanManageGuests, CanViewAndManageStays
+from chat.utils.template_util import process_template
+from chat.utils.whatsapp_utils import send_whatsapp_image_with_link
 import logging
 
 logger = logging.getLogger(__name__)
@@ -308,6 +311,46 @@ class StayManagementViewSet(viewsets.GenericViewSet):
                     if all_active:
                         stay.booking.status = 'confirmed'
                         stay.booking.save()
+                
+                # Send welcome message to guest's WhatsApp if number exists
+                # This happens at the very end when all guest data is updated in the database
+                if stay.guest.whatsapp_number:
+                    def send_welcome_message_async():
+                        try:
+                            # Process the welcome template with complete guest context
+                            template_result = process_template(
+                                hotel_id=stay.hotel.id,
+                                template_name='lobbybee_hotel_welcome',
+                                guest_id=stay.guest.id
+                            )
+                            
+                            if template_result['success']:
+                                # Get the processed content and media URL
+                                welcome_message = template_result['processed_content']
+                                media_url = template_result.get('media_url')
+                                
+                                # Use default mascot image if no template media
+                                if not media_url:
+                                    media_url = 'https://www.lobbybee.com/mascot.png'
+                                
+                                # Send welcome message with image via WhatsApp
+                                send_whatsapp_image_with_link(
+                                    recipient_number=stay.guest.whatsapp_number,
+                                    image_url=media_url,
+                                    caption=welcome_message
+                                )
+                                
+                                logger.info(f"Welcome message sent to guest {stay.guest.full_name} ({stay.guest.whatsapp_number})")
+                            else:
+                                logger.error(f"Failed to process welcome template for guest {stay.guest.full_name}: {template_result.get('error', 'Unknown error')}")
+                                
+                        except Exception as e:
+                            logger.error(f"Failed to send welcome message to guest {stay.guest.whatsapp_number}: {str(e)}")
+                    
+                    # Send welcome message asynchronously without waiting for the request
+                    thread = threading.Thread(target=send_welcome_message_async)
+                    thread.daemon = True
+                    thread.start()
                 
                 return Response({
                     'stay_id': stay.id,
