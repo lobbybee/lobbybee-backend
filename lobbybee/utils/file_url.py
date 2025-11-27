@@ -25,3 +25,17 @@ def upload_to_chat_media(instance, filename):
     ext = filename.split('.')[-1]
     filename = f"{uuid.uuid4()}.{ext}"
     return f"chat/hotel_{instance.conversation.hotel.id}/conversation_{instance.conversation.id}/{filename}"
+
+
+def upload_to_template_media(instance, filename):
+    """Generate upload path for global message template media files"""
+    ext = filename.split('.')[-1]
+    filename = f"{uuid.uuid4()}.{ext}"
+    return f"templates/global/{filename}"
+
+
+def upload_to_custom_template_media(instance, filename):
+    """Generate upload path for custom message template media files"""
+    ext = filename.split('.')[-1]
+    filename = f"{uuid.uuid4()}.{ext}"
+    return f"templates/hotel_{instance.hotel.id}/{filename}"

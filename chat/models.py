@@ -3,7 +3,7 @@ from django.utils import timezone
 from user.models import User
 from guest.models import Guest
 from hotel.models import Hotel
-from lobbybee.utils.file_url import upload_to_chat_media
+from lobbybee.utils.file_url import upload_to_chat_media, upload_to_template_media, upload_to_custom_template_media
 
 class Conversation(models.Model):
     """
@@ -326,7 +326,7 @@ class MessageTemplate(models.Model):
     text_content = models.TextField()
 
     # Media for template
-    media_file = models.FileField(upload_to=upload_to_chat_media, blank=True, null=True)
+    media_file = models.FileField(upload_to=upload_to_template_media, blank=True, null=True)
     media_filename = models.CharField(max_length=255, blank=True, null=True)
 
     # Template customization
@@ -387,7 +387,7 @@ class CustomMessageTemplate(models.Model):
     text_content = models.TextField()
 
     # Media for template
-    media_file = models.FileField(upload_to=upload_to_chat_media, blank=True, null=True)
+    media_file = models.FileField(upload_to=upload_to_custom_template_media, blank=True, null=True)
     media_filename = models.CharField(max_length=255, blank=True, null=True)
 
     # Template customization
