@@ -1,4 +1,4 @@
-from django.db import models
+from django.db import models, IntegrityError
 from django.utils import timezone
 import uuid
 import re
@@ -26,6 +26,7 @@ class Hotel(models.Model):
     pincode = models.CharField(max_length=10, blank=True)
     phone = models.CharField(max_length=15, blank=True)
     email = models.EmailField(blank=True)
+    google_review_link = models.URLField(blank=True, help_text="Google Review link for the hotel")
 
     # Documents (CDN URLs)
 
@@ -150,7 +151,10 @@ class RoomManager(models.Manager):
         if not rooms_to_create:
             raise ValidationError("No new rooms to create. They may already exist.")
 
-        return self.bulk_create(rooms_to_create)
+        try:
+            return self.bulk_create(rooms_to_create)
+        except IntegrityError:
+            raise ValidationError("Some rooms already exist in the database. Please check the room numbers.")
 
     def get_floors_for_hotel(self, hotel):
         return self.filter(hotel=hotel).values_list('floor', flat=True).distinct().order_by('floor')

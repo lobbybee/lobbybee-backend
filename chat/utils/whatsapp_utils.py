@@ -527,6 +527,102 @@ def send_whatsapp_button_message(recipient_number: str, message_text: str, butto
     except requests.exceptions.RequestException as e:
         logger.error(f"Error sending WhatsApp button message to {recipient_number}: {e}")
         logger.error(f"Response body: {e.response.text if e.response else 'No response'}")
+
+
+def send_whatsapp_list_message(recipient_number: str, header_text: str, body_text: str, options: list):
+    """
+    Sends a WhatsApp interactive message with a list.
+
+    Args:
+        recipient_number: The WhatsApp number to send to
+        header_text: The header text for the list (max 60 characters)
+        body_text: The body text for the list (max 1024 characters)
+        options: List of option dictionaries with 'id' and 'title' keys
+
+    Returns:
+        The response from WhatsApp API
+    """
+    phone_number_id = settings.PHONE_NUMBER_ID
+    access_token = settings.WHATSAPP_ACCESS_KEY
+    url = f"https://graph.facebook.com/v22.0/{phone_number_id}/messages"
+
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/json",
+    }
+
+    # Build list sections (WhatsApp API requires at least one section)
+    sections = [{
+        "title": "Ratings",
+        "rows": [
+            {
+                "id": option["id"],
+                "title": option["title"],
+                "description": ""
+            } for option in options
+        ]
+    }]
+
+    # Build interactive message with list - following pattern from whatsapp_payload_utils
+    payload = {
+        "messaging_product": "whatsapp",
+        "recipient_type": "individual",
+        "to": recipient_number,
+        "type": "interactive",
+        "interactive": {
+            "type": "list",
+            "header": {
+                "type": "text",
+                "text": header_text
+            },
+            "body": {
+                "text": body_text
+            },
+            "footer": {
+                "text": "Powered by LobbyBee"
+            },
+            "action": {
+                "button": "Select Rating",
+                "sections": sections
+            }
+        }
+    }
+
+    # Log the entire request payload before sending
+    logger.info(f"=== WhatsApp List Message Request ===")
+    logger.info(f"URL: {url}")
+    logger.info(f"Headers: {headers}")
+    logger.info(f"Complete Request Payload: {payload}")
+    logger.info(f"Recipient: {recipient_number}")
+    logger.info(f"Header Text: {header_text}")
+    logger.info(f"Body Text: {body_text}")
+    logger.info(f"Options Count: {len(options)}")
+    logger.info(f"Options: {options}")
+    logger.info(f"===================================")
+
+    try:
+        response = requests.post(url, json=payload, headers=headers)
+        
+        # Log response details
+        logger.info(f"WhatsApp API Response Status: {response.status_code}")
+        logger.info(f"WhatsApp API Response Headers: {dict(response.headers)}")
+        
+        try:
+            response_json = response.json()
+            logger.info(f"WhatsApp API Response Body: {response_json}")
+        except ValueError:
+            logger.info(f"WhatsApp API Response Body (raw): {response.text}")
+        
+        response.raise_for_status()
+        logger.info(f"WhatsApp list message sent successfully to {recipient_number}")
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Error sending WhatsApp list message to {recipient_number}: {e}")
+        logger.error(f"Response status: {e.response.status_code if e.response else 'No response'}")
+        logger.error(f"Response headers: {dict(e.response.headers) if e.response else 'No response'}")
+        logger.error(f"Response body: {e.response.text if e.response else 'No response'}")
+        logger.error(f"Request URL: {url}")
+        logger.error(f"Request payload that failed: {payload}")
         raise
 
 

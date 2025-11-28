@@ -127,3 +127,14 @@ class Stay(models.Model):
 
     def __str__(self):
         return f"Stay for {self.guest.full_name} at {self.hotel.name}"
+
+
+class Feedback(models.Model):
+    stay = models.OneToOneField(Stay, on_delete=models.CASCADE, related_name='feedback')
+    guest = models.ForeignKey(Guest, on_delete=models.CASCADE, related_name='feedback')
+    rating = models.IntegerField(help_text="Rating from 1 to 5")
+    note = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Feedback for {self.guest.full_name} - Rating: {self.rating}"

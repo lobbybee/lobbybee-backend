@@ -145,12 +145,12 @@ def get_active_flow_conversation(guest):
     if active_conversation:
         logger.info(f"Found active conversation: {active_conversation.id}, type: {active_conversation.conversation_type}")
 
-        # Check if it's a checkin or demo flow conversation
-        if active_conversation.conversation_type in ['checkin', 'demo']:
+        # Check if it's a checkin, demo, or feedback flow conversation
+        if active_conversation.conversation_type in ['checkin', 'demo', 'feedback']:
             logger.info(f"Found active {active_conversation.conversation_type} flow conversation: {active_conversation.id}")
             return active_conversation
         else:
-            logger.info(f"Active conversation {active_conversation.id} is not a checkin/demo flow (type: {active_conversation.conversation_type})")
+            logger.info(f"Active conversation {active_conversation.id} is not a checkin/demo/feedback flow (type: {active_conversation.conversation_type})")
     else:
         logger.info(f"No active conversation found for guest {guest.id}")
 
@@ -191,6 +191,7 @@ def route_to_flow_handler(guest, conversation, flow_data):
     """Route message to appropriate flow handler."""
     from ..flows.checkin_flow import process_checkin_flow
     from ..flows.demo_flow import process_demo_flow
+    from ..flows.feedback_flow import process_feedback_flow
     from chat.utils.template_util import process_template
 
     if conversation.conversation_type == 'checkin':
@@ -208,6 +209,15 @@ def route_to_flow_handler(guest, conversation, flow_data):
             flow_data=flow_data
         )
         return result
+
+    if conversation.conversation_type == 'feedback':
+        result = process_feedback_flow(
+            conversation=conversation,
+            guest=guest,
+            flow_data=flow_data
+        )
+        return result
+
     template_result = process_template(
         hotel_id=1,
         template_name='lobbybee_app_start'
