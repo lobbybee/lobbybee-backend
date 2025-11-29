@@ -799,7 +799,8 @@ def create_pending_stay_from_flow(conversation, guest):
                 check_out_date=(timezone.now() + timedelta(days=1)).date(),
                 status='pending',  # Will be confirmed by staff after room assignment
                 guest_names=[guest.full_name] if guest.full_name else [],
-                total_amount=0  # Will be calculated based on assigned room
+                total_amount=0,  # Will be calculated based on assigned room
+                is_via_whatsapp=True  # This booking was created via WhatsApp check-in flow
             )
 
             # Create pending stay record without room assignment

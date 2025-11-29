@@ -136,24 +136,22 @@ def get_active_flow_conversation(guest):
 
     logger.info(f"Looking for active flow conversation for guest: {guest.id}")
 
-    # First try to get any active conversation (prioritize checkin type)
-    active_conversation = Conversation.objects.filter(
-        guest=guest,
-        status='active'
-    ).order_by('-last_message_at').first()
-
-    if active_conversation:
-        logger.info(f"Found active conversation: {active_conversation.id}, type: {active_conversation.conversation_type}")
-
-        # Check if it's a checkin, demo, or feedback flow conversation
-        if active_conversation.conversation_type in ['checkin', 'demo', 'feedback']:
+    # Priority order: checkin > demo > feedback
+    # This ensures checkin flow responses don't get routed to feedback flows
+    conversation_priority = ['checkin', 'demo', 'feedback']
+    
+    for conv_type in conversation_priority:
+        active_conversation = Conversation.objects.filter(
+            guest=guest,
+            status='active',
+            conversation_type=conv_type
+        ).order_by('-created_at').first()  # Use created_at for more consistent ordering
+        
+        if active_conversation:
             logger.info(f"Found active {active_conversation.conversation_type} flow conversation: {active_conversation.id}")
             return active_conversation
-        else:
-            logger.info(f"Active conversation {active_conversation.id} is not a checkin/demo/feedback flow (type: {active_conversation.conversation_type})")
-    else:
-        logger.info(f"No active conversation found for guest {guest.id}")
 
+    logger.info(f"No active flow conversation found for guest {guest.id}")
     return None
 
 

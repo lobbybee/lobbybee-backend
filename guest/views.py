@@ -427,6 +427,16 @@ class StayManagementViewSet(viewsets.GenericViewSet):
                 else:
                     logger.info(f"DEBUG MODE: Status changes skipped - stay.status={stay.status}, guest.status={stay.guest.status}, room.status={stay.room.status if stay.room else 'No room'}")
 
+                # Close all existing conversations for this guest before sending checkout message
+                from chat.models import Conversation
+                closed_conversations_count = Conversation.objects.filter(
+                    guest=stay.guest,
+                    hotel=stay.hotel,
+                    status='active'
+                ).update(status='closed')
+                
+                logger.info(f"Closed {closed_conversations_count} active conversations for guest {stay.guest.full_name} before checkout")
+
                 # Initiate feedback flow automatically
                 from .models import Feedback
                 from chat.models import Conversation
