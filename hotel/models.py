@@ -111,19 +111,19 @@ class RoomManager(models.Manager):
     def bulk_create_rooms(self, hotel, category, floor, start_number_str, end_number_str):
         # Extract prefix and numeric part from start_number
         # This regex supports formats like 'F-100', 'H101', '101', etc.
-        match_start = re.match(r'([a-zA-Z]+-?)(\d+)', start_number_str)
+        match_start = re.match(r'([a-zA-Z]+-?)*(\d+)', start_number_str)
         if not match_start:
             raise ValidationError("Invalid start room number format. Expected format like 'F-100', 'H101' or '101'.")
 
-        prefix = match_start.group(1)
+        prefix = match_start.group(1) or ''
         start_num = int(match_start.group(2))
 
         # Extract prefix and numeric part from end_number
-        match_end = re.match(r'([a-zA-Z]+-?)(\d+)', end_number_str)
+        match_end = re.match(r'([a-zA-Z]+-?)*(\d+)', end_number_str)
         if not match_end:
             raise ValidationError("Invalid end room number format. Expected format like 'F-110', 'H104' or '104'.")
 
-        end_prefix = match_end.group(1)
+        end_prefix = match_end.group(1) or ''
         end_num = int(match_end.group(2))
 
         if prefix != end_prefix:
