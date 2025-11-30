@@ -16,7 +16,7 @@ from hotel.models import Hotel, Room
 from hotel.permissions import IsHotelStaff, IsSameHotelUser
 from .permissions import CanManageGuests, CanViewAndManageStays
 from chat.utils.template_util import process_template
-from chat.utils.whatsapp_utils import send_whatsapp_image_with_link, send_whatsapp_button_message, send_whatsapp_list_message
+from chat.utils.whatsapp_utils import send_whatsapp_image_with_link, send_whatsapp_button_message, send_whatsapp_list_message, send_whatsapp_text_message
 import logging
 
 logger = logging.getLogger(__name__)
@@ -544,5 +544,82 @@ Please take a moment to rate your overall experience from 1 to 5 stars. We truly
             logger.error(f"Error checking out guest: {str(e)}")
             return Response(
                 {'error': f'Failed to check out guest: {str(e)}'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+    @action(detail=True, methods=['post'], url_path='reject-checkin')
+    def reject_checkin(self, request, pk=None):
+        """
+        Reject a pending checkin request.
+        Cleans up all pending data and notifies the guest via WhatsApp.
+        """
+        stay = self.get_object()
+
+        if stay.status not in ['pending']:
+            return Response(
+                {'error': f'Can only reject pending checkins. Current status: {stay.status}'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            with transaction.atomic():
+                guest = stay.guest
+                
+                # Clean up all pending stays and bookings for this guest (both new and returning guests)
+                from chat.flows.checkin_flow import cleanup_incomplete_guest_data, cleanup_incomplete_guest_data_preserve_personal_info
+                
+                # Check if guest has completed stays before (returning guest)
+                from guest.models import Stay as GuestStay
+                has_completed_stays = GuestStay.objects.filter(
+                    guest=guest,
+                    status='completed'
+                ).exists()
+                
+                if has_completed_stays:
+                    # Returning guest - preserve personal info but clean up pending attempts
+                    cleanup_incomplete_guest_data_preserve_personal_info(guest)
+                else:
+                    # New guest - clean up everything
+                    cleanup_incomplete_guest_data(guest)
+                
+                # Close all active conversations for this guest
+                from chat.models import Conversation
+                closed_conversations_count = Conversation.objects.filter(
+                    guest=guest,
+                    hotel=stay.hotel,
+                    status='active'
+                ).update(status='closed')
+                
+                logger.info(f"Closed {closed_conversations_count} active conversations for guest {guest.full_name} after rejection")
+
+                # Send rejection message to guest via WhatsApp
+                if guest.whatsapp_number:
+                    def send_rejection_message_async():
+                        try:
+                            rejection_message = "Sorry, the hotel has declined your check-in request. Have a nice day!"
+                            send_whatsapp_text_message(
+                                recipient_number=guest.whatsapp_number,
+                                message_text=rejection_message
+                            )
+                            logger.info(f"Rejection message sent to guest {guest.full_name} ({guest.whatsapp_number})")
+                        except Exception as e:
+                            logger.error(f"Failed to send rejection message to guest {guest.whatsapp_number}: {str(e)}")
+
+                    # Send rejection message asynchronously
+                    thread = threading.Thread(target=send_rejection_message_async)
+                    thread.daemon = True
+                    thread.start()
+
+                return Response({
+                    'guest_id': guest.id,
+                    'guest_name': guest.full_name,
+                    'whatsapp_number': guest.whatsapp_number,
+                    'message': 'Checkin rejected and guest notified successfully'
+                }, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            logger.error(f"Error rejecting checkin: {str(e)}")
+            return Response(
+                {'error': f'Failed to reject checkin: {str(e)}'},
                 status=status.HTTP_400_BAD_REQUEST
             )

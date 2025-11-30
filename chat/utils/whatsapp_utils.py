@@ -481,6 +481,45 @@ def test_media_link_validation():
     return results
 
 
+def send_whatsapp_text_message(recipient_number: str, message_text: str):
+    """
+    Sends a simple text message via WhatsApp.
+    
+    Args:
+        recipient_number: The WhatsApp number to send to
+        message_text: The text content of the message
+        
+    Returns:
+        The response from WhatsApp API
+    """
+    phone_number_id = settings.PHONE_NUMBER_ID
+    access_token = settings.WHATSAPP_ACCESS_KEY
+    url = f"https://graph.facebook.com/v22.0/{phone_number_id}/messages"
+    
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/json",
+    }
+    
+    payload = {
+        "messaging_product": "whatsapp",
+        "recipient_type": "individual",
+        "to": recipient_number,
+        "type": "text",
+        "text": {
+            "body": message_text
+        }
+    }
+    
+    try:
+        response = requests.post(url, json=payload, headers=headers)
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Error sending WhatsApp text message: {str(e)}")
+        raise
+
+
 def send_whatsapp_button_message(recipient_number: str, message_text: str, buttons: list):
     """
     Sends a WhatsApp interactive message with reply buttons.

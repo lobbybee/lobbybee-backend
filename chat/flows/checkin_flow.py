@@ -236,6 +236,10 @@ def handle_fresh_checkin_command(guest, hotel_id, flow_data):
         status='active'
     ).update(status='archived')
 
+    # Clean up previous incomplete attempts for returning guests
+    # This prevents duplicate pending stays/bookings but preserves guest personal data
+    cleanup_incomplete_guest_data_preserve_personal_info(guest)
+
     # Create new checkin conversation
     with transaction.atomic():
         conversation = Conversation.objects.create(
@@ -316,6 +320,33 @@ def cleanup_incomplete_guest_data(guest):
     guest.date_of_birth = None
     guest.nationality = ''
     guest.save(update_fields=['status', 'full_name', 'email', 'date_of_birth', 'nationality'])
+
+
+def cleanup_incomplete_guest_data_preserve_personal_info(guest):
+    """Clean up incomplete guest data from failed check-ins but preserve guest personal information."""
+    from guest.models import GuestIdentityDocument, Booking, Stay
+
+    # Delete incomplete stays (pending status - these are from WhatsApp flows without room assignment)
+    Stay.objects.filter(
+        guest=guest,
+        status='pending'
+    ).delete()
+
+    # Delete incomplete bookings (pending or cancelled status)
+    Booking.objects.filter(
+        primary_guest=guest,
+        status__in=['pending']
+    ).delete()
+
+    # Only delete UNVERIFIED identity documents, preserve verified ones
+    GuestIdentityDocument.objects.filter(
+        guest=guest,
+        is_verified=False
+    ).delete()
+
+    # Reset guest status but preserve personal information
+    guest.status = 'pending_checkin'
+    guest.save(update_fields=['status'])
 
 
 def show_guest_data_confirmation(conversation, guest, flow_data):
