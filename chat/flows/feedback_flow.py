@@ -236,17 +236,35 @@ def handle_rating_step(conversation, guest, message_text, flow_data):
     # Store rating in flow data
     flow_data['rating'] = rating
     
-    # Create feedback record with rating
+    # Create or update feedback record with rating
     from guest.models import Feedback, Stay
+    from django.core.exceptions import MultipleObjectsReturned
+    
     stay = Stay.objects.filter(guest=guest, hotel=conversation.hotel, status='completed').order_by('-check_out_date').first()
     
     if stay:
-        Feedback.objects.create(
-            stay=stay,
-            guest=guest,
-            rating=rating,
-            note=""
-        )
+        # Check if feedback already exists for this stay
+        try:
+            feedback = Feedback.objects.get(stay=stay)
+            # Update existing feedback
+            feedback.rating = rating
+            feedback.note = ""
+            feedback.save()
+        except Feedback.DoesNotExist:
+            # Create new feedback
+            Feedback.objects.create(
+                stay=stay,
+                guest=guest,
+                rating=rating,
+                note=""
+            )
+        except MultipleObjectsReturned:
+            # Handle rare case of multiple feedbacks - get the first one and update it
+            feedback = Feedback.objects.filter(stay=stay).first()
+            if feedback:
+                feedback.rating = rating
+                feedback.note = ""
+                feedback.save()
     
     # Determine next step based on rating
     if rating >= 3:
@@ -271,7 +289,7 @@ def handle_high_rating_flow(conversation, guest, flow_data, rating):
     
     if google_link:
         header_text = "Thank you for your positive feedback!"
-        body_text = f"{rating_text}\n\nWe're glad you enjoyed your stay! If you have a moment, we'd really appreciate it if you could share your experience on Google Reviews.\n\nWould you like to add any additional notes about your stay?"
+        body_text = f"{rating_text}\n\nWe're glad you enjoyed your stay! If you have a moment, we'd really appreciate it if you could share your experience on Google Reviews.\n\n🌟 **Rate us on Google:** {google_link}\n\nWould you like to add any additional notes about your stay?"
         
         save_system_message(conversation, f"{header_text}\n\n{body_text}", FeedbackStep.NOTE_OPTION)
         
@@ -353,7 +371,7 @@ def handle_note_option_step(conversation, guest, message_text, flow_data):
         if rating >= 3:
             if conversation.hotel.google_review_link:
                 header_text = "Share your experience"
-                body_text = "Please tell us more about your stay. Your feedback helps us improve our service!\n\nAlso, don't forget to rate us on Google Reviews! 😊"
+                body_text = f"Please tell us more about your stay. Your feedback helps us improve our service!\n\n🌟 **Don't forget to rate us on Google Reviews:**\n{conversation.hotel.google_review_link} 😊"
             else:
                 header_text = "Share your experience"
                 body_text = "Please tell us more about your stay. Your feedback helps us improve our service!"
@@ -431,7 +449,7 @@ def handle_note_input_step(conversation, guest, message_text, flow_data):
     
     if rating >= 3 and conversation.hotel.google_review_link:
         header_text = "Thank you for your detailed feedback!"
-        body_text = f"We appreciate you taking the time to share your experience.\n\n🌟 Please also consider leaving a Google Review:\n{conversation.hotel.google_review_link}\n\nYour feedback helps us improve and helps other guests make informed decisions!"
+        body_text = f"We appreciate you taking the time to share your experience.\n\n🌟 **Please also consider leaving a Google Review:**\n{conversation.hotel.google_review_link}\n\nYour feedback helps us improve and helps other guests make informed decisions!"
         
         save_system_message(conversation, f"{header_text}\n\n{body_text}", FeedbackStep.GOOGLE_REVIEW)
         

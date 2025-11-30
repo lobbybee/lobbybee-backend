@@ -295,6 +295,44 @@ class StayManagementViewSet(viewsets.GenericViewSet):
                             setattr(stay.guest, field, value)
                     stay.guest.save()
 
+                # Handle document verification
+                verified_document_ids = serializer.validated_data.get('verified_document_ids', [])
+                verify_all_documents = serializer.validated_data.get('verify_all_documents', False)
+                
+                if verify_all_documents or verified_document_ids:
+                    # Get documents to verify
+                    if verify_all_documents:
+                        documents_to_verify = GuestIdentityDocument.objects.filter(guest=stay.guest)
+                    else:
+                        documents_to_verify = GuestIdentityDocument.objects.filter(
+                            guest=stay.guest,
+                            id__in=verified_document_ids
+                        )
+                    
+                    # Mark documents as verified
+                    verified_count = documents_to_verify.update(
+                        is_verified=True,
+                        verified_at=timezone.now(),
+                        verified_by=request.user
+                    )
+                    
+                    logger.info(f"Verified {verified_count} documents for guest {stay.guest.full_name}")
+                else:
+                    # If no specific documents are marked for verification, 
+                    # verify all primary documents by default
+                    primary_documents = GuestIdentityDocument.objects.filter(
+                        guest=stay.guest,
+                        is_primary=True
+                    )
+                    verified_count = primary_documents.update(
+                        is_verified=True,
+                        verified_at=timezone.now(),
+                        verified_by=request.user
+                    )
+                    
+                    if verified_count > 0:
+                        logger.info(f"Verified {verified_count} primary documents for guest {stay.guest.full_name}")
+
                 # Mark identity as verified (assuming manual verification by staff)
                 stay.identity_verified = True
                 stay.status = 'active'

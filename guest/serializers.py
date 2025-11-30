@@ -50,6 +50,16 @@ class VerifyCheckinSerializer(serializers.Serializer):
     room_id = serializers.IntegerField(required=False)
     guest_updates = serializers.DictField(required=False)
     check_out_date = serializers.DateTimeField(required=False)
+    # Document verification fields
+    verified_document_ids = serializers.ListField(
+        child=serializers.IntegerField(),
+        required=False,
+        help_text="List of document IDs to mark as verified"
+    )
+    verify_all_documents = serializers.BooleanField(
+        default=False,
+        help_text="If True, marks all guest documents as verified"
+    )
 
 # Response serializers
 class GuestResponseSerializer(serializers.ModelSerializer):
