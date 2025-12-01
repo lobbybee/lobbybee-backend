@@ -158,6 +158,8 @@ class HotelStatsViewSet(viewsets.ViewSet):
             hotel_stats = {
                 'hotel_id': str(hotel.id),
                 'hotel_name': hotel.name,
+                'verification_status': hotel.status,
+                'is_verified': hotel.is_verified,
                 'rooms': room_stats,
                 'occupancy_rate': round(occupancy_rate, 2),
                 'active_stays': active_stays.count(),
@@ -588,18 +590,21 @@ class HotelUserStatsViewSet(viewsets.ViewSet):
             )
         
         # Get guests who have stayed at this hotel
-        stays_queryset = Stay.objects.filter(hotel=hotel)
-        
-        # Apply filters
-        if start_date:
-            stays_queryset = stays_queryset.filter(check_in_date__gte=start_date)
-        if end_date:
-            stays_queryset = stays_queryset.filter(check_out_date__lte=end_date)
-        
-        # Get unique guests from stays
         guests = Guest.objects.filter(
-            stays__in=stays_queryset
+            stays__hotel=hotel
         ).distinct()
+        
+        # Apply date filters - include guests who were present during the period
+        if start_date or end_date:
+            filtered_stays = Stay.objects.filter(hotel=hotel)
+            
+            # Find stays that overlap with the date range
+            if start_date:
+                filtered_stays = filtered_stays.filter(check_out_date__gte=start_date)
+            if end_date:
+                filtered_stays = filtered_stays.filter(check_in_date__lte=end_date)
+                
+            guests = guests.filter(stays__in=filtered_stays).distinct()
         
         # Filter by specific guest WhatsApp number if provided
         if guest_whatsapp:
@@ -608,7 +613,15 @@ class HotelUserStatsViewSet(viewsets.ViewSet):
         # Prepare response data
         guest_data = []
         for guest in guests:
-            guest_stays = stays_queryset.filter(guest=guest).order_by('-check_in_date')
+            # Get all stays for this guest, then optionally filter by overlapping dates for display
+            guest_stays = Stay.objects.filter(guest=guest, hotel=hotel).order_by('-check_in_date')
+            
+            # Apply date filters for display purposes - include overlapping stays
+            if start_date or end_date:
+                if start_date:
+                    guest_stays = guest_stays.filter(check_out_date__gte=start_date)
+                if end_date:
+                    guest_stays = guest_stays.filter(check_in_date__lte=end_date)
             
             stays_data = []
             for stay in guest_stays:
@@ -643,10 +656,15 @@ class HotelUserStatsViewSet(viewsets.ViewSet):
             
             guest_data.append(guest_info)
         
-        # Summary statistics
+        # Summary statistics - count all guests and their total stays
+        all_guests_count = Guest.objects.filter(stays__hotel=hotel).distinct().count()
+        all_stays_count = Stay.objects.filter(hotel=hotel).count()
+        
         summary = {
-            'total_guests': guests.count(),
-            'total_stays': stays_queryset.count(),
+            'total_guests': all_guests_count,
+            'total_stays': all_stays_count,
+            'filtered_guests_shown': guests.count(),
+            'filtered_stays_shown': sum(len(guest['stays']) for guest in guest_data),
             'date_range': {
                 'start_date': start_date.isoformat() if start_date else None,
                 'end_date': end_date.isoformat() if end_date else None,
@@ -708,14 +726,15 @@ class HotelUserStatsViewSet(viewsets.ViewSet):
         # Prepare response data
         room_data = []
         for room in rooms_queryset:
-            # Get stays for this room
+            # Get all stays for this room, then optionally filter by overlapping dates for display
             room_stays = Stay.objects.filter(room=room)
             
-            # Apply date filters
-            if start_date:
-                room_stays = room_stays.filter(check_in_date__gte=start_date)
-            if end_date:
-                room_stays = room_stays.filter(check_out_date__lte=end_date)
+            # Apply date filters for display purposes - include overlapping stays
+            if start_date or end_date:
+                if start_date:
+                    room_stays = room_stays.filter(check_out_date__gte=start_date)
+                if end_date:
+                    room_stays = room_stays.filter(check_in_date__lte=end_date)
             
             # Apply guest WhatsApp filter if provided
             if guest_whatsapp:
