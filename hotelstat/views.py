@@ -6,7 +6,7 @@ from guest.models import Guest, Stay, Booking, Feedback
 from chat.models import Conversation, Message
 from user.models import User
 from user.permissions import IsHotelManagerOrAdmin, IsHotelStaffOrAdmin
-from django.db.models import Count, Q, Avg, Sum, F, ExpressionWrapper, DecimalField, Max, Min
+from django.db.models import Count, Q, Avg, Sum, F, ExpressionWrapper, DecimalField, DurationField, Max, Min
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 from datetime import datetime, timedelta
@@ -1188,7 +1188,7 @@ class HotelUserStatsViewSet(viewsets.ViewSet):
                 total_nights=Sum(
                     ExpressionWrapper(
                         F('actual_check_out') - F('actual_check_in'),
-                        output_field=DecimalField()
+                        output_field=DurationField()
                     )
                 )
             )['total_nights'] or 0
@@ -1201,7 +1201,7 @@ class HotelUserStatsViewSet(viewsets.ViewSet):
                 total_nights=Sum(
                     ExpressionWrapper(
                         F('actual_check_out') - F('actual_check_in'),
-                        output_field=DecimalField()
+                        output_field=DurationField()
                     )
                 )
             )['total_nights'] or 0

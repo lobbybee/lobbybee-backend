@@ -76,6 +76,7 @@ class ConversationListView(APIView):
             Conversation.objects.filter(
                 hotel=user.hotel, department__in=user_departments, status="active"
             )
+            .exclude(conversation_type__in=['feedback', 'checkin', 'checked_in'])
             .select_related("guest", "hotel")
             .order_by("-last_message_at")
         )
