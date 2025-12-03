@@ -47,6 +47,40 @@ class UserHotelSerializer(serializers.ModelSerializer):
         exclude = ('status', 'verified_at')
 
 
+class AdminHotelUpdateSerializer(serializers.ModelSerializer):
+    """
+    Serializer for platform admins to update hotel details.
+    Excludes system-managed fields and read-only fields.
+    """
+    class Meta:
+        model = Hotel
+        fields = [
+            'name', 'description', 'address', 'city', 'state', 'country', 
+            'pincode', 'phone', 'email', 'google_review_link', 'latitude', 
+            'longitude', 'qr_code_url', 'check_in_time', 'time_zone'
+        ]
+
+
+class AdminHotelDocumentUpdateSerializer(serializers.ModelSerializer):
+    """
+    Serializer for platform admins to update hotel documents.
+    """
+    document_file_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = HotelDocument
+        fields = ('id', 'hotel', 'document_type', 'document_file', 'document_file_url', 'uploaded_at')
+        read_only_fields = ('hotel', 'uploaded_at')
+        extra_kwargs = {
+            'document_file': {'write_only': True, 'required': False}
+        }
+
+    def get_document_file_url(self, obj):
+        if obj.document_file:
+            return obj.document_file.url
+        return None
+
+
 class RoomCategorySerializer(serializers.ModelSerializer):
     room_count = serializers.ReadOnlyField()
 

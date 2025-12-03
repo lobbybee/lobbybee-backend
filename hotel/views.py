@@ -73,16 +73,21 @@ class StandardResultsSetPagination(PageNumberPagination):
     page_size_query_param = 'page_size'
     max_page_size = 100
 
-class AdminHotelViewSet(viewsets.ReadOnlyModelViewSet):
+class AdminHotelViewSet(viewsets.ModelViewSet):
     """
     ViewSet for Platform Admins to manage hotels.
     """
     queryset = Hotel.objects.filter(is_demo=False).prefetch_related('documents').order_by('-registration_date')
-    serializer_class = HotelSerializer
     permission_classes = [permissions.IsAuthenticated, CanManagePlatform]
     pagination_class = StandardResultsSetPagination
     filterset_fields = ['status', 'city', 'country', 'is_verified', 'is_active']
     search_fields = ['name']
+
+    def get_serializer_class(self):
+        if self.action in ['partial_update', 'update']:
+            from .serializers import AdminHotelUpdateSerializer
+            return AdminHotelUpdateSerializer
+        return HotelSerializer
 
     @action(detail=True, methods=['post'], url_path='verify')
     def verify(self, request, pk=None):
@@ -175,6 +180,111 @@ class HotelDocumentUpdateView(generics.UpdateAPIView):
         if hasattr(user, "hotel") and user.hotel:
             return HotelDocument.objects.filter(hotel=user.hotel)
         return HotelDocument.objects.none()
+
+
+class AdminHotelDocumentViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet for Platform Admins to manage hotel documents.
+    Handles both create and update operations based on document type.
+    """
+    permission_classes = [permissions.IsAuthenticated, CanManagePlatform]
+    
+    def get_queryset(self):
+        hotel_id = self.kwargs.get('hotel_pk')
+        return HotelDocument.objects.filter(hotel_id=hotel_id)
+    
+    def get_serializer_class(self):
+        if self.action in ['partial_update', 'update']:
+            from .serializers import AdminHotelDocumentUpdateSerializer
+            return AdminHotelDocumentUpdateSerializer
+        return HotelDocumentSerializer
+    
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context['hotel_pk'] = self.kwargs.get('hotel_pk')
+        return context
+    
+    def get_object(self):
+        """
+        Override to find document by type if no specific ID provided,
+        or use the standard lookup by ID.
+        """
+        hotel_id = self.kwargs.get('hotel_pk')
+        document_id = self.kwargs.get('pk')
+        
+        if document_id == 'type':
+            # This is a special case for finding document by type
+            document_type = self.request.data.get('document_type')
+            if document_type:
+                try:
+                    return HotelDocument.objects.get(
+                        hotel_id=hotel_id, 
+                        document_type=document_type
+                    )
+                except HotelDocument.DoesNotExist:
+                    # Will be handled in update method to create new document
+                    return None
+        
+        # Standard lookup by document ID
+        return super().get_object()
+    
+    def partial_update(self, request, *args, **kwargs):
+        """
+        Handle partial update with create logic:
+        - If document with type exists → Update it
+        - If document doesn't exist AND file provided → Create new
+        """
+        hotel_id = self.kwargs.get('hotel_pk')
+        document_type = request.data.get('document_type')
+        
+        # Validate hotel exists
+        try:
+            hotel = Hotel.objects.get(id=hotel_id)
+        except Hotel.DoesNotExist:
+            return Response(
+                {'error': 'Hotel not found'}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # Try to find existing document by type
+        existing_document = None
+        if document_type:
+            try:
+                existing_document = HotelDocument.objects.get(
+                    hotel_id=hotel_id, 
+                    document_type=document_type
+                )
+            except HotelDocument.DoesNotExist:
+                existing_document = None
+        
+        # If no existing document and no file provided, return error
+        if not existing_document and not request.FILES.get('document_file'):
+            return Response(
+                {'error': 'Document file is required to create a new document'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Create new document if it doesn't exist
+        if not existing_document:
+            serializer = self.get_serializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            document = serializer.save(hotel=hotel)
+            return Response(
+                HotelDocumentSerializer(document).data, 
+                status=status.HTTP_201_CREATED
+            )
+        
+        # Update existing document
+        # Set the document ID for standard update flow
+        self.kwargs['pk'] = existing_document.id
+        return super().partial_update(request, *args, **kwargs)
+    
+    def update_by_type(self, request, hotel_pk=None):
+        """
+        Update or create document by type.
+        This is the main endpoint for type-based document operations.
+        """
+        return self.partial_update(request, hotel_pk=hotel_pk, pk='type')
 
 
 class RoomCategoryViewSet(viewsets.ModelViewSet):
