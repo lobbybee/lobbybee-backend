@@ -61,6 +61,20 @@ class VerifyCheckinSerializer(serializers.Serializer):
         help_text="If True, marks all guest documents as verified"
     )
 
+class CheckoutSerializer(serializers.Serializer):
+    internal_rating = serializers.IntegerField(
+        required=False,
+        allow_null=True,
+        min_value=1,
+        max_value=5,
+        help_text="Internal rating from 1 to 5 (optional)"
+    )
+    internal_note = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        help_text="Internal notes about the guest stay (optional)"
+    )
+
 # Response serializers
 class GuestResponseSerializer(serializers.ModelSerializer):
     documents = serializers.SerializerMethodField()
@@ -94,7 +108,8 @@ class StayListSerializer(serializers.ModelSerializer):
         model = Stay
         fields = [
             "id", "guest", "status", "check_in_date", "check_out_date",
-            "room", "room_details", "register_number", "identity_verified", "booking_details"
+            "room", "room_details", "register_number", "identity_verified", "booking_details",
+            "internal_rating", "internal_note"
         ]
     
     def get_room_details(self, obj):

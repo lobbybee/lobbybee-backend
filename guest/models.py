@@ -122,6 +122,10 @@ class Stay(models.Model):
     identity_verified = models.BooleanField(default=False)
     documents_uploaded = models.BooleanField(default=False)
 
+    # Internal rating and notes for hotel staff use
+    internal_rating = models.IntegerField(null=True, blank=True, help_text="Internal rating from 1 to 5")
+    internal_note = models.TextField(blank=True, help_text="Internal notes about the guest stay")
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

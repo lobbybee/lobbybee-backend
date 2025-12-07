@@ -428,12 +428,18 @@ class StayManagementViewSet(viewsets.GenericViewSet):
         Check out a guest by changing stay status to checked-out
         Also updates guest status and room status to cleaning
         Automatically initiates feedback flow
+        Accepts optional internal_rating and internal_note for staff use
         """
         # Set to True for debugging WhatsApp messages without changing status
         # Set to False for normal operation
         debug = False
 
         stay = self.get_object()
+
+        # Validate optional checkout data
+        from .serializers import CheckoutSerializer
+        checkout_serializer = CheckoutSerializer(data=request.data)
+        checkout_serializer.is_valid(raise_exception=True)
 
         if stay.status != 'active':
             return Response(
@@ -451,6 +457,13 @@ class StayManagementViewSet(viewsets.GenericViewSet):
                     # Update stay status
                     stay.status = 'completed'
                     stay.actual_check_out = timezone.now()
+                    
+                    # Update optional internal rating and note if provided
+                    if 'internal_rating' in checkout_serializer.validated_data:
+                        stay.internal_rating = checkout_serializer.validated_data['internal_rating']
+                    if 'internal_note' in checkout_serializer.validated_data:
+                        stay.internal_note = checkout_serializer.validated_data['internal_note']
+                    
                     stay.save()
 
                     # Update guest status
@@ -535,10 +548,18 @@ Please take a moment to rate your overall experience from 1 to 5 stars. We truly
                         logger.error(f"Failed to send feedback list message: {e}")
                         # Continue with checkout even if WhatsApp message fails
 
-                return Response({
+                response_data = {
                     'stay_id': stay.id,
                     'message': 'Guest checked out successfully'
-                }, status=status.HTTP_200_OK)
+                }
+                
+                # Include internal rating and note in response if they were set
+                if stay.internal_rating is not None:
+                    response_data['internal_rating'] = stay.internal_rating
+                if stay.internal_note:
+                    response_data['internal_note'] = stay.internal_note
+                    
+                return Response(response_data, status=status.HTTP_200_OK)
 
         except Exception as e:
             logger.error(f"Error checking out guest: {str(e)}")
