@@ -19,6 +19,11 @@ class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
             )
 
         user_data = UserSerializer(self.user).data
+        
+        # If user is a Django superadmin, set user_type to 'platform_admin'
+        if self.user.is_superuser:
+            user_data['user_type'] = 'platform_admin'
+            
         if self.user.user_type in ['hotel_admin', 'manager', 'receptionist'] and self.user.hotel:
             user_data['hotel_id'] = str(self.user.hotel.id)
         data['user'] = user_data
