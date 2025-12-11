@@ -176,10 +176,17 @@ class WiFiCredentialSerializer(serializers.ModelSerializer):
 
     def validate(self, data):
         """
-        Validate that no duplicate credentials exist for the same floor and room category.
+        Validate that the floor exists and no duplicate credentials exist for the same floor and room category.
         """
         request = self.context.get('request')
         hotel = request.user.hotel
+        
+        # Check if the floor exists in the hotel
+        floor_exists = Room.objects.filter(hotel=hotel, floor=data['floor']).exists()
+        if not floor_exists:
+            raise serializers.ValidationError(
+                f"Floor {data['floor']} does not exist in this hotel. Please create rooms on this floor first."
+            )
         
         existing = WiFiCredential.objects.filter(
             hotel=hotel,
