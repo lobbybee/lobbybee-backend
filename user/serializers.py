@@ -24,8 +24,9 @@ class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
         if self.user.is_superuser:
             user_data['user_type'] = 'platform_admin'
             
-        if self.user.user_type in ['hotel_admin', 'manager', 'receptionist'] and self.user.hotel:
+        if self.user.user_type in ['hotel_admin', 'manager', 'receptionist', 'department_staff', 'other_staff'] and self.user.hotel:
             user_data['hotel_id'] = str(self.user.hotel.id)
+            user_data['hotel_name'] = self.user.hotel.name
         data['user'] = user_data
         return data
 
