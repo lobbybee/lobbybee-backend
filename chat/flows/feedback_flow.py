@@ -267,9 +267,9 @@ def handle_rating_step(conversation, guest, message_text, flow_data):
                 feedback.save()
     
     # Determine next step based on rating
-    if rating >= 3:
-        return handle_high_rating_flow(conversation, guest, flow_data, rating)
-    else:
+    if rating >= 3:  # Ratings 3, 4 and 5 - skip note collection, just show Google review link and thank you
+        return complete_feedback_flow(conversation, guest, show_google_review=True)
+    else:  # Ratings 1 and 2 - collect notes for improvement
         return handle_low_rating_flow(conversation, guest, flow_data, rating)
 
 
@@ -388,7 +388,7 @@ def handle_note_option_step(conversation, guest, message_text, flow_data):
     
     elif message_text in ['skip_note', 'btn_1']:
         # Guest wants to skip note
-        return complete_feedback_flow(conversation, guest)
+        return complete_feedback_flow(conversation, guest, show_google_review=True)
     
     else:
         # Invalid selection
@@ -459,7 +459,7 @@ def handle_note_input_step(conversation, guest, message_text, flow_data):
         }
     else:
         # Complete the flow
-        return complete_feedback_flow(conversation, guest)
+        return complete_feedback_flow(conversation, guest, show_google_review=True)
 
 
 def handle_google_review_step(conversation, guest, message_text, flow_data):
@@ -469,7 +469,7 @@ def handle_google_review_step(conversation, guest, message_text, flow_data):
     return complete_feedback_flow(conversation, guest)
 
 
-def complete_feedback_flow(conversation, guest):
+def complete_feedback_flow(conversation, guest, show_google_review=False):
     """Complete the feedback flow."""
     try:
         # Update conversation
@@ -477,7 +477,11 @@ def complete_feedback_flow(conversation, guest):
         conversation.save(update_fields=['status'])
         
         header_text = "Thank you for your feedback!"
-        body_text = f"We appreciate you taking the time to share your experience with us. Your feedback is valuable in helping us improve our services.\n\nWe hope to welcome you back to {conversation.hotel.name} again soon!\n\nHave a great day! 🌟"
+        
+        if show_google_review and conversation.hotel.google_review_link:
+            body_text = f"We appreciate you taking the time to share your experience with us!\n\n🌟 **We'd love it if you could share your experience on Google Reviews:**\n{conversation.hotel.google_review_link}\n\nWe hope to welcome you back to {conversation.hotel.name} again soon!\n\nHave a great day! 🌟"
+        else:
+            body_text = f"We appreciate you taking the time to share your experience with us. Your feedback is valuable in helping us improve our services.\n\nWe hope to welcome you back to {conversation.hotel.name} again soon!\n\nHave a great day! 🌟"
         
         save_system_message(conversation, f"{header_text}\n\n{body_text}", FeedbackStep.COMPLETED)
         
