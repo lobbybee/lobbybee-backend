@@ -394,6 +394,12 @@ class StayManagementViewSet(viewsets.GenericViewSet):
                     thread.daemon = True
                     thread.start()
 
+                # Schedule check-in reminder message using Celery
+                if stay.guest.whatsapp_number:
+                    from .tasks import schedule_checkin_reminder
+                    # Schedule the reminder task asynchronously
+                    schedule_checkin_reminder.delay(stay.id)
+
                 # Check for guest flags before completing check-in
                 from flag_system.serializers import GuestFlagSummarySerializer, GuestFlagResponseSerializer
                 
