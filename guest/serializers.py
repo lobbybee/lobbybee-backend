@@ -44,6 +44,7 @@ class CheckinOfflineSerializer(serializers.Serializer):
     check_in_date = serializers.DateTimeField()
     check_out_date = serializers.DateTimeField()
     guest_names = serializers.ListField(child=serializers.CharField(), required=False)
+    hours_24 = serializers.BooleanField(default=False, help_text="Indicates if this is a 24-hour stay")
 
 class VerifyCheckinSerializer(serializers.Serializer):
     register_number = serializers.CharField(required=False, allow_blank=True)
@@ -74,6 +75,17 @@ class CheckoutSerializer(serializers.Serializer):
         allow_blank=True,
         help_text="Internal notes about the guest stay (optional)"
     )
+    flag_user = serializers.BooleanField(
+        default=False,
+        help_text="Flag this guest for future reference"
+    )
+    
+    def validate(self, attrs):
+        if attrs.get('flag_user', False) and not attrs.get('internal_note'):
+            raise serializers.ValidationError(
+                "Internal note is required when flagging a guest"
+            )
+        return attrs
 
 # Response serializers
 class GuestResponseSerializer(serializers.ModelSerializer):
@@ -109,7 +121,7 @@ class StayListSerializer(serializers.ModelSerializer):
         fields = [
             "id", "guest", "status", "check_in_date", "check_out_date",
             "room", "room_details", "register_number", "identity_verified", "booking_details",
-            "internal_rating", "internal_note"
+            "internal_rating", "internal_note", "hours_24"
         ]
     
     def get_room_details(self, obj):

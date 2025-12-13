@@ -125,6 +125,9 @@ class Stay(models.Model):
     # Internal rating and notes for hotel staff use
     internal_rating = models.IntegerField(null=True, blank=True, help_text="Internal rating from 1 to 5")
     internal_note = models.TextField(blank=True, help_text="Internal notes about the guest stay")
+    
+    # 24 hours stay indicator
+    hours_24 = models.BooleanField(default=False, help_text="Indicates if this is a 24-hour stay")
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

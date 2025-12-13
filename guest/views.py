@@ -15,6 +15,8 @@ from .serializers import (
 from hotel.models import Hotel, Room
 from hotel.permissions import IsHotelStaff, IsSameHotelUser
 from .permissions import CanManageGuests, CanViewAndManageStays
+from flag_system.models import GuestFlag
+from flag_system.services import get_flag_summary_for_guest, create_guest_flag
 from chat.utils.template_util import process_template
 from chat.utils.whatsapp_utils import send_whatsapp_image_with_link, send_whatsapp_button_message, send_whatsapp_list_message, send_whatsapp_text_message
 import logging
@@ -176,6 +178,7 @@ class StayManagementViewSet(viewsets.GenericViewSet):
                 check_in_date = serializer.validated_data['check_in_date']
                 check_out_date = serializer.validated_data['check_out_date']
                 guest_names = serializer.validated_data.get('guest_names', [])
+                hours_24 = serializer.validated_data.get('hours_24', False)
 
                 # Validate primary guest exists
                 primary_guest = get_object_or_404(Guest, id=primary_guest_id)
@@ -216,7 +219,8 @@ class StayManagementViewSet(viewsets.GenericViewSet):
                         guest_names=[guest_name],
                         status='pending',
                         identity_verified=False,
-                        documents_uploaded=True
+                        documents_uploaded=True,
+                        hours_24=hours_24
                     )
                     stays.append(stay)
 
@@ -390,12 +394,40 @@ class StayManagementViewSet(viewsets.GenericViewSet):
                     thread.daemon = True
                     thread.start()
 
-                return Response({
+                # Check for guest flags before completing check-in
+                from flag_system.serializers import GuestFlagSummarySerializer, GuestFlagResponseSerializer
+                
+                flag_summary = get_flag_summary_for_guest(stay.guest.id)
+                
+                response_data = {
                     'stay_id': stay.id,
                     'register_number': stay.register_number,
                     'check_out_date': stay.check_out_date,
                     'message': 'Check-in verified and activated successfully'
-                }, status=status.HTTP_200_OK)
+                }
+                
+                # Include flag summary if guest is flagged
+                if flag_summary['is_flagged']:
+                    # Serialize flags first
+                    serialized_flags = GuestFlagResponseSerializer(
+                        flag_summary['flags'], 
+                        many=True
+                    ).data
+                    
+                    # For hotel staff, remove internal_reason from flags
+                    if request.user.user_type in ['hotel_admin', 'manager', 'receptionist']:
+                        for flag_data in serialized_flags:
+                            flag_data.pop('internal_reason', None)
+                    
+                    # Create flag summary with serialized flags
+                    flag_summary_data = {
+                        'is_flagged': flag_summary['is_flagged'],
+                        'police_flagged': flag_summary['police_flagged'],
+                        'flags': serialized_flags
+                    }
+                    response_data['flag_summary'] = flag_summary_data
+                
+                return Response(response_data, status=status.HTTP_200_OK)
 
         except Exception as e:
             logger.error(f"Error verifying check-in: {str(e)}")
@@ -407,11 +439,46 @@ class StayManagementViewSet(viewsets.GenericViewSet):
     @action(detail=False, methods=['get'], url_path='pending-stays')
     def pending_stays(self, request):
         """
-        List all stays that are pending verification
+        List all stays that are pending verification with flag information
         """
         stays = self.get_queryset().filter(status='pending').order_by('-created_at')
+        
+        # Get all unique guest IDs from pending stays
+        guest_ids = list(set(stay.guest_id for stay in stays))
+        
+        # Pre-fetch flag information for all these guests
+        flag_summary_map = {}
+        if guest_ids:
+            from flag_system.serializers import GuestFlagSummarySerializer, GuestFlagResponseSerializer
+            for guest_id in guest_ids:
+                flag_summary = get_flag_summary_for_guest(guest_id)
+                if flag_summary['is_flagged']:
+                    # Serialize flags first
+                    serialized_flags = GuestFlagResponseSerializer(
+                        flag_summary['flags'], 
+                        many=True
+                    ).data
+                    
+                    # Remove internal_reason for hotel staff
+                    if request.user.user_type in ['hotel_admin', 'manager', 'receptionist']:
+                        for flag_data in serialized_flags:
+                            flag_data.pop('internal_reason', None)
+                    
+                    # Update flag summary with serialized flags
+                    flag_summary['flags'] = serialized_flags
+                    flag_summary_map[guest_id] = flag_summary
+        
+        # Serialize stays and add flag information
         serializer = StayListSerializer(stays, many=True)
-        return Response(serializer.data)
+        response_data = serializer.data
+        
+        # Add flag information to each stay
+        for stay_data in response_data:
+            guest_id = stay_data['guest']['id']
+            if guest_id in flag_summary_map:
+                stay_data['flag_summary'] = flag_summary_map[guest_id]
+        
+        return Response(response_data)
 
     @action(detail=False, methods=['get'], url_path='checked-in-users')
     def checked_in_users(self, request):
@@ -465,6 +532,29 @@ class StayManagementViewSet(viewsets.GenericViewSet):
                         stay.internal_note = checkout_serializer.validated_data['internal_note']
                     
                     stay.save()
+
+                    # Create flag if flag_user is true
+                    if checkout_serializer.validated_data.get('flag_user', False):
+                        
+                        # Check if there's already an active flag for this guest from this hotel
+                        existing_flag = GuestFlag.objects.filter(
+                            guest=stay.guest,
+                            stay__hotel=stay.hotel,
+                            is_active=True
+                        ).first()
+                        
+                        if not existing_flag:
+                            # Use the internal_note for both internal_reason and global_note
+                            flag_note = stay.internal_note or "Flagged during checkout"
+                            flag = create_guest_flag(
+                                guest_id=stay.guest.id,
+                                stay_id=stay.id,
+                                internal_reason=flag_note,  # Use the internal note as reason
+                                global_note=flag_note,       # Also use as global note
+                                flagged_by_police=False,
+                                user=request.user
+                            )
+                            logger.info(f"Created flag for guest {stay.guest.full_name} at checkout with note: {flag_note}")
 
                     # Update guest status
                     stay.guest.status = 'checked_out'

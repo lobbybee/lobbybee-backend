@@ -60,7 +60,8 @@ INSTALLED_APPS = [
     'django_celery_beat',
     'payments',
     'chat',
-    'admin_stat'
+    'admin_stat',
+    'flag_system'
     # 'message_manager',
 ]
 
