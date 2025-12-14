@@ -64,6 +64,14 @@ def handle_incoming_whatsapp_message(whatsapp_number, flow_data):
         whatsapp_payload = adapt_checkin_response_to_whatsapp(result, whatsapp_number)
         return whatsapp_payload, 200
 
+    # Handle start menu button responses
+    if message_text in ['start_demo', 'start_contact', 'start_history']:
+        result = handle_start_menu_command(guest, message_text)
+        logger.info(f"handle_start_menu_command returned: {result}, type: {type(result)}")
+        # Convert result to WhatsApp payload
+        whatsapp_payload = adapt_checkin_response_to_whatsapp(result, whatsapp_number)
+        return whatsapp_payload, 200
+
     # Check if guest has an active flow conversation
     active_flow_conversation = get_active_flow_conversation(guest) if guest else None
 
@@ -85,11 +93,60 @@ def handle_incoming_whatsapp_message(whatsapp_number, flow_data):
     if template_result.get('success') and template_result.get('processed_content'):
         message_text = template_result['processed_content']
 
-    # No command matched - fallback response
-    return create_text_message_payload(
-        whatsapp_number,
-        message_text
-    ), 200
+    # Create welcome message
+    welcome_message = {
+        "type": "text",
+        "text": message_text
+    }
+
+    # Always add follow-up buttons for start/welcome flow
+    button_options = [
+        {"id": "start_demo", "title": "View Demo"},
+        {"id": "start_contact", "title": "Contact"}
+    ]
+
+    # Add "Stay History" button if guest exists
+    if guest:
+        button_options.append({"id": "start_history", "title": "Stay History"})
+
+    button_message = {
+        "type": "button",
+        "text": "How can we help you?",
+        "body_text": "Please select an option below to get started",
+        "options": button_options
+    }
+
+    # Return multiple messages converted to WhatsApp payloads
+    flow_response = [welcome_message, button_message]
+    whatsapp_payload = adapt_checkin_response_to_whatsapp(flow_response, whatsapp_number)
+    return whatsapp_payload, 200
+
+
+def handle_start_menu_command(guest, button_id):
+    """Handle start menu button clicks."""
+    
+    if button_id == 'start_demo':
+        # Trigger demo mode flow
+        return handle_demo_command(guest, {})
+    
+    elif button_id == 'start_contact':
+        return {
+            "type": "text",
+            "text": "Ready to transform your guest experience? Get in touch with our team and discover how LobbyBee can revolutionize your hotel operations.\n\n📬 Email: hello@lobbybee.com\n📱 Phone: +917736600773\n🌐 Website: https://lobbybee.com\n\nWe're excited to hear from you! 🚀"
+        }
+    
+    elif button_id == 'start_history':
+        return {
+            "type": "text",
+            "text": "🏨 Stay History\n\nHere you can:\n\n✅ View all your past bookings\n✅ Check your stay details\n\nTo access your complete booking history or get assistance with past stays, please contact our team.\n\n📬 Email: hello@lobbybee.com\n📱 Phone: +917736600773\n\nWe're happy to help with any inquiries about your previous stays!"
+        }
+    
+    else:
+        # Fallback for unknown button ID
+        return {
+            "type": "text",
+            "text": "Sorry, I didn't understand that selection. Please try again."
+        }
 
 
 def get_existing_guest(whatsapp_number):

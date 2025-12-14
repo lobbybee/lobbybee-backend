@@ -673,10 +673,10 @@ class GuestConversationTypeView(APIView):
                     return {
                         **guest_data,
                         'action': 'show_menu',
-                        'whatsapp_payload': generate_department_menu_payload(
+                        'whatsapp_payload': [generate_department_menu_payload(
                             recipient_number,
                             guest_name
-                        )
+                        )]
                     }
 
             # Most recent conversation is active, handle based on message type
@@ -714,10 +714,10 @@ class GuestConversationTypeView(APIView):
             return {
                 **guest_data,
                 'action': 'show_menu',
-                'whatsapp_payload': generate_department_menu_payload(
+                'whatsapp_payload': [generate_department_menu_payload(
                     recipient_number,
                     guest_name
-                )
+                )]
             }
 
         # Fallback (shouldn't reach here)
@@ -739,10 +739,10 @@ class GuestConversationTypeView(APIView):
             return {
                 **guest_data,
                 'action': 'invalid_selection',
-                'whatsapp_payload': generate_error_text_payload(
+                'whatsapp_payload': [generate_error_text_payload(
                     recipient_number,
                     "Sorry, that's not a valid selection. Please use the department menu to start a conversation."
-                )
+                )]
             }
 
         # Note: Guest status verification removed since we now handle all messages through unified webhook system
@@ -762,7 +762,7 @@ class GuestConversationTypeView(APIView):
                 'target_conversation': self._format_target_conversation(
                     existing_conv, use_existing=True
                 ),
-                'whatsapp_payload': success_payload
+                'whatsapp_payload': [success_payload]
             }
         else:
             # Create new conversation
@@ -777,7 +777,7 @@ class GuestConversationTypeView(APIView):
                     'use_existing': False,
                     'create_new': True
                 },
-                'whatsapp_payload': success_payload
+                'whatsapp_payload': [success_payload]
             }
 
     def _format_target_conversation(self, conversation, use_existing=True):
@@ -1190,13 +1190,23 @@ class GuestConversationTypeView(APIView):
                         raise
 
                     # Merge flow webhook result into routing result
-                    # flow_response is now always a properly formatted WhatsApp payload
-                    routing_result.update({
-                        'webhook_executed': True,
-                        'webhook_result': flow_response,
-                        'webhook_status_code': status_code,
-                        'whatsapp_payload': flow_response
-                    })
+                    # flow_response can be a single payload or list of payloads
+                    if isinstance(flow_response, list):
+                        # Multiple messages
+                        routing_result.update({
+                            'webhook_executed': True,
+                            'webhook_result': flow_response,
+                            'webhook_status_code': status_code,
+                            'whatsapp_payload': flow_response
+                        })
+                    else:
+                        # Single message (backward compatibility)
+                        routing_result.update({
+                            'webhook_executed': True,
+                            'webhook_result': flow_response,
+                            'webhook_status_code': status_code,
+                            'whatsapp_payload': [flow_response]
+                        })
 
             elif action == 'relay':
                 # Handle relay action with guest webhook

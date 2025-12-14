@@ -51,4 +51,5 @@ urlpatterns = [
     # Custom Message Template management
     path('custom-templates/', CustomMessageTemplateListCreateView.as_view(), name='custom-template-list'),
     path('custom-templates/<int:pk>/', CustomMessageTemplateDetailView.as_view(), name='custom-template-detail'),
+    path('custom-templates/<int:template_id>/preview/', render_template_preview, name='custom-template-preview'),
 ]

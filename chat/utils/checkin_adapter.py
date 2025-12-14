@@ -8,9 +8,33 @@ from .whatsapp_payload_utils import convert_flow_response_to_whatsapp_payload
 def adapt_checkin_response_to_whatsapp(checkin_response, recipient_number):
     """
     Convert checkin flow response to WhatsApp payload format.
+    Supports both single message and list of messages.
 
     Args:
-        checkin_response: Response from checkin_flow.py
+        checkin_response: Response from checkin_flow.py (single dict or list of dicts)
+        recipient_number: WhatsApp phone number to send to
+
+    Returns:
+        WhatsApp payload dictionary or list of dictionaries ready for sending
+    """
+    # Handle list of messages
+    if isinstance(checkin_response, list):
+        payloads = []
+        for response in checkin_response:
+            payload = _convert_single_checkin_response(response, recipient_number)
+            payloads.append(payload)
+        return payloads
+    
+    # Handle single message (backward compatibility)
+    return _convert_single_checkin_response(checkin_response, recipient_number)
+
+
+def _convert_single_checkin_response(checkin_response, recipient_number):
+    """
+    Convert a single checkin flow response to WhatsApp payload format.
+
+    Args:
+        checkin_response: Single response from checkin_flow.py
         recipient_number: WhatsApp phone number to send to
 
     Returns:
@@ -49,7 +73,7 @@ def adapt_checkin_response_to_whatsapp(checkin_response, recipient_number):
                 'response_type': 'buttons',
                 'text': text_content,
                 'body_text': checkin_response.get('body_text'),
-                'options': [opt.get('title', '') for opt in options if opt.get('title')]
+                'options': options  # Pass full option objects with custom IDs
             }
         }
 

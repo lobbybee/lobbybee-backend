@@ -64,8 +64,8 @@ def convert_flow_response_to_whatsapp_payload(flow_result, recipient_number):
                             "title": "Options",
                             "rows": [
                                 {
-                                    "id": f"option_{i}",
-                                    "title": option,
+                                    "id": option.get('id', f"option_{i}") if isinstance(option, dict) else f"option_{i}",
+                                    "title": option.get('title', '') if isinstance(option, dict) else option,
                                     "description": ""
                                 } for i, option in enumerate(options)
                             ]
@@ -92,8 +92,8 @@ def convert_flow_response_to_whatsapp_payload(flow_result, recipient_number):
                         {
                             "type": "reply",
                             "reply": {
-                                "id": f"btn_{i}",
-                                "title": option
+                                "id": option.get('id', f"btn_{i}") if isinstance(option, dict) else f"btn_{i}",
+                                "title": option.get('title', '') if isinstance(option, dict) else option
                             }
                         } for i, option in enumerate(options)
                     ]
@@ -239,7 +239,7 @@ def create_button_payload(recipient_number, message_text, buttons):
     Args:
         recipient_number: WhatsApp phone number to send to
         message_text: The message text to display
-        buttons: List of button text strings (max 3)
+        buttons: List of button text strings (max 3) or button dicts with 'id' and 'title' keys
         
     Returns:
         WhatsApp payload dictionary
@@ -262,8 +262,8 @@ def create_button_payload(recipient_number, message_text, buttons):
                     {
                         "type": "reply",
                         "reply": {
-                            "id": f"btn_{i}",
-                            "title": button
+                            "id": button.get('id', f"btn_{i}") if isinstance(button, dict) else f"btn_{i}",
+                            "title": button.get('title', '') if isinstance(button, dict) else button
                         }
                     } for i, button in enumerate(buttons)
                 ]
