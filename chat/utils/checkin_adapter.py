@@ -63,6 +63,18 @@ def _convert_single_checkin_response(checkin_response, recipient_number):
                 'text': text_content
             }
         }
+    
+    elif response_type in ['image', 'video', 'audio', 'document']:
+        # Media message
+        flow_result = {
+            'status': 'success',
+            'response': {
+                'response_type': response_type,
+                'media_url': checkin_response.get('media_url'),
+                'text': text_content,  # This will be used as caption
+                'caption': text_content
+            }
+        }
 
     elif response_type == 'button':
         # Convert button format

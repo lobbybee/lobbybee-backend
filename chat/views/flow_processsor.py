@@ -93,11 +93,31 @@ def handle_incoming_whatsapp_message(whatsapp_number, flow_data):
     if template_result.get('success') and template_result.get('processed_content'):
         message_text = template_result['processed_content']
 
-    # Create welcome message
-    welcome_message = {
-        "type": "text",
-        "text": message_text
-    }
+    # Check if template has media
+    media_url = template_result.get('media_url') if template_result.get('success') else None
+    
+    # Create welcome message with media if available
+    if media_url:
+        # Determine media type from URL or default to image
+        media_type = 'image'  # Default to image
+        if media_url.lower().endswith(('.mp4', '.3gp', '.mov')):
+            media_type = 'video'
+        elif media_url.lower().endswith(('.mp3', '.aac', '.ogg', '.amr', '.m4a')):
+            media_type = 'audio'
+        elif media_url.lower().endswith(('.pdf', '.doc', '.docx', '.xls', '.xlsx')):
+            media_type = 'document'
+        
+        welcome_message = {
+            "type": media_type,
+            "media_url": media_url,
+            "text": message_text  # Text will be used as caption
+        }
+    else:
+        # Create text-only welcome message
+        welcome_message = {
+            "type": "text",
+            "text": message_text
+        }
 
     # Always add follow-up buttons for start/welcome flow
     button_options = [
@@ -283,7 +303,26 @@ def route_to_flow_handler(guest, conversation, flow_data):
     if template_result.get('success') and template_result.get('processed_content'):
         message_text = template_result['processed_content']
 
-    return {
-        "type": "text",
-        "text": message_text
-    }
+    # Check if template has media
+    media_url = template_result.get('media_url') if template_result.get('success') else None
+    
+    if media_url:
+        # Determine media type from URL
+        media_type = 'image'  # Default to image
+        if media_url.lower().endswith(('.mp4', '.3gp', '.mov')):
+            media_type = 'video'
+        elif media_url.lower().endswith(('.mp3', '.aac', '.ogg', '.amr', '.m4a')):
+            media_type = 'audio'
+        elif media_url.lower().endswith(('.pdf', '.doc', '.docx', '.xls', '.xlsx')):
+            media_type = 'document'
+        
+        return {
+            "type": media_type,
+            "media_url": media_url,
+            "text": message_text  # Text will be used as caption
+        }
+    else:
+        return {
+            "type": "text",
+            "text": message_text
+        }
