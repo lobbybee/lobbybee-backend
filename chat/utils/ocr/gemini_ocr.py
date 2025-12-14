@@ -75,15 +75,16 @@ class GeminiOCRService:
     def extract_id_data(
         self,
         image_path: str,
-        document_type: str,
+        document_type: str = None,
         back_image_path: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Extract structured data from ID document using Gemini 3.
+        If document_type is None, will auto-detect the type first.
 
         Args:
             image_path: Path to front image of ID document
-            document_type: Type of document (AADHAR, DRIVING_LICENSE, PASSPORT, etc.)
+            document_type: Type of document (AADHAR, DRIVING_LICENSE, etc.) - optional
             back_image_path: Optional path to back side of document
 
         Returns:
@@ -111,15 +112,60 @@ class GeminiOCRService:
                     'data': {}
                 }
 
-            # Get document type description
-            doc_type_upper = document_type.upper()
-            doc_type_desc = self.DOCUMENT_TYPES.get(
-                doc_type_upper,
-                f"{document_type} ID document"
-            )
+            # Create prompt that handles both detection and extraction
+            if document_type:
+                # Document type is known, use specific extraction
+                doc_type_upper = document_type.upper()
+                doc_type_desc = self.DOCUMENT_TYPES.get(
+                    doc_type_upper,
+                    f"{document_type} ID document"
+                )
+                prompt = self._create_extraction_prompt(doc_type_upper, doc_type_desc)
+            else:
+                # Auto-detect and extract in one go
+                prompt = """You are an expert at identifying and extracting information from Indian ID documents.
 
-            # Create the extraction prompt
-            prompt = self._create_extraction_prompt(doc_type_upper, doc_type_desc)
+FIRST: Identify what type of ID document this is from:
+- aadhar_id: Indian Aadhaar Card (has Aadhaar logo, 12-digit number)
+- driving_license: Indian Driving License (has "Driving License" text, state name)
+- national_id: Any other national ID card
+- voter_id: Indian Voter ID Card (EPIC)
+- other: Any other government ID
+
+THEN: Extract ALL visible information based on the identified document type.
+
+Return ONLY a valid JSON object with these fields:
+{
+    "detected_type": "one of: aadhar_id, driving_license, national_id, voter_id, other",
+    "confidence": 0.95,
+    "id_number": "the ID/document number",
+    "full_name": "complete name exactly as shown",
+    "date_of_birth": "date of birth in DD/MM/YYYY format",
+    "gender": "MALE or FEMALE or null",
+    "address": "complete address if present",
+    "expiry_date": "expiry/validity date in DD/MM/YYYY format if present",
+    "issue_date": "issue date in DD/MM/YYYY format if present"
+}
+
+For Aadhaar Card specifically:
+- The Aadhaar number is a 12-digit number (format: XXXX XXXX XXXX)
+- Remove spaces from the Aadhaar number in your response
+- Look for "DOB" or "Year of Birth" for date_of_birth
+
+For Driving License specifically:
+- DL Number format is typically: XX-XXXXXXXXXX or XX00XXXX0000000
+- Look for "DOB" for date of birth
+- "Valid Till" or "NT Valid Till" is the expiry_date
+
+CRITICAL RULES:
+1. Extract EXACTLY what you see - don't invent or guess information
+2. Use DD/MM/YYYY format for all dates when possible
+3. Return ONLY the JSON object - no markdown formatting
+4. If text is unclear or missing, use null for that field
+5. Preserve the exact spelling and capitalization of names
+6. Remove spaces from ID numbers (e.g., "1234 5678 9012" becomes "123456789012")
+
+Return the JSON now:"""
 
             # Prepare content for API call
             content = [prompt, front_image]
@@ -133,7 +179,8 @@ class GeminiOCRService:
                     logger.info(f"GeminiOCRService: Processing both front and back images")
 
             # Call Gemini API
-            logger.info(f"GeminiOCRService: Extracting data from {document_type} document")
+            logger.info(f"GeminiOCRService: Extracting data from document" + 
+                       (f" (type: {document_type})" if document_type else " (auto-detecting type)"))
             response = self.model.generate_content(
                 content,
                 generation_config={
@@ -159,10 +206,18 @@ class GeminiOCRService:
             # Parse JSON
             extracted_data = json.loads(response_text)
 
-            # Add document type to extracted data
-            extracted_data['document_type'] = document_type
+            # Add document type to extracted data if not auto-detected
+            if document_type and 'detected_type' not in extracted_data:
+                extracted_data['detected_type'] = document_type.lower()
+                extracted_data['confidence'] = 1.0  # High confidence for specified type
+            elif 'document_type' in extracted_data and 'detected_type' not in extracted_data:
+                # Backward compatibility
+                extracted_data['detected_type'] = extracted_data.get('document_type', '').lower()
+                extracted_data['confidence'] = 1.0
 
             logger.info(f"GeminiOCRService: Successfully extracted {len(extracted_data)} fields")
+            if 'detected_type' in extracted_data:
+                logger.info(f"GeminiOCRService: Detected type: {extracted_data['detected_type']}")
             logger.debug(f"GeminiOCRService: Extracted data: {extracted_data}")
 
             return {
@@ -274,15 +329,16 @@ gemini_ocr_service = GeminiOCRService()
 
 def extract_id_document(
     image_path: str,
-    document_type: str,
+    document_type: str = None,
     back_image_path: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     Simple function to extract ID document data using Gemini.
+    If document_type is None, will auto-detect the type.
 
     Args:
         image_path: Path to front image
-        document_type: Document type (AADHAR, DRIVING_LICENSE, PASSPORT, etc.)
+        document_type: Document type (AADHAR, DRIVING_LICENSE, etc.) - optional
         back_image_path: Optional path to back image
 
     Returns:
@@ -296,6 +352,8 @@ def extract_id_document(
                 'gender': str,
                 'address': str,
                 ...
+                'detected_type': str,  # Auto-detected type
+                'confidence': float,  # Detection confidence
             },
             'api_used': str,
             'processing_method': str
@@ -345,3 +403,125 @@ def extract_text_from_image(image_path: str) -> str:
     except Exception as e:
         logger.error(f"extract_text_from_image: Failed to extract text: {e}")
         raise ValueError(f"Text extraction failed: {str(e)}")
+
+
+def detect_document_type(image_path: str) -> Dict[str, Any]:
+    """
+    Detect document type using AI without requiring manual selection.
+
+    Args:
+        image_path: Path to image of ID document
+
+    Returns:
+        Dictionary with detected document type:
+        {
+            'success': bool,
+            'document_type': str,  # One of: aadhar_id, driving_license, national_id, voter_id, other
+            'confidence': float,  # 0-1 confidence score
+            'error': str (only if success=False)
+        }
+    """
+    if not gemini_ocr_service.model:
+        return {
+            'success': False,
+            'error': 'Gemini client not initialized',
+            'document_type': None,
+            'confidence': 0
+        }
+
+    try:
+        # Load image
+        image = gemini_ocr_service._load_image(image_path)
+        if not image:
+            return {
+                'success': False,
+                'error': f'Failed to load image: {image_path}',
+                'document_type': None,
+                'confidence': 0
+            }
+
+        # Create prompt for document type detection
+        prompt = """You are an expert at identifying Indian government ID documents.
+
+Analyze this image and determine what type of ID document it is.
+
+Respond with ONLY a valid JSON object in this format:
+{
+    "document_type": "one of: aadhar_id, driving_license, national_id, voter_id, other",
+    "confidence": 0.95,
+    "reasoning": "Brief explanation of why you identified it this way"
+}
+
+Valid document types:
+- aadhar_id: Indian Aadhaar Card (has Aadhaar logo, 12-digit number)
+- driving_license: Indian Driving License (has "Driving License" text, state name)
+- national_id: Any other national ID card
+- voter_id: Indian Voter ID Card (EPIC)
+- other: Any other government ID not listed above
+
+Look for:
+- Official logos and emblems
+- Document titles and headings
+- Unique identification number formats
+- Issuing authority information
+
+Return the JSON now:"""
+
+        # Call Gemini
+        response = gemini_ocr_service.model.generate_content(
+            [prompt, image],
+            generation_config={
+                'temperature': 0.1,  # Low temperature for consistent results
+                'max_output_tokens': 500,
+            }
+        )
+
+        # Parse response
+        response_text = response.text.strip()
+        
+        # Clean up response - remove markdown code blocks if present
+        if response_text.startswith('```'):
+            lines = response_text.split('\n')
+            lines = lines[1:]
+            if lines and lines[-1].strip() == '```':
+                lines = lines[:-1]
+            response_text = '\n'.join(lines).strip()
+
+        # Parse JSON
+        result = json.loads(response_text)
+        
+        # Validate document_type
+        valid_types = ['aadhar_id', 'driving_license', 'national_id', 'voter_id', 'other']
+        doc_type = result.get('document_type', 'other')
+        if doc_type not in valid_types:
+            doc_type = 'other'
+        
+        # Validate confidence
+        confidence = float(result.get('confidence', 0))
+        confidence = max(0, min(1, confidence))  # Clamp between 0 and 1
+
+        logger.info(f"GeminiOCRService: Detected document type '{doc_type}' with confidence {confidence}")
+
+        return {
+            'success': True,
+            'document_type': doc_type,
+            'confidence': confidence,
+            'reasoning': result.get('reasoning', '')
+        }
+
+    except json.JSONDecodeError as e:
+        logger.error(f"GeminiOCRService: Failed to parse JSON response: {e}")
+        return {
+            'success': False,
+            'error': 'Invalid response from AI',
+            'document_type': None,
+            'confidence': 0
+        }
+    except Exception as e:
+        logger.error(f"GeminiOCRService: Document type detection failed: {e}", exc_info=True)
+        return {
+            'success': False,
+            'error': str(e),
+            'document_type': None,
+            'confidence': 0
+        }

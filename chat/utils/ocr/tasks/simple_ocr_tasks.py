@@ -7,7 +7,7 @@ import logging
 from typing import Dict, Any, Optional
 from celery import shared_task
 
-from chat.utils.ocr.gemini_ocr import extract_id_document
+from chat.utils.ocr.gemini_ocr import extract_id_document, detect_document_type
 
 logger = logging.getLogger(__name__)
 
@@ -103,3 +103,78 @@ def extract_id_document_sync(
         Extracted data dictionary
     """
     return extract_id_document(image_path, document_type, back_image_path)
+
+
+def detect_and_extract_id_document(
+    image_path: str,
+    back_image_path: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Detect document type and extract data in a single API call.
+
+    Args:
+        image_path: Path to front image
+        back_image_path: Optional back image path
+
+    Returns:
+        Dictionary with:
+        {
+            'success': bool,
+            'detected_type': str,
+            'confidence': float,
+            'data': dict with extracted fields,
+            'error': str (if failed)
+        }
+    """
+    logger.info(f"detect_and_extract_id_document: Processing document from {image_path}")
+    
+    # Single API call that detects and extracts
+    result = extract_id_document(image_path, None, back_image_path)
+    
+    if result.get('success'):
+        data = result.get('data', {})
+        detected_type = data.get('detected_type', 'other')
+        confidence = data.get('confidence', 0)
+        
+        # Map the detected type to the database format
+        type_mapping = {
+            'aadhar': 'aadhar_id',
+            'aadhaar': 'aadhar_id', 
+            'driving_license': 'driving_license',
+            'license': 'driving_license',
+            'national_id': 'national_id',
+            'voter_id': 'voter_id',
+            'voter': 'voter_id',
+            'epic': 'voter_id'
+        }
+        
+        # Get the mapped type or use the detected type directly
+        mapped_type = None
+        for key, value in type_mapping.items():
+            if key in detected_type.lower():
+                mapped_type = value
+                break
+        
+        if not mapped_type:
+            # If no mapping found, check if detected_type is already valid
+            valid_types = ['aadhar_id', 'driving_license', 'national_id', 'voter_id', 'other']
+            mapped_type = detected_type if detected_type in valid_types else 'other'
+        
+        logger.info(f"Auto-detected document type: {mapped_type} with confidence: {confidence}")
+        
+        return {
+            'success': True,
+            'detected_type': mapped_type,
+            'confidence': confidence,
+            'data': data,
+            'error': None
+        }
+    else:
+        logger.error(f"Document detection and extraction failed: {result.get('error')}")
+        return {
+            'success': False,
+            'error': result.get('error', 'Unknown error'),
+            'detected_type': None,
+            'confidence': 0,
+            'data': {}
+        }

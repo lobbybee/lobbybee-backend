@@ -13,16 +13,15 @@ from ..utils.whatsapp_utils import download_whatsapp_media
 import random
 from faker import Faker
 
-from chat.utils.ocr.tasks.simple_ocr_tasks import extract_id_document, extract_id_document_task, extract_id_document_sync
+from chat.utils.ocr.tasks.simple_ocr_tasks import extract_id_document, extract_id_document_task, extract_id_document_sync, detect_and_extract_id_document
 
 
 class CheckinStep:
     """Constants for check-in flow steps."""
     INITIAL = 0
-    ID_TYPE = 1  # ID type selection
-    ID_UPLOAD = 2  # ID upload steps
-    ID_BACK_UPLOAD = 3
-    COMPLETED = 4
+    ID_UPLOAD = 1  # ID upload steps (removed ID_TYPE selection)
+    ID_BACK_UPLOAD = 2
+    COMPLETED = 3
 
 
 # Document types supported - must match GuestIdentityDocument.DOCUMENT_TYPES
@@ -38,27 +37,7 @@ DOCUMENT_TYPES = {
 
 
 
-def validate_id_type(id_type):
-    """Validate ID document type."""
 
-    # Handle WhatsApp interactive button responses (option_0, option_1, etc.)
-    if id_type.startswith('option_'):
-        try:
-            option_index = int(id_type.split('_')[1])
-            doc_type_keys = list(DOCUMENT_TYPES.keys())
-            if 0 <= option_index < len(doc_type_keys):
-                normalized = doc_type_keys[option_index]
-                return True, normalized, ""
-        except (ValueError, IndexError):
-            pass
-
-    # Original validation for text inputs
-    normalized = id_type.strip().lower().replace(' ', '_')
-
-    if normalized not in DOCUMENT_TYPES:
-        return False, None, "Please select a valid ID document type from the list."
-
-    return True, normalized, ""
 
 
 def generate_random_guest_data():
@@ -138,7 +117,6 @@ def process_checkin_flow(guest=None, hotel_id=None, conversation=None, flow_data
     # Step handler pattern
     step_handlers = {
         CheckinStep.INITIAL: handle_initial_step,
-        CheckinStep.ID_TYPE: handle_id_type_step,
         CheckinStep.ID_UPLOAD: handle_id_upload_step,
         CheckinStep.ID_BACK_UPLOAD: handle_id_back_upload_step,
     }
@@ -431,7 +409,7 @@ def save_system_message(conversation, content, flow_step, is_success=True):
 
 # Step handlers
 def handle_initial_step(conversation, guest, message_text, flow_data):
-    """Initial step - start new check-in directly with ID type selection."""
+    """Initial step - start new check-in directly with ID document upload."""
 
     # Check if this is a response to returning guest data confirmation
     if message_text:
@@ -443,88 +421,43 @@ def handle_initial_step(conversation, guest, message_text, flow_data):
             return complete_checkin_flow(conversation, guest)
 
         elif response in ['no', 'incorrect', 'update', '2', 'btn_1']:
-            # Guest wants to update information - proceed to ID upload anyway
-            # We'll use random data if QR is not readable
-            header_text = "Select ID Document Type"
-            body_text = "Let's complete your verification. Please select your government-issued ID document type from the list below."
-            save_system_message(conversation, f"{header_text}\n\n{body_text}", CheckinStep.ID_TYPE)
-            return get_id_type_options_response(header_text, body_text)
+            # Guest wants to update information - proceed to ID upload
+            # We'll auto-detect document type from the uploaded image
+            pass
 
-    # Fresh check-in start - go directly to ID type selection
+    # Fresh check-in start or update - go directly to ID document upload
+    # We'll auto-detect the document type from the uploaded image
     header_text = f"Welcome to {conversation.hotel.name}!"
-    body_text = "Let's get you checked in quickly. Please select your government-issued ID document type to begin the verification process."
-    save_system_message(conversation, f"{header_text}\n\n{body_text}", CheckinStep.ID_TYPE)
+    body_text = """Let's get you checked in quickly! 
 
-    return get_id_type_options_response(header_text, body_text)
+📸 Please upload a clear photo of your government-issued ID document (Aadhaar, Driving License, Voter ID, etc.).
 
+Our system will automatically detect your document type and extract the required information.
 
+For best results:
+• Ensure good lighting
+• Place on a flat surface
+• All text should be clearly visible
+• Avoid glare and shadows
 
+Please upload the front side of your ID document."""
 
-
-def get_id_type_options_response(header_text, body_text=None):
-    """Get standard ID type options response with proper header and body."""
-    doc_type_keys = list(DOCUMENT_TYPES.keys())
-
-    # Default body text if not provided
-    if body_text is None:
-        body_text = "Please select your government-issued ID document type from the list below. This is required for identity verification during the check-in process."
-
-    return {
-        "type": "list",
-        "text": header_text,
-        "body_text": body_text,
-        "options": [
-            {"id": f"option_{index}", "title": DOCUMENT_TYPES[doc_id]}
-            for index, doc_id in enumerate(doc_type_keys)
-        ]
-    }
-
-
-def handle_id_type_step(conversation, guest, message_text, flow_data):
-    """Process ID type selection and ask for document upload."""
-
-    # Use validation helper
-    is_valid, id_type, error_msg = validate_id_type(message_text)
-
-    if not is_valid:
-        save_system_message(conversation, error_msg, CheckinStep.ID_TYPE, is_success=False)
-        header_text = "Select ID Document Type"
-        body_text = f"Invalid selection. {error_msg} Please select a valid ID document type from the list below."
-        return get_id_type_options_response(header_text, body_text)
-
-    # Store ID type in flow data
-    flow_data['selected_id_type'] = id_type
-    flow_data['document_name'] = DOCUMENT_TYPES[id_type]
-
-    # Store ID type in document entry
-    from guest.models import GuestIdentityDocument
-
-    # Create or update document entry
-    doc, created = GuestIdentityDocument.objects.get_or_create(
-        guest=guest,
-        is_primary=True,
-        defaults={
-            'document_type': id_type,
-            'is_verified': False
-        }
-    )
-
-    if not created:
-        doc.document_type = id_type
-        doc.save(update_fields=['document_type'])
-
-    # Get upload instructions based on document type
-    response_text = get_id_upload_instructions(id_type)
-    save_system_message(conversation, response_text, CheckinStep.ID_UPLOAD)
+    save_system_message(conversation, f"{header_text}\n\n{body_text}", CheckinStep.ID_UPLOAD)
 
     return {
         "type": "text",
-        "text": response_text
+        "text": f"{header_text}\n\n{body_text}"
     }
 
 
+
+
+
+
+
+
 def handle_id_upload_step(conversation, guest, message_text, flow_data):
-    """Handle ID document upload - downloads and stores front side."""
+    """Handle ID document upload - downloads, detects type, and stores front side."""
 
     # Check if this is media upload
     media_id = flow_data.get('media_id') if flow_data.get('message_type') != 'text' else None
@@ -557,40 +490,33 @@ def handle_id_upload_step(conversation, guest, message_text, flow_data):
         flow_data['id_front_image'] = media_data['content']
         flow_data['id_front_filename'] = media_data['filename']
 
-        # Save the image to the guest's document entry
+        # Save the image to document entry first (with unknown type for now)
         from guest.models import GuestIdentityDocument
         from django.core.files.base import ContentFile
 
-        doc = GuestIdentityDocument.objects.get(guest=guest, is_primary=True)
+        # Create or update document entry (will update type after extraction)
+        doc, created = GuestIdentityDocument.objects.get_or_create(
+            guest=guest,
+            is_primary=True,
+            defaults={
+                'document_type': 'other',  # Temporary, will be updated
+                'is_verified': False
+            }
+        )
+
+        # Save the image file to the document
         doc.document_file.save(media_data['filename'], ContentFile(media_data['content']), save=True)
         doc.save()
         logger.info(f"Successfully saved document file for guest {guest.id}")
 
-        # Get selected_id_type from GuestIdentityDocument instead of flow_data
-        try:
-            from guest.models import GuestIdentityDocument
-            doc = GuestIdentityDocument.objects.get(guest=guest, is_primary=True)
-            selected_id_type = doc.document_type
-        except GuestIdentityDocument.DoesNotExist:
-            selected_id_type = 'aadhar_id'  # Default fallback
-            logger.warning(f"No document found for guest {guest.id}, using default ID type")
-
-        # Ask for back upload
-        response_text = get_id_back_upload_instructions(selected_id_type)
+        # Ask for back upload (use generic instruction for now, will be more specific after detection)
+        response_text = "📸 Now please upload the back side of your ID document.\n\nIf your document doesn't have a back side or if you've already uploaded all necessary information, you can type 'continue' to proceed."
         save_system_message(conversation, response_text, CheckinStep.ID_BACK_UPLOAD)
         return {
             "type": "text",
             "text": response_text
         }
 
-    except GuestIdentityDocument.DoesNotExist as e:
-        logger.error(f"GuestIdentityDocument not found for guest {guest.id}: {e}")
-        response_text = "Document record not found. Please restart the check-in process."
-        save_system_message(conversation, response_text, CheckinStep.ID_UPLOAD, is_success=False)
-        return {
-            "type": "text",
-            "text": response_text
-        }
     except Exception as e:
         logger.error(f"Error processing ID upload: {e}", exc_info=True)
         response_text = "Error processing your ID image. Please try uploading again."
@@ -657,7 +583,7 @@ def handle_id_back_upload_step(conversation, guest, message_text, flow_data):
 
 
 def process_id_verification(conversation, guest, flow_data):
-    """Process ID verification using simple OCR task."""
+    """Process ID verification using simple OCR task with auto-detection."""
     logger.info(f"Processing ID verification for guest {guest.id}")
 
     # Get document from GuestIdentityDocument
@@ -678,16 +604,19 @@ def process_id_verification(conversation, guest, flow_data):
         return _generate_fallback_data_and_complete(conversation, guest, selected_id_type)
 
     try:
-        # Use simple OCR task to extract data
-        logger.info(f"Extracting data from {selected_id_type} document")
+        # Use detect and extract function - it will re-detect type and extract data
+        logger.info(f"Extracting data from document (auto-detecting type)")
 
-        result = extract_id_document_sync(
+        result = detect_and_extract_id_document(
             image_path=front_image_path,
-            document_type=selected_id_type.upper(),
             back_image_path=back_image_path
         )
-
         
+        # Update document type with the detected type
+        detected_type = result.get('detected_type', 'other')
+        doc.document_type = detected_type
+        doc.save()
+        logger.info(f"Updated document type to: {detected_type}")
 
         if result.get('success') and result.get('data'):
             extracted_data = result['data']
