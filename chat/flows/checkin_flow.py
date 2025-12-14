@@ -416,11 +416,11 @@ def handle_initial_step(conversation, guest, message_text, flow_data):
         response = message_text.strip().lower()
 
         # Check if guest is confirming existing data
-        if response in ['yes', 'correct', 'confirm', '1', 'btn_0']:
+        if response in ['yes', 'correct', 'confirm', '1', 'btn_0', 'confirm_data']:
             # Guest confirmed existing data - complete the checkin flow
             return complete_checkin_flow(conversation, guest)
 
-        elif response in ['no', 'incorrect', 'update', '2', 'btn_1']:
+        elif response in ['no', 'incorrect', 'update', '2', 'btn_1', 'update_data']:
             # Guest wants to update information - proceed to ID upload
             # We'll auto-detect document type from the uploaded image
             pass
@@ -702,6 +702,20 @@ def complete_checkin_flow(conversation, guest):
     """Complete the check-in flow by creating booking and stay records."""
     try:
         booking, stay = create_pending_stay_from_flow(conversation, guest)
+
+        # Send notification to hotel staff about new check-in request
+        from notifications.utils import send_notification_to_hotel_staff
+        
+        notification_title = "New Check-in Request"
+        notification_message = f"{guest.full_name or 'Guest'} is trying to check-in"
+        
+        send_notification_to_hotel_staff(
+            hotel=conversation.hotel,
+            title=notification_title,
+            message=notification_message,
+            link="/checkin",
+            link_label="View Check-in"
+        )
 
         # Update conversation
         conversation.conversation_type = 'booking_created'
