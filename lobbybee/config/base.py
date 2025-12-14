@@ -61,7 +61,8 @@ INSTALLED_APPS = [
     'payments',
     'chat',
     'admin_stat',
-    'flag_system'
+    'flag_system',
+    'notifications'
     # 'message_manager',
 ]
 

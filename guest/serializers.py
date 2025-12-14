@@ -115,13 +115,14 @@ class StayListSerializer(serializers.ModelSerializer):
     guest = GuestResponseSerializer(read_only=True)
     room_details = serializers.SerializerMethodField()
     booking_details = serializers.SerializerMethodField()
-    
+    billing = serializers.SerializerMethodField()
+
     class Meta:
         model = Stay
         fields = [
             "id", "guest", "status", "check_in_date", "check_out_date",
             "room", "room_details", "register_number", "identity_verified", "booking_details",
-            "internal_rating", "internal_note", "hours_24"
+            "internal_rating", "internal_note", "hours_24", "billing"
         ]
     
     def get_room_details(self, obj):
@@ -143,6 +144,10 @@ class StayListSerializer(serializers.ModelSerializer):
                 "booking_date": obj.booking.booking_date
             }
         return None
+
+    def get_billing(self, obj):
+        from .services import calculate_stay_billing
+        return calculate_stay_billing(obj)
 
 # Legacy serializers for compatibility with other parts of the codebase
 class GuestSerializer(serializers.ModelSerializer):
