@@ -69,17 +69,15 @@ class NotificationViewSet(viewsets.ModelViewSet):
     def mark_read(self, request, pk=None):
         """
         Custom action to mark a notification as read.
-        For group notifications, create a read status per user if needed in future.
+        For group notifications, marks as read for all users.
         """
         notification = self.get_object()
-        
-        # For individual notifications, mark as read
-        if notification.user:
+
+        # Mark both individual and group notifications as read
+        if not notification.is_read:
             notification.is_read = True
-            notification.save()
-        # For group notifications, you might want to implement per-user read status
-        # For now, we'll just return success
-        
+            notification.save(update_fields=['is_read'])
+
         serializer = self.get_serializer(notification)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
@@ -87,11 +85,12 @@ class NotificationViewSet(viewsets.ModelViewSet):
     def mark_all_read(self, request):
         """
         Custom action to mark all notifications for the current user as read.
-        Only marks individual notifications as read.
+        Marks both individual and group notifications as read.
         """
-        notifications = self.get_queryset().filter(is_read=False, user__isnull=False)
+        # Get all unread notifications for the user (including group notifications)
+        notifications = self.get_queryset().filter(is_read=False)
         notifications.update(is_read=True)
-        
+
         return Response(
             {'message': 'All notifications marked as read'},
             status=status.HTTP_200_OK

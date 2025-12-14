@@ -416,6 +416,40 @@ class ChatConsumer(AsyncWebsocketConsumer):
             'data': notification.get('data', notification)
         }))
 
+    async def new_checkin_notification(self, event):
+        """Handle new check-in notifications"""
+        notification = event['notification']
+
+        # Only send to staff members of the same hotel
+        # The notification includes hotel_id to verify
+        notification_data = notification['data']
+
+        # Check if user's hotel matches the notification's hotel
+        # Use database_sync_to_async to safely access the hotel field
+        @database_sync_to_async
+        def get_user_hotel_id():
+            if hasattr(self.user, 'hotel') and self.user.hotel:
+                return str(self.user.hotel.id)
+            return None
+
+        user_hotel_id = await get_user_hotel_id()
+
+        if user_hotel_id:
+            notification_hotel_id = notification_data.get('hotel_id')
+            if notification_hotel_id == user_hotel_id:
+                # User is from the same hotel, send the notification
+                await self.send(text_data=json.dumps({
+                    'type': 'new_checkin',
+                    'data': notification_data
+                }))
+                logger.info(f"Sent new check-in notification to user {self.user.username} for hotel {user_hotel_id}")
+            else:
+                # User is from a different hotel, don't send
+                logger.info(f"Filtered out new check-in notification for hotel {notification_hotel_id} from user {self.user.username} at hotel {user_hotel_id}")
+        else:
+            # User doesn't have a hotel assigned, don't send
+            logger.warning(f"User {self.user.username} has no hotel assigned, filtering out new check-in notification")
+
     async def send_error(self, error_message):
         """Send error message to client"""
         await self.send(text_data=json.dumps({

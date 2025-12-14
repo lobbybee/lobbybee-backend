@@ -705,16 +705,25 @@ def complete_checkin_flow(conversation, guest):
 
         # Send notification to hotel staff about new check-in request
         from notifications.utils import send_notification_to_hotel_staff
-        
+
         notification_title = "New Check-in Request"
         notification_message = f"{guest.full_name or 'Guest'} is trying to check-in"
-        
+
         send_notification_to_hotel_staff(
             hotel=conversation.hotel,
             title=notification_title,
             message=notification_message,
             link="/checkin",
             link_label="View Check-in"
+        )
+
+        # Also send real-time WebSocket notification to reception and management
+        from ..utils.notification_utils import send_new_checkin_notification
+        send_new_checkin_notification(
+            conversation=conversation,
+            booking=booking,
+            stay=stay,
+            guest=guest
         )
 
         # Update conversation
