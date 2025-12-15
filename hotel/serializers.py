@@ -26,11 +26,12 @@ class HotelSerializer(serializers.ModelSerializer):
     class Meta:
         model = Hotel
         fields = [
-            'id', 'name', 'description', 'address', 'city', 'state', 'country', 
-            'pincode', 'phone', 'email', 'google_review_link', 'latitude', 
-            'longitude', 'qr_code_url', 'unique_qr_code', 
-            'check_in_time', 'time_zone', 'status', 'is_verified', 'is_active', 
-            'is_demo', 'verification_notes', 'registration_date', 'verified_at', 
+            'id', 'name', 'description', 'address', 'city', 'state', 'country',
+            'pincode', 'phone', 'email', 'google_review_link', 'latitude',
+            'longitude', 'qr_code_url', 'unique_qr_code',
+            'check_in_time', 'time_zone', 'breakfast_reminder', 'dinner_reminder',
+            'status', 'is_verified', 'is_active',
+            'is_demo', 'verification_notes', 'registration_date', 'verified_at',
             'updated_at', 'admin', 'documents'
         ]
         read_only_fields = ('status', 'is_verified', 'verified_at')
@@ -55,9 +56,10 @@ class AdminHotelUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Hotel
         fields = [
-            'name', 'description', 'address', 'city', 'state', 'country', 
-            'pincode', 'phone', 'email', 'google_review_link', 'latitude', 
-            'longitude', 'qr_code_url', 'check_in_time', 'time_zone'
+            'name', 'description', 'address', 'city', 'state', 'country',
+            'pincode', 'phone', 'email', 'google_review_link', 'latitude',
+            'longitude', 'qr_code_url', 'check_in_time', 'time_zone',
+            'breakfast_reminder', 'dinner_reminder'
         ]
 
 

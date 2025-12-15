@@ -129,6 +129,10 @@ class Stay(models.Model):
     # 24 hours stay indicator
     hours_24 = models.BooleanField(default=False, help_text="Indicates if this is a 24-hour stay")
 
+    # Reminder settings
+    breakfast_reminder = models.BooleanField(default=False, help_text="Enable breakfast reminder for this stay")
+    dinner_reminder = models.BooleanField(default=False, help_text="Enable dinner reminder for this stay")
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

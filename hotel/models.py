@@ -39,6 +39,8 @@ class Hotel(models.Model):
     # Settings
     check_in_time = models.TimeField(default='14:00')
     time_zone = models.CharField(max_length=50, default='UTC')
+    breakfast_reminder = models.BooleanField(default=False, help_text="Enable breakfast reminders for guests")
+    dinner_reminder = models.BooleanField(default=False, help_text="Enable dinner reminders for guests")
 
     status = models.CharField(max_length=20, choices=HOTEL_STATUS, default='pending')
     is_verified = models.BooleanField(default=False)

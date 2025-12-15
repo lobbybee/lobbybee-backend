@@ -337,6 +337,12 @@ class StayManagementViewSet(viewsets.GenericViewSet):
                     if verified_count > 0:
                         logger.info(f"Verified {verified_count} primary documents for guest {stay.guest.full_name}")
 
+                # Update reminder settings from request
+                if 'breakfast_reminder' in serializer.validated_data:
+                    stay.breakfast_reminder = serializer.validated_data['breakfast_reminder']
+                if 'dinner_reminder' in serializer.validated_data:
+                    stay.dinner_reminder = serializer.validated_data['dinner_reminder']
+
                 # Mark identity as verified (assuming manual verification by staff)
                 stay.identity_verified = True
                 stay.status = 'active'
@@ -396,9 +402,16 @@ class StayManagementViewSet(viewsets.GenericViewSet):
 
                 # Schedule check-in reminder message using Celery
                 if stay.guest.whatsapp_number:
-                    from .tasks import schedule_checkin_reminder
+                    from .tasks import schedule_checkin_reminder, schedule_meal_reminders
                     # Schedule the reminder task asynchronously
                     schedule_checkin_reminder.delay(stay.id)
+
+                    # Schedule meal reminders if both hotel setting is true AND request has it true
+                    breakfast_enabled = stay.hotel.breakfast_reminder and stay.breakfast_reminder
+                    dinner_enabled = stay.hotel.dinner_reminder and stay.dinner_reminder
+
+                    if breakfast_enabled or dinner_enabled:
+                        schedule_meal_reminders.delay(stay.id)
 
                 # Check for guest flags before completing check-in
                 from flag_system.serializers import GuestFlagSummarySerializer, GuestFlagResponseSerializer
