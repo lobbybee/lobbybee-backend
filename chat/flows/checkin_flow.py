@@ -183,6 +183,11 @@ def handle_fresh_checkin_command(guest, hotel_id, flow_data):
     else:
         created = False
 
+    # IMPORTANT: Always clean up old incomplete data before starting new checkin
+    # This prevents duplicate pending bookings for both new and returning guests
+    cleanup_incomplete_guest_data(guest)
+    cleanup_incomplete_guest_data_preserve_personal_info(guest)
+
     # Check if guest has completed stays before (returning guest)
     from guest.models import Stay
     has_completed_stays = Stay.objects.filter(
@@ -191,20 +196,9 @@ def handle_fresh_checkin_command(guest, hotel_id, flow_data):
     ).exists()
 
     # If guest has completed stays, show confirmation of existing data
-    # If new guest or no completed stays, clean up old incomplete data
     if has_completed_stays:
         # Returning guest - show data confirmation flow
         return handle_returning_guest_checkin(guest, hotel_id, flow_data)
-    else:
-        # New guest or only failed/incomplete checkins - clean up old data
-        cleanup_incomplete_guest_data(guest)
-
-        # Delete any existing pending stays for this guest
-        from guest.models import Stay
-        Stay.objects.filter(
-            guest=guest,
-            status='pending'
-        ).delete()
 
     # Archive any existing active checkin conversations
     Conversation.objects.filter(
@@ -213,10 +207,6 @@ def handle_fresh_checkin_command(guest, hotel_id, flow_data):
         conversation_type='checkin',
         status='active'
     ).update(status='archived')
-
-    # Clean up previous incomplete attempts for returning guests
-    # This prevents duplicate pending stays/bookings but preserves guest personal data
-    cleanup_incomplete_guest_data_preserve_personal_info(guest)
 
     # Create new checkin conversation
     with transaction.atomic():
@@ -245,6 +235,10 @@ def handle_returning_guest_checkin(guest, hotel_id, flow_data):
             "type": "text",
             "text": "Invalid hotel code. Please try again."
         }
+
+    # IMPORTANT: Clean up any previous incomplete checkin attempts for returning guests
+    # This ensures no duplicate pending bookings from previous attempts
+    cleanup_incomplete_guest_data_preserve_personal_info(guest)
 
     # Archive any existing active checkin conversations
     Conversation.objects.filter(
