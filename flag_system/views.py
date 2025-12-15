@@ -1,8 +1,11 @@
 from rest_framework import viewsets, status
-from rest_framework.decorators import action
+from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated
 from django.shortcuts import get_object_or_404
+from django.db.models import Q
 from .models import GuestFlag
+from guest.models import Guest
 from .serializers import (
     GuestFlagSerializer,
     GuestFlagResponseSerializer,
@@ -163,3 +166,80 @@ class GuestFlagViewSet(viewsets.ModelViewSet):
         
         serializer = GuestFlagSummarySerializer(flag_summary)
         return Response(serializer.data)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def search_guests(request):
+    """
+    Search guests by name, ID, or phone number with fuzzy matching.
+    Available for platform admins and hotel staff.
+    """
+    query = request.query_params.get('q', '').strip()
+
+    if not query:
+        return Response(
+            {'detail': 'Search query parameter "q" is required'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    # Check if user has permission (platform admin/staff or hotel staff)
+    if not (request.user.user_type in ['platform_admin', 'platform_staff'] or
+            (request.user.user_type in ['hotel_admin', 'manager', 'receptionist'] and request.user.hotel)):
+        return Response(
+            {'detail': 'Permission denied'},
+            status=status.HTTP_403_FORBIDDEN
+        )
+
+    # Limit results to prevent overwhelming responses
+    limit = min(int(request.query_params.get('limit', 20)), 50)
+
+    # Build fuzzy search query
+    guests = Guest.objects.filter(
+        Q(full_name__icontains=query) |
+        Q(whatsapp_number__icontains=query) |
+        Q(email__icontains=query) |
+        Q(register_number__icontains=query)
+    ).distinct()[:limit]
+
+    # Prepare response data
+    results = []
+    for guest in guests:
+        # Get guest's recent stays (last 5)
+        recent_stays = guest.stays.all().order_by('-created_at')[:5]
+        stays_info = []
+
+        for stay in recent_stays:
+            stays_info.append({
+                'id': stay.id,
+                'hotel_name': stay.hotel.name,
+                'check_in_date': stay.check_in_date,
+                'check_out_date': stay.check_out_date,
+                'status': stay.status,
+                'internal_rating': stay.internal_rating
+            })
+
+        # Check if guest has any active flags
+        active_flags_count = guest.flags.filter(is_active=True).count()
+
+        results.append({
+            'id': guest.id,
+            'full_name': guest.full_name,
+            'whatsapp_number': guest.whatsapp_number,
+            'email': guest.email,
+            'register_number': guest.register_number,
+            'date_of_birth': guest.date_of_birth,
+            'nationality': guest.nationality,
+            'status': guest.status,
+            'loyalty_points': guest.loyalty_points,
+            'first_contact_date': guest.first_contact_date,
+            'last_activity': guest.last_activity,
+            'recent_stays': stays_info,
+            'active_flags_count': active_flags_count
+        })
+
+    return Response({
+        'query': query,
+        'count': len(results),
+        'results': results
+    })

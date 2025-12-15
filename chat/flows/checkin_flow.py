@@ -183,17 +183,16 @@ def handle_fresh_checkin_command(guest, hotel_id, flow_data):
     else:
         created = False
 
-    # IMPORTANT: Always clean up old incomplete data before starting new checkin
-    # This prevents duplicate pending bookings for both new and returning guests
-    cleanup_incomplete_guest_data(guest)
-    cleanup_incomplete_guest_data_preserve_personal_info(guest)
-
     # Check if guest has completed stays before (returning guest)
     from guest.models import Stay
     has_completed_stays = Stay.objects.filter(
         guest=guest,
         status='completed'  # Successfully checked out
     ).exists()
+
+    # Always preserve guest personal information - just clean incomplete bookings/stays
+    # Guests can update their info if needed through the confirmation flow
+    cleanup_incomplete_guest_data_preserve_personal_info(guest)
 
     # If guest has completed stays, show confirmation of existing data
     if has_completed_stays:
@@ -236,10 +235,6 @@ def handle_returning_guest_checkin(guest, hotel_id, flow_data):
             "text": "Invalid hotel code. Please try again."
         }
 
-    # IMPORTANT: Clean up any previous incomplete checkin attempts for returning guests
-    # This ensures no duplicate pending bookings from previous attempts
-    cleanup_incomplete_guest_data_preserve_personal_info(guest)
-
     # Archive any existing active checkin conversations
     Conversation.objects.filter(
         guest=guest,
@@ -263,35 +258,18 @@ def handle_returning_guest_checkin(guest, hotel_id, flow_data):
 
 
 def cleanup_incomplete_guest_data(guest):
-    """Clean up incomplete guest data from failed check-ins."""
-    from guest.models import GuestIdentityDocument, Booking, Stay
+    """
+    DEPRECATED: This function wipes guest personal data and should NOT be used.
 
-    # Delete incomplete stays (pending status - these are from WhatsApp flows without room assignment)
-    Stay.objects.filter(
-        guest=guest,
-        status='pending'
-    ).delete()
+    Preserving guest data provides better UX since guests can always update
+    their information through the confirmation flow if needed.
 
-    # Delete incomplete bookings (pending or cancelled status)
-    # Note: pending_verification is a guest status, not a booking status
-    Booking.objects.filter(
-        primary_guest=guest,
-        status__in=['pending']
-    ).delete()
-
-    # Delete unverified identity documents
-    GuestIdentityDocument.objects.filter(
-        guest=guest,
-        is_verified=False
-    ).delete()
-
-    # Reset guest to basic state
-    guest.status = 'pending_checkin'
-    guest.full_name = ''
-    guest.email = ''
-    guest.date_of_birth = None
-    guest.nationality = ''
-    guest.save(update_fields=['status', 'full_name', 'email', 'date_of_birth', 'nationality'])
+    Use cleanup_incomplete_guest_data_preserve_personal_info() instead.
+    """
+    # This function is deprecated and should not be called
+    # Keeping it for backward compatibility but it does nothing
+    logger.warning("cleanup_incomplete_guest_data() is deprecated. Use cleanup_incomplete_guest_data_preserve_personal_info() instead.")
+    pass
 
 
 def cleanup_incomplete_guest_data_preserve_personal_info(guest):

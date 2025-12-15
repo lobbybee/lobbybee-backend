@@ -47,19 +47,19 @@ class PlatformUserViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         user_type = serializer.validated_data.get('user_type')
         request_user = self.request.user
-        
+
         # Debug logging
         print(f"DEBUG: Request user: {request_user.username}")
         print(f"DEBUG: Request user is_superuser: {request_user.is_superuser}")
         print(f"DEBUG: Request user user_type: {request_user.user_type}")
         print(f"DEBUG: Creating user_type: {user_type}")
-        
+
         # Superusers can create both platform_admin and platform_staff
         if request_user.is_superuser and user_type in ['platform_admin', 'platform_staff']:
-            serializer.save(is_staff=True, created_by=request_user)
+            serializer.save(is_staff=True, is_verified=True, created_by=request_user)
         # Platform admins can only create platform_staff
         elif request_user.user_type == 'platform_admin' and user_type == 'platform_staff':
-            serializer.save(is_staff=True, created_by=request_user)
+            serializer.save(is_staff=True, is_verified=True, created_by=request_user)
         else:
             raise serializers.ValidationError("You do not have permission to create this type of user.")
 

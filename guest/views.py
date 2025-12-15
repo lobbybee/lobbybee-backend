@@ -687,17 +687,9 @@ Please take a moment to rate your overall experience from 1 to 5 stars. We truly
                 
                 # Check if guest has completed stays before (returning guest)
                 from guest.models import Stay as GuestStay
-                has_completed_stays = GuestStay.objects.filter(
-                    guest=guest,
-                    status='completed'
-                ).exists()
-                
-                if has_completed_stays:
-                    # Returning guest - preserve personal info but clean up pending attempts
-                    cleanup_incomplete_guest_data_preserve_personal_info(guest)
-                else:
-                    # New guest - clean up everything
-                    cleanup_incomplete_guest_data(guest)
+                # Always preserve guest personal information - just clean incomplete bookings/stays
+                # Guests can update their info if needed
+                cleanup_incomplete_guest_data_preserve_personal_info(guest)
                 
                 # Close all active conversations for this guest
                 from chat.models import Conversation
