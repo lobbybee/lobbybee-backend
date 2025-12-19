@@ -95,6 +95,23 @@ class CheckoutSerializer(serializers.Serializer):
             )
         return attrs
 
+class ExtendStaySerializer(serializers.Serializer):
+    check_out_date = serializers.DateTimeField(
+        required=True,
+        help_text="New checkout date and time for extending the stay"
+    )
+    
+    def validate_check_out_date(self, value):
+        """
+        Validate that the new checkout date is in the future
+        """
+        from django.utils import timezone
+        if value <= timezone.now():
+            raise serializers.ValidationError(
+                "New checkout date must be in the future"
+            )
+        return value
+
 # Response serializers
 class GuestResponseSerializer(serializers.ModelSerializer):
     documents = serializers.SerializerMethodField()

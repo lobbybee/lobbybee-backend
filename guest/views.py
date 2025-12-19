@@ -10,7 +10,7 @@ import threading
 from .models import Guest, GuestIdentityDocument, Stay, Booking
 from .serializers import (
     CreateGuestSerializer, CheckinOfflineSerializer, VerifyCheckinSerializer,
-    StayListSerializer, BookingListSerializer, GuestResponseSerializer
+    StayListSerializer, BookingListSerializer, GuestResponseSerializer, ExtendStaySerializer
 )
 from hotel.models import Hotel, Room
 from hotel.permissions import IsHotelStaff, IsSameHotelUser
@@ -674,6 +674,60 @@ Please take a moment to rate your overall experience from 1 to 5 stars. We truly
             logger.error(f"Error checking out guest: {str(e)}")
             return Response(
                 {'error': f'Failed to check out guest: {str(e)}'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+    @action(detail=True, methods=['post'], url_path='extend-stay')
+    def extend_stay(self, request, pk=None):
+        """
+        Extend an active guest's stay by updating the checkout date.
+        Only works for stays with 'active' status.
+        """
+        stay = self.get_object()
+
+        if stay.status != 'active':
+            return Response(
+                {'error': f'Can only extend active stays. Current status: {stay.status}'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        serializer = ExtendStaySerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        try:
+            with transaction.atomic():
+                new_checkout_date = serializer.validated_data['check_out_date']
+                
+                # Validate that new checkout date is after current checkout date
+                if new_checkout_date <= stay.check_out_date:
+                    return Response(
+                        {'error': 'New checkout date must be after the current checkout date'},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+
+                # Update stay checkout date
+                old_checkout_date = stay.check_out_date
+                stay.check_out_date = new_checkout_date
+                stay.save()
+
+                # Also update booking checkout date if booking exists
+                if stay.booking:
+                    stay.booking.check_out_date = new_checkout_date
+                    stay.booking.save()
+
+                logger.info(f"Extended stay for guest {stay.guest.full_name} from {old_checkout_date} to {new_checkout_date}")
+
+                return Response({
+                    'stay_id': stay.id,
+                    'old_checkout_date': old_checkout_date,
+                    'new_checkout_date': new_checkout_date,
+                    'message': 'Stay extended successfully'
+                }, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            logger.error(f"Error extending stay: {str(e)}")
+            return Response(
+                {'error': f'Failed to extend stay: {str(e)}'},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
