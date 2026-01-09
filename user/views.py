@@ -219,7 +219,36 @@ class HotelStaffRegistrationView(generics.CreateAPIView):
     serializer_class = UserSerializer
 
     def create(self, request, *args, **kwargs):
-        # Set the hotel and created_by fields
+        data = request.data
+        
+        # Check if incoming data is a list for bulk creation
+        if isinstance(data, list):
+            serializer = self.get_serializer(data=data, many=True)
+            serializer.is_valid(raise_exception=True)
+            
+            # Create all staff members with hotel, created_by, and is_verified=True
+            created_staff = []
+            for item in serializer.validated_data:
+                user = serializer.Meta.model.objects.create_user(
+                    username=item['username'],
+                    email=item['email'],
+                    password=item['password'],
+                    user_type=item['user_type'],
+                    phone_number=item.get('phone_number', ''),
+                    department=item.get('department'),
+                    hotel=request.user.hotel,
+                    created_by=request.user,
+                    is_verified=True,
+                    is_active_hotel_user=True
+                )
+                created_staff.append(user)
+            
+            return Response(
+                {'message': f'{len(created_staff)} staff users created successfully'},
+                status=status.HTTP_201_CREATED
+            )
+        
+        # Single staff creation (old format)
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
@@ -404,10 +433,51 @@ class UserViewSet(viewsets.ModelViewSet):
             is_verified=True
         )
 
+    def create(self, request, *args, **kwargs):
+        data = request.data
+        
+        # Check if incoming data is a list for bulk creation
+        if isinstance(data, list):
+            serializer = self.get_serializer(data=data, many=True)
+            serializer.is_valid(raise_exception=True)
+            
+            # Create all users with hotel, created_by, and is_verified=True
+            created_users = []
+            for item in serializer.validated_data:
+                user = User.objects.create_user(
+                    username=item['username'],
+                    email=item['email'],
+                    password=item['password'],
+                    user_type=item['user_type'],
+                    phone_number=item.get('phone_number', ''),
+                    department=item.get('department'),
+                    hotel=request.user.hotel,
+                    created_by=request.user,
+                    is_verified=True,
+                    is_active_hotel_user=item.get('is_active_hotel_user', True)
+                )
+                created_users.append(user)
+            
+            # Serialize the created users for the response
+            response_serializer = self.get_serializer(created_users, many=True)
+            headers = self.get_success_headers(response_serializer.data)
+            return Response(response_serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+        
+        # Default behavior for single user creation
+        return super().create(request, *args, **kwargs)
+
     def get_permissions(self):
         if self.action == 'create':
             # Check if the request is to create a 'receptionist'
-            if self.request.data.get('user_type') == 'receptionist':
+            # Handle both single object and list (bulk creation)
+            data = self.request.data
+            if isinstance(data, list):
+                # Check if any item in the bulk creation is a receptionist
+                is_receptionist_creation = any(item.get('user_type') == 'receptionist' for item in data)
+            else:
+                is_receptionist_creation = data.get('user_type') == 'receptionist'
+            
+            if is_receptionist_creation:
                 permission_classes = [IsAuthenticated, CanCreateReceptionist]
             else:
                 # For creating other user types, only hotel_admin is allowed

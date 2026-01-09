@@ -27,8 +27,16 @@ class CanManagePlatform(BasePermission):
 class CanCreateReceptionist(BasePermission):
     def has_permission(self, request, view):
         if request.method == 'POST':
-            if request.user.is_authenticated and request.data.get('user_type') == 'receptionist':
-                return request.user.user_type in ['hotel_admin', 'manager']
+            if request.user.is_authenticated:
+                data = request.data
+                if isinstance(data, list):
+                    # Check if any item in the bulk creation is a receptionist
+                    is_receptionist_creation = any(item.get('user_type') == 'receptionist' for item in data)
+                else:
+                    is_receptionist_creation = data.get('user_type') == 'receptionist'
+                
+                if is_receptionist_creation:
+                    return request.user.user_type in ['hotel_admin', 'manager']
         return True # Allow other methods or if not creating a receptionist
 
 class CanCheckInCheckOut(BasePermission):

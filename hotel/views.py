@@ -300,6 +300,26 @@ class RoomCategoryViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         serializer.save(hotel=self.request.user.hotel)
 
+    def create(self, request, *args, **kwargs):
+        data = request.data
+        
+        # Check if incoming data is a list for bulk creation
+        if isinstance(data, list):
+            serializer = self.get_serializer(data=data, many=True)
+            serializer.is_valid(raise_exception=True)
+            self.perform_bulk_create(serializer)
+            headers = self.get_success_headers(serializer.data)
+            return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+        
+        # Default behavior for single category creation
+        return super().create(request, *args, **kwargs)
+
+    def perform_bulk_create(self, serializer):
+        # Save multiple categories, assigning the hotel to each
+        for item in serializer.validated_data:
+            item['hotel'] = self.request.user.hotel
+        serializer.save()
+
 
 class RoomViewSet(viewsets.ModelViewSet):
     serializer_class = RoomSerializer
@@ -321,28 +341,75 @@ class RoomViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         serializer.save(hotel=self.request.user.hotel)
 
+    def create(self, request, *args, **kwargs):
+        data = request.data
+        
+        # Check if incoming data is a list for bulk creation
+        if isinstance(data, list):
+            serializer = self.get_serializer(data=data, many=True)
+            serializer.is_valid(raise_exception=True)
+            self.perform_bulk_create(serializer)
+            headers = self.get_success_headers(serializer.data)
+            return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+        
+        # Default behavior for single room creation
+        return super().create(request, *args, **kwargs)
+
+    def perform_bulk_create(self, serializer):
+        # Save multiple rooms, assigning the hotel to each
+        for item in serializer.validated_data:
+            item['hotel'] = self.request.user.hotel
+        serializer.save()
+
     @action(detail=False, methods=['post'], url_path='bulk-create')
     def bulk_create(self, request):
         """
         Bulk create rooms for a hotel.
+        Supports both single range and multiple ranges (as array).
         """
-        serializer = BulkCreateRoomSerializer(
-            data=request.data,
-            context={'request': request}
-        )
-        serializer.is_valid(raise_exception=True)
-        data = serializer.validated_data
-
         try:
-            created_rooms = Room.objects.bulk_create_rooms(
-                hotel=request.user.hotel,
-                category=data['category'],
-                floor=data['floor'],
-                start_number_str=data['start_number'],
-                end_number_str=data['end_number']
-            )
+            data = request.data
+            all_created_rooms = []
+            
+            # Check if incoming data is a list for multiple ranges
+            if isinstance(data, list):
+                # Process each range
+                for range_data in data:
+                    serializer = BulkCreateRoomSerializer(
+                        data=range_data,
+                        context={'request': request}
+                    )
+                    serializer.is_valid(raise_exception=True)
+                    validated_data = serializer.validated_data
+                    
+                    created_rooms = Room.objects.bulk_create_rooms(
+                        hotel=request.user.hotel,
+                        category=validated_data['category'],
+                        floor=validated_data['floor'],
+                        start_number_str=validated_data['start_number'],
+                        end_number_str=validated_data['end_number']
+                    )
+                    all_created_rooms.extend(created_rooms)
+            else:
+                # Single range (old format)
+                serializer = BulkCreateRoomSerializer(
+                    data=data,
+                    context={'request': request}
+                )
+                serializer.is_valid(raise_exception=True)
+                validated_data = serializer.validated_data
+                
+                created_rooms = Room.objects.bulk_create_rooms(
+                    hotel=request.user.hotel,
+                    category=validated_data['category'],
+                    floor=validated_data['floor'],
+                    start_number_str=validated_data['start_number'],
+                    end_number_str=validated_data['end_number']
+                )
+                all_created_rooms.extend(created_rooms)
+            
             return Response(
-                {"detail": f"{len(created_rooms)} rooms created successfully."},
+                {"detail": f"{len(all_created_rooms)} rooms created successfully."},
                 status=status.HTTP_201_CREATED
             )
         except ValidationError as e:
