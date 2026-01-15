@@ -3,6 +3,7 @@ from .models import Guest, GuestIdentityDocument, Stay, Booking
 from django.db import transaction
 from hotel.models import Room
 import logging
+import json
 
 logger = logging.getLogger(__name__)
 
@@ -28,14 +29,42 @@ class DocumentUploadSerializer(serializers.Serializer):
     is_primary = serializers.BooleanField(default=False)
 
 class CreateGuestSerializer(serializers.Serializer):
-    primary_guest = serializers.DictField()
-    accompanying_guests = AccompanyingGuestSerializer(many=True, required=False)
+    primary_guest = serializers.CharField()
+    accompanying_guests = serializers.CharField(required=False)
+    
+    def to_internal_value(self, data):
+        # Parse JSON strings from form-data
+        if isinstance(data.get('primary_guest'), str):
+            try:
+                data['primary_guest'] = json.loads(data['primary_guest'])
+            except json.JSONDecodeError:
+                raise serializers.ValidationError({"primary_guest": "Invalid JSON format"})
+        
+        if isinstance(data.get('accompanying_guests'), str):
+            try:
+                data['accompanying_guests'] = json.loads(data['accompanying_guests'])
+            except json.JSONDecodeError:
+                raise serializers.ValidationError({"accompanying_guests": "Invalid JSON format"})
+        
+        # Call parent to continue with normal validation
+        return super().to_internal_value(data)
     
     def validate_primary_guest(self, value):
         required_fields = ['full_name', 'whatsapp_number']
         for field in required_fields:
             if field not in value:
                 raise serializers.ValidationError(f"'{field}' is required in primary_guest")
+        return value
+    
+    def validate_accompanying_guests(self, value):
+        if not isinstance(value, list):
+            raise serializers.ValidationError("accompanying_guests must be a list")
+        
+        # Validate each accompanying guest using the serializer
+        serializer = AccompanyingGuestSerializer(data=value, many=True)
+        if not serializer.is_valid():
+            raise serializers.ValidationError(serializer.errors)
+        
         return value
 
 class CheckinOfflineSerializer(serializers.Serializer):
