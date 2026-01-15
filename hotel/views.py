@@ -367,14 +367,30 @@ class RoomViewSet(viewsets.ModelViewSet):
         Bulk create rooms for a hotel.
         Supports both single range and multiple ranges (as array).
         """
+        from rest_framework.exceptions import ValidationError as DRFValidationError
+        from django.core.exceptions import ValidationError as DjangoValidationError
+        from django.db import IntegrityError
+        
+        # Check if user has an associated hotel
+        if not hasattr(request.user, 'hotel') or request.user.hotel is None:
+            return Response(
+                {"detail": "No hotel associated with this user."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
         try:
             data = request.data
             all_created_rooms = []
             
             # Check if incoming data is a list for multiple ranges
             if isinstance(data, list):
+                if not data:
+                    return Response(
+                        {"detail": "Request data cannot be an empty list."},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
                 # Process each range
-                for range_data in data:
+                for idx, range_data in enumerate(data):
                     serializer = BulkCreateRoomSerializer(
                         data=range_data,
                         context={'request': request}
@@ -412,8 +428,35 @@ class RoomViewSet(viewsets.ModelViewSet):
                 {"detail": f"{len(all_created_rooms)} rooms created successfully."},
                 status=status.HTTP_201_CREATED
             )
-        except ValidationError as e:
+        except DRFValidationError as e:
+            # Handle DRF ValidationError (from serializer.is_valid)
+            error_detail = e.detail
+            if isinstance(error_detail, dict):
+                # Format field errors nicely
+                errors = {field: msgs if isinstance(msgs, list) else [str(msgs)] for field, msgs in error_detail.items()}
+                return Response({"errors": errors}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"detail": str(error_detail)}, status=status.HTTP_400_BAD_REQUEST)
+        except DjangoValidationError as e:
+            # Handle Django ValidationError (from model's bulk_create_rooms)
+            if hasattr(e, 'message_dict'):
+                return Response({"errors": e.message_dict}, status=status.HTTP_400_BAD_REQUEST)
+            elif hasattr(e, 'messages'):
+                return Response({"detail": "; ".join(e.messages)}, status=status.HTTP_400_BAD_REQUEST)
             return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        except IntegrityError as e:
+            # Handle database integrity errors (duplicate rooms, etc.)
+            logger.error(f"IntegrityError during bulk room creation: {str(e)}")
+            return Response(
+                {"detail": "Some rooms already exist or there was a database constraint violation."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        except Exception as e:
+            # Catch any other unexpected errors to prevent 500
+            logger.exception(f"Unexpected error during bulk room creation: {str(e)}")
+            return Response(
+                {"detail": "An unexpected error occurred while creating rooms. Please try again."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
     @action(detail=False, methods=['get'], url_path='floors')
     def floors(self, request):
