@@ -8,8 +8,25 @@ import json
 logger = logging.getLogger(__name__)
 
 
+class JSONField(serializers.Field):
+    """
+    Custom field that accepts both JSON strings and Python objects.
+    Parses strings to Python objects before validation.
+    """
+    def to_internal_value(self, data):
+        if isinstance(data, str):
+            try:
+                return json.loads(data)
+            except json.JSONDecodeError:
+                raise serializers.ValidationError("Invalid JSON format")
+        return data
+    
+    def to_representation(self, value):
+        return value
+
+
 class AccompanyingGuestSerializer(serializers.Serializer):
-    full_name = serializers.CharField(max_length=200)
+    full_name = serializers.CharField(max_length=255)
     documents = serializers.ListField(
         child=serializers.FileField(),
         write_only=True,
@@ -29,25 +46,8 @@ class DocumentUploadSerializer(serializers.Serializer):
     is_primary = serializers.BooleanField(default=False)
 
 class CreateGuestSerializer(serializers.Serializer):
-    primary_guest = serializers.CharField()
-    accompanying_guests = serializers.CharField(required=False)
-    
-    def to_internal_value(self, data):
-        # Parse JSON strings from form-data
-        if isinstance(data.get('primary_guest'), str):
-            try:
-                data['primary_guest'] = json.loads(data['primary_guest'])
-            except json.JSONDecodeError:
-                raise serializers.ValidationError({"primary_guest": "Invalid JSON format"})
-        
-        if isinstance(data.get('accompanying_guests'), str):
-            try:
-                data['accompanying_guests'] = json.loads(data['accompanying_guests'])
-            except json.JSONDecodeError:
-                raise serializers.ValidationError({"accompanying_guests": "Invalid JSON format"})
-        
-        # Call parent to continue with normal validation
-        return super().to_internal_value(data)
+    primary_guest = JSONField()
+    accompanying_guests = JSONField(required=False)
     
     def validate_primary_guest(self, value):
         required_fields = ['full_name', 'whatsapp_number']
