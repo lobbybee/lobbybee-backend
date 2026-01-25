@@ -1,7 +1,7 @@
 from rest_framework import viewsets, status
 from rest_framework.decorators import action, api_view, permission_classes
-from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
+from lobbybee.utils.responses import success_response, error_response, created_response, not_found_response, forbidden_response
 from django.shortcuts import get_object_or_404
 from django.db.models import Q
 from .models import GuestFlag
@@ -73,16 +73,13 @@ class GuestFlagViewSet(viewsets.ModelViewSet):
             context={'request': request}
         )
         
-        return Response(
-            response_serializer.data,
-            status=status.HTTP_201_CREATED
-        )
+        return created_response(data=response_serializer.data)
     
     def retrieve(self, request, *args, **kwargs):
         """Get flag details"""
         flag = self.get_object()
         serializer = self.get_serializer(flag)
-        return Response(serializer.data)
+        return success_response(data=serializer.data)
     
     def list(self, request, *args, **kwargs):
         """List flags with optional filtering"""
@@ -109,7 +106,7 @@ class GuestFlagViewSet(viewsets.ModelViewSet):
             return self.get_paginated_response(serializer.data)
         
         serializer = self.get_serializer(queryset, many=True)
-        return Response(serializer.data)
+        return success_response(data=serializer.data)
     
     @action(detail=True, methods=['post'], url_path='reset')
     def reset(self, request, pk=None):
@@ -117,8 +114,8 @@ class GuestFlagViewSet(viewsets.ModelViewSet):
         flag = self.get_object()
         
         if not flag.is_active:
-            return Response(
-                {'detail': 'Flag is already reset'},
+            return error_response(
+                'Flag is already reset',
                 status=status.HTTP_400_BAD_REQUEST
             )
         
@@ -132,17 +129,14 @@ class GuestFlagViewSet(viewsets.ModelViewSet):
         )
         
         if not reset_flag:
-            return Response(
-                {'detail': 'Flag not found or already reset'},
-                status=status.HTTP_404_NOT_FOUND
-            )
+            return not_found_response('Flag not found or already reset')
         
         response_serializer = GuestFlagResponseSerializer(
             reset_flag,
             context={'request': request}
         )
         
-        return Response(response_serializer.data)
+        return success_response(data=response_serializer.data)
     
     @action(detail=False, methods=['get'], url_path='check/(?P<guest_id>\d+)')
     def check_guest(self, request, guest_id=None):
@@ -151,8 +145,8 @@ class GuestFlagViewSet(viewsets.ModelViewSet):
         Used during check-in process.
         """
         if not guest_id:
-            return Response(
-                {'detail': 'guest_id is required'},
+            return error_response(
+                'guest_id is required',
                 status=status.HTTP_400_BAD_REQUEST
             )
         
@@ -165,7 +159,7 @@ class GuestFlagViewSet(viewsets.ModelViewSet):
                 flag_data.pop('internal_reason', None)
         
         serializer = GuestFlagSummarySerializer(flag_summary)
-        return Response(serializer.data)
+        return success_response(data=serializer.data)
 
 
 @api_view(['GET'])
@@ -178,18 +172,15 @@ def search_guests(request):
     query = request.query_params.get('q', '').strip()
 
     if not query:
-        return Response(
-            {'detail': 'Search query parameter "q" is required'},
+        return error_response(
+            'Search query parameter "q" is required',
             status=status.HTTP_400_BAD_REQUEST
         )
 
     # Check if user has permission (platform admin/staff or hotel staff)
     if not (request.user.user_type in ['platform_admin', 'platform_staff'] or
             (request.user.user_type in ['hotel_admin', 'manager', 'receptionist'] and request.user.hotel)):
-        return Response(
-            {'detail': 'Permission denied'},
-            status=status.HTTP_403_FORBIDDEN
-        )
+        return forbidden_response('Permission denied')
 
     # Limit results to prevent overwhelming responses
     limit = min(int(request.query_params.get('limit', 20)), 50)
@@ -238,7 +229,7 @@ def search_guests(request):
             'active_flags_count': active_flags_count
         })
 
-    return Response({
+    return success_response(data={
         'query': query,
         'count': len(results),
         'results': results

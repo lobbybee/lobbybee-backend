@@ -1,6 +1,6 @@
 from rest_framework import viewsets, permissions, status
-from rest_framework.response import Response
 from rest_framework.decorators import action
+from lobbybee.utils.responses import success_response, error_response, created_response, not_found_response, forbidden_response
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from datetime import timedelta
@@ -64,10 +64,7 @@ class TransactionViewSet(viewsets.ModelViewSet):
             # Platform staff can create transactions for any hotel
             return super().create(request, *args, **kwargs)
         else:
-            return Response(
-                {'detail': 'You do not have permission to perform this action.'},
-                status=status.HTTP_403_FORBIDDEN
-            )
+            return forbidden_response('You do not have permission to perform this action.')
 
 
 class HotelSubscriptionViewSet(viewsets.ModelViewSet):
@@ -105,9 +102,9 @@ class HotelSubscriptionViewSet(viewsets.ModelViewSet):
         try:
             subscription = HotelSubscription.objects.get(hotel=request.user.hotel)
             serializer = HotelSubscriptionDetailSerializer(subscription)
-            return Response(serializer.data)
+            return success_response(data=serializer.data)
         except HotelSubscription.DoesNotExist:
-            return Response({'detail': 'No active subscription found'}, status=status.HTTP_404_NOT_FOUND)
+            return not_found_response('No active subscription found')
     
     @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated, CanManagePlatform])
     def create_subscription(self, request):
@@ -116,17 +113,17 @@ class HotelSubscriptionViewSet(viewsets.ModelViewSet):
         plan_id = request.data.get('plan')
         
         if not hotel_id or not plan_id:
-            return Response({'detail': 'Hotel and plan are required'}, status=status.HTTP_400_BAD_REQUEST)
+            return error_response('Hotel and plan are required', status=status.HTTP_400_BAD_REQUEST)
         
         try:
             hotel = Hotel.objects.get(id=hotel_id)
             plan = SubscriptionPlan.objects.get(id=plan_id)
         except (Hotel.DoesNotExist, SubscriptionPlan.DoesNotExist):
-            return Response({'detail': 'Hotel or plan not found'}, status=status.HTTP_404_NOT_FOUND)
+            return not_found_response('Hotel or plan not found')
         
         # Check if hotel already has a subscription
         if hasattr(hotel, 'subscription'):
-            return Response({'detail': 'Hotel already has a subscription'}, status=status.HTTP_400_BAD_REQUEST)
+            return error_response('Hotel already has a subscription', status=status.HTTP_400_BAD_REQUEST)
         
         # Create subscription
         start_date = timezone.now()
@@ -151,7 +148,7 @@ class HotelSubscriptionViewSet(viewsets.ModelViewSet):
         )
         
         serializer = HotelSubscriptionSerializer(subscription)
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return created_response(data=serializer.data)
     
     @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated, CanManagePlatform])
     def extend_subscription(self, request):
@@ -160,12 +157,12 @@ class HotelSubscriptionViewSet(viewsets.ModelViewSet):
         days = request.data.get('days', 30)  # Default to 30 days
         
         if not hotel_id:
-            return Response({'detail': 'Hotel is required'}, status=status.HTTP_400_BAD_REQUEST)
+            return error_response('Hotel is required', status=status.HTTP_400_BAD_REQUEST)
         
         try:
             subscription = HotelSubscription.objects.get(hotel_id=hotel_id)
         except HotelSubscription.DoesNotExist:
-            return Response({'detail': 'Subscription not found'}, status=status.HTTP_404_NOT_FOUND)
+            return not_found_response('Subscription not found')
         
         # Extend the subscription
         subscription.end_date += timedelta(days=days)
@@ -182,25 +179,25 @@ class HotelSubscriptionViewSet(viewsets.ModelViewSet):
         )
         
         serializer = HotelSubscriptionSerializer(subscription)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        return success_response(data=serializer.data)
     
     @action(detail=False, methods=['post'])
     def subscribe_to_plan(self, request):
         """Allow hotel admin to subscribe to a plan"""
         serializer = SubscribeToPlanSerializer(data=request.data)
         if not serializer.is_valid():
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            return error_response(errors=serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         
         plan_id = serializer.validated_data['plan']
         
         try:
             plan = SubscriptionPlan.objects.get(id=plan_id)
         except SubscriptionPlan.DoesNotExist:
-            return Response({'detail': 'Plan not found'}, status=status.HTTP_404_NOT_FOUND)
+            return not_found_response('Plan not found')
         
         # Check if hotel already has a subscription
         if hasattr(request.user, 'hotel') and hasattr(request.user.hotel, 'subscription'):
-            return Response({'detail': 'Hotel already has a subscription'}, status=status.HTTP_400_BAD_REQUEST)
+            return error_response('Hotel already has a subscription', status=status.HTTP_400_BAD_REQUEST)
         
         # Create subscription
         hotel = request.user.hotel
@@ -226,18 +223,18 @@ class HotelSubscriptionViewSet(viewsets.ModelViewSet):
         )
         
         serializer = HotelSubscriptionSerializer(subscription)
-        return Response({
+        return created_response(data={
             'subscription': serializer.data,
             'transaction_id': transaction.id,
             'amount': transaction.amount
-        }, status=status.HTTP_201_CREATED)
+        })
     
     @action(detail=False, methods=['post'])
     def process_payment(self, request):
         """Process payment for a subscription"""
         serializer = ProcessPaymentSerializer(data=request.data)
         if not serializer.is_valid():
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            return error_response(errors=serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         
         transaction_id = serializer.validated_data['transaction_id']
         payment_details = serializer.validated_data.get('payment_details', {})
@@ -245,7 +242,7 @@ class HotelSubscriptionViewSet(viewsets.ModelViewSet):
         try:
             transaction = Transaction.objects.get(id=transaction_id, hotel=request.user.hotel)
         except Transaction.DoesNotExist:
-            return Response({'detail': 'Transaction not found or not authorized'}, status=status.HTTP_404_NOT_FOUND)
+            return not_found_response('Transaction not found or not authorized')
         
         # Here you would integrate with a payment gateway
         # For now, we'll simulate a successful payment
@@ -263,19 +260,24 @@ class HotelSubscriptionViewSet(viewsets.ModelViewSet):
             subscription.is_active = True
             subscription.save()
             
-            return Response({
-                'detail': 'Payment processed successfully',
-                'transaction_id': transaction.id,
-                'status': transaction.status
-            }, status=status.HTTP_200_OK)
+            return success_response(
+                message='Payment processed successfully',
+                data={
+                    'transaction_id': transaction.id,
+                    'status': transaction.status
+                }
+            )
         else:
             # Update transaction status to failed
             transaction.status = 'failed'
             transaction.notes = f"Payment failed. {transaction.notes}"
             transaction.save()
             
-            return Response({
-                'detail': 'Payment failed',
-                'transaction_id': transaction.id,
-                'status': transaction.status
-            }, status=status.HTTP_400_BAD_REQUEST)
+            return error_response(
+                message='Payment failed',
+                data={
+                    'transaction_id': transaction.id,
+                    'status': transaction.status
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )

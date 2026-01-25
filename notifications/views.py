@@ -1,7 +1,7 @@
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
-from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
+from lobbybee.utils.responses import success_response
 from django_filters.rest_framework import DjangoFilterBackend
 from .models import Notification
 from .serializers import NotificationSerializer, NotificationCreateSerializer
@@ -79,7 +79,7 @@ class NotificationViewSet(viewsets.ModelViewSet):
             notification.save(update_fields=['is_read'])
 
         serializer = self.get_serializer(notification)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        return success_response(data=serializer.data)
 
     @action(detail=False, methods=['post'], url_path='mark-all-read')
     def mark_all_read(self, request):
@@ -91,10 +91,7 @@ class NotificationViewSet(viewsets.ModelViewSet):
         notifications = self.get_queryset().filter(is_read=False)
         notifications.update(is_read=True)
 
-        return Response(
-            {'message': 'All notifications marked as read'},
-            status=status.HTTP_200_OK
-        )
+        return success_response(message='All notifications marked as read')
 
     @action(detail=False, methods=['get'], url_path='my-notifications')
     def my_notifications(self, request):
@@ -110,7 +107,7 @@ class NotificationViewSet(viewsets.ModelViewSet):
             return self.get_paginated_response(serializer.data)
         
         serializer = self.get_serializer(notifications, many=True)
-        return Response(serializer.data)
+        return success_response(data=serializer.data)
 
     @action(detail=False, methods=['get'], url_path='group-notifications')
     def group_notifications(self, request):
@@ -168,4 +165,4 @@ class NotificationViewSet(viewsets.ModelViewSet):
             return self.get_paginated_response(serializer.data)
         
         serializer = self.get_serializer(notifications, many=True)
-        return Response(serializer.data)
+        return success_response(data=serializer.data)

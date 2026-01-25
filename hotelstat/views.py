@@ -1,7 +1,7 @@
 from rest_framework import viewsets, permissions, status, views, serializers
 from rest_framework.decorators import action
-from rest_framework.response import Response
 from hotel.models import Hotel, Room, RoomCategory
+from lobbybee.utils.responses import success_response, error_response, forbidden_response
 from guest.models import Guest, Stay, Booking, Feedback
 from chat.models import Conversation, Message
 from user.models import User
@@ -35,7 +35,7 @@ class HotelStatsViewSet(viewsets.ViewSet):
                 'status': hotel.status,
             })
         
-        return Response(hotels_data)
+        return success_response(data=hotels_data)
 
     def retrieve(self, request, pk=None):
         """Get statistics for a specific hotel"""
@@ -59,8 +59,8 @@ class HotelStatsViewSet(viewsets.ViewSet):
             if date_to:
                 date_to = datetime.strptime(date_to, '%Y-%m-%d').date()
         except ValueError:
-            return Response(
-                {"error": "Invalid date format. Use YYYY-MM-DD."}, 
+            return error_response(
+                "Invalid date format. Use YYYY-MM-DD.", 
                 status=status.HTTP_400_BAD_REQUEST
             )
 
@@ -68,10 +68,7 @@ class HotelStatsViewSet(viewsets.ViewSet):
         accessible_hotels = self.get_accessible_hotels(user, hotel_id)
         
         if not accessible_hotels:
-            return Response(
-                {"error": "Access denied or no hotel associated."}, 
-                status=status.HTTP_403_FORBIDDEN
-            )
+            return forbidden_response("Access denied or no hotel associated.")
 
         # Route to appropriate statistics method
         if stat_type == 'overview':
@@ -87,8 +84,8 @@ class HotelStatsViewSet(viewsets.ViewSet):
         elif stat_type == 'performance':
             return self.get_performance_stats(accessible_hotels, target_date, date_from, date_to)
         else:
-            return Response(
-                {"error": f"Invalid stat type: {stat_type}"}, 
+            return error_response(
+                f"Invalid stat type: {stat_type}", 
                 status=status.HTTP_400_BAD_REQUEST
             )
 
@@ -178,7 +175,7 @@ class HotelStatsViewSet(viewsets.ViewSet):
             
             stats[f"hotel_{hotel.id}"] = hotel_stats
 
-        return Response(stats)
+        return success_response(data=stats)
 
     def get_occupancy_stats(self, hotels, target_date, date_from=None, date_to=None):
         """
@@ -238,7 +235,7 @@ class HotelStatsViewSet(viewsets.ViewSet):
                 'monthly_trend': monthly_trend,
             }
         
-        return Response(stats)
+        return success_response(data=stats)
 
     
 
@@ -300,7 +297,7 @@ class HotelStatsViewSet(viewsets.ViewSet):
                 }
             }
         
-        return Response(stats)
+        return success_response(data=stats)
 
     def get_room_stats(self, hotels, target_date, date_from=None, date_to=None):
         """
@@ -341,7 +338,7 @@ class HotelStatsViewSet(viewsets.ViewSet):
                 'cleaning_rooms': cleaning_rooms.count(),
             }
         
-        return Response(stats)
+        return success_response(data=stats)
 
     def get_staff_stats(self, hotels, target_date, user):
         """
@@ -350,10 +347,7 @@ class HotelStatsViewSet(viewsets.ViewSet):
         # Only allow access to staff stats for authorized roles
         if not (user.is_superuser or 
                 user.user_type in ['hotel_admin', 'manager']):
-            return Response(
-                {"error": "Access denied for staff statistics."}, 
-                status=status.HTTP_403_FORBIDDEN
-            )
+            return forbidden_response("Access denied for staff statistics.")
         
         stats = {}
         
@@ -396,7 +390,7 @@ class HotelStatsViewSet(viewsets.ViewSet):
                 'recently_active': recent_active,
             }
         
-        return Response(stats)
+        return success_response(data=stats)
 
     def get_performance_stats(self, hotels, target_date, date_from=None, date_to=None):
         """
@@ -438,7 +432,7 @@ class HotelStatsViewSet(viewsets.ViewSet):
                 'rooms_turned_over_today': rooms_turned_over_today,
             }
         
-        return Response(stats)
+        return success_response(data=stats)
 
     # Helper methods
     def _get_staff_count(self, hotel):
@@ -513,14 +507,11 @@ class HotelUserStatsViewSet(viewsets.ViewSet):
         
         if not hotel:
             if user.is_superuser:
-                return Response(
-                    {"error": "Superusers should use /api/hotel_stat/admin/hotels/ endpoints with hotel_id parameter."}, 
+                return error_response(
+                    "Superusers should use /api/hotel_stat/admin/hotels/ endpoints with hotel_id parameter.", 
                     status=status.HTTP_400_BAD_REQUEST
                 )
-            return Response(
-                {"error": "No hotel associated with user."}, 
-                status=status.HTTP_403_FORBIDDEN
-            )
+            return forbidden_response("No hotel associated with user.")
         
         # Parse date parameters
         target_date, date_from, date_to = self._parse_date_parameters(request)
@@ -564,14 +555,11 @@ class HotelUserStatsViewSet(viewsets.ViewSet):
         
         if not hotel:
             if user.is_superuser:
-                return Response(
-                    {"error": "Superusers should use /api/hotel_stat/admin/hotels/ endpoints with hotel_id parameter for guest history."}, 
+                return error_response(
+                    "Superusers should use /api/hotel_stat/admin/hotels/ endpoints with hotel_id parameter for guest history.", 
                     status=status.HTTP_400_BAD_REQUEST
                 )
-            return Response(
-                {"error": "No hotel associated with user."}, 
-                status=status.HTTP_403_FORBIDDEN
-            )
+            return forbidden_response("No hotel associated with user.")
         
         # Parse filters
         start_date = request.query_params.get('start_date')
@@ -584,8 +572,8 @@ class HotelUserStatsViewSet(viewsets.ViewSet):
             if end_date:
                 end_date = datetime.strptime(end_date, '%Y-%m-%d').date()
         except ValueError:
-            return Response(
-                {"error": "Invalid date format. Use YYYY-MM-DD."}, 
+            return error_response(
+                "Invalid date format. Use YYYY-MM-DD.", 
                 status=status.HTTP_400_BAD_REQUEST
             )
         
@@ -671,7 +659,7 @@ class HotelUserStatsViewSet(viewsets.ViewSet):
             }
         }
         
-        return Response({
+        return success_response(data={
             'summary': summary,
             'guests': guest_data
         })
@@ -684,14 +672,11 @@ class HotelUserStatsViewSet(viewsets.ViewSet):
         
         if not hotel:
             if user.is_superuser:
-                return Response(
-                    {"error": "Superusers should use /api/hotel_stat/admin/hotels/ endpoints with hotel_id parameter for room history."}, 
+                return error_response(
+                    "Superusers should use /api/hotel_stat/admin/hotels/ endpoints with hotel_id parameter for room history.", 
                     status=status.HTTP_400_BAD_REQUEST
                 )
-            return Response(
-                {"error": "No hotel associated with user."}, 
-                status=status.HTTP_403_FORBIDDEN
-            )
+            return forbidden_response("No hotel associated with user.")
         
         # Parse filters
         start_date = request.query_params.get('start_date')
@@ -705,8 +690,8 @@ class HotelUserStatsViewSet(viewsets.ViewSet):
             if end_date:
                 end_date = datetime.strptime(end_date, '%Y-%m-%d').date()
         except ValueError:
-            return Response(
-                {"error": "Invalid date format. Use YYYY-MM-DD."}, 
+            return error_response(
+                "Invalid date format. Use YYYY-MM-DD.", 
                 status=status.HTTP_400_BAD_REQUEST
             )
         
@@ -718,8 +703,8 @@ class HotelUserStatsViewSet(viewsets.ViewSet):
             try:
                 rooms_queryset = rooms_queryset.filter(id=int(room_id))
             except ValueError:
-                return Response(
-                    {"error": "Invalid room_id format."}, 
+                return error_response(
+                    "Invalid room_id format.", 
                     status=status.HTTP_400_BAD_REQUEST
                 )
         
@@ -783,7 +768,7 @@ class HotelUserStatsViewSet(viewsets.ViewSet):
             }
         }
         
-        return Response({
+        return success_response(data={
             'summary': summary,
             'rooms': room_data
         })
@@ -796,14 +781,11 @@ class HotelUserStatsViewSet(viewsets.ViewSet):
         
         if not hotel:
             if user.is_superuser:
-                return Response(
-                    {"error": "Superusers should use /api/hotel_stat/admin/hotels/ endpoints with hotel_id parameter for conversation history."}, 
+                return error_response(
+                    "Superusers should use /api/hotel_stat/admin/hotels/ endpoints with hotel_id parameter for conversation history.", 
                     status=status.HTTP_400_BAD_REQUEST
                 )
-            return Response(
-                {"error": "No hotel associated with user."}, 
-                status=status.HTTP_403_FORBIDDEN
-            )
+            return forbidden_response("No hotel associated with user.")
         
         # Parse filters
         start_date = request.query_params.get('start_date')
@@ -815,8 +797,8 @@ class HotelUserStatsViewSet(viewsets.ViewSet):
             if end_date:
                 end_date = datetime.strptime(end_date, '%Y-%m-%d').date()
         except ValueError:
-            return Response(
-                {"error": "Invalid date format. Use YYYY-MM-DD."}, 
+            return error_response(
+                "Invalid date format. Use YYYY-MM-DD.", 
                 status=status.HTTP_400_BAD_REQUEST
             )
         
@@ -897,7 +879,7 @@ class HotelUserStatsViewSet(viewsets.ViewSet):
         
         summary['type_breakdown'] = list(type_breakdown)
         
-        return Response({
+        return success_response(data={
             'summary': summary,
             'conversations': conversations_data
         })
@@ -910,14 +892,11 @@ class HotelUserStatsViewSet(viewsets.ViewSet):
         
         if not hotel:
             if user.is_superuser:
-                return Response(
-                    {"error": "Superusers should use /api/hotel_stat/admin/hotels/ endpoints with hotel_id parameter for feedback analytics."}, 
+                return error_response(
+                    "Superusers should use /api/hotel_stat/admin/hotels/ endpoints with hotel_id parameter for feedback analytics.", 
                     status=status.HTTP_400_BAD_REQUEST
                 )
-            return Response(
-                {"error": "No hotel associated with user."}, 
-                status=status.HTTP_403_FORBIDDEN
-            )
+            return forbidden_response("No hotel associated with user.")
         
         # Parse filters
         start_date = request.query_params.get('start_date')
@@ -931,8 +910,8 @@ class HotelUserStatsViewSet(viewsets.ViewSet):
             if end_date:
                 end_date = datetime.strptime(end_date, '%Y-%m-%d').date()
         except ValueError:
-            return Response(
-                {"error": "Invalid date format. Use YYYY-MM-DD."}, 
+            return error_response(
+                "Invalid date format. Use YYYY-MM-DD.", 
                 status=status.HTTP_400_BAD_REQUEST
             )
         
@@ -950,8 +929,8 @@ class HotelUserStatsViewSet(viewsets.ViewSet):
             try:
                 feedback_queryset = feedback_queryset.filter(stay__room_id=int(room_id))
             except ValueError:
-                return Response(
-                    {"error": "Invalid room_id format."}, 
+                return error_response(
+                    "Invalid room_id format.", 
                     status=status.HTTP_400_BAD_REQUEST
                 )
         
@@ -1076,7 +1055,7 @@ class HotelUserStatsViewSet(viewsets.ViewSet):
             'nationality_breakdown': list(nationality_breakdown),
         }
         
-        return Response({
+        return success_response(data={
             'summary': summary,
             'feedbacks': feedback_data
         })
@@ -1089,14 +1068,11 @@ class HotelUserStatsViewSet(viewsets.ViewSet):
         
         if not hotel:
             if user.is_superuser:
-                return Response(
-                    {"error": "Superusers should use /api/hotel_stat/admin/hotels/ endpoints with hotel_id parameter for overview."}, 
+                return error_response(
+                    "Superusers should use /api/hotel_stat/admin/hotels/ endpoints with hotel_id parameter for overview.", 
                     status=status.HTTP_400_BAD_REQUEST
                 )
-            return Response(
-                {"error": "No hotel associated with user."}, 
-                status=status.HTTP_403_FORBIDDEN
-            )
+            return forbidden_response("No hotel associated with user.")
         
         # Parse date parameters for revenue calculation
         start_date = request.query_params.get('start_date')
@@ -1114,8 +1090,8 @@ class HotelUserStatsViewSet(viewsets.ViewSet):
             if end_date:
                 end_date = datetime.strptime(end_date, '%Y-%m-%d').date()
         except ValueError:
-            return Response(
-                {"error": "Invalid date format. Use YYYY-MM-DD."}, 
+            return error_response(
+                "Invalid date format. Use YYYY-MM-DD.", 
                 status=status.HTTP_400_BAD_REQUEST
             )
         
@@ -1279,7 +1255,7 @@ class HotelUserStatsViewSet(viewsets.ViewSet):
             }
         }
         
-        return Response(overview_data)
+        return success_response(data=overview_data)
 
     def _get_stat_type(self, request, stat_type):
         """Helper method to handle different stat types"""
@@ -1288,14 +1264,11 @@ class HotelUserStatsViewSet(viewsets.ViewSet):
         
         if not hotel:
             if user.is_superuser:
-                return Response(
-                    {"error": f"Superusers should use /api/hotel_stat/admin/hotels/ endpoints with hotel_id parameter for {stat_type} stats."}, 
+                return error_response(
+                    f"Superusers should use /api/hotel_stat/admin/hotels/ endpoints with hotel_id parameter for {stat_type} stats.", 
                     status=status.HTTP_400_BAD_REQUEST
                 )
-            return Response(
-                {"error": "No hotel associated with user."}, 
-                status=status.HTTP_403_FORBIDDEN
-            )
+            return forbidden_response("No hotel associated with user.")
         
         # Parse date parameters
         target_date, date_from, date_to = self._parse_date_parameters(request)
@@ -1317,8 +1290,8 @@ class HotelUserStatsViewSet(viewsets.ViewSet):
         elif stat_type == 'performance':
             return stats_viewset.get_performance_stats([hotel], target_date, date_from, date_to)
         else:
-            return Response(
-                {"error": f"Invalid stat type: {stat_type}"}, 
+            return error_response(
+                f"Invalid stat type: {stat_type}", 
                 status=status.HTTP_400_BAD_REQUEST
             )
 
@@ -1341,8 +1314,8 @@ class HotelUserStatsViewSet(viewsets.ViewSet):
                 
             return target_date, date_from, date_to
         except ValueError:
-            return Response(
-                {"error": "Invalid date format. Use YYYY-MM-DD."}, 
+            return error_response(
+                "Invalid date format. Use YYYY-MM-DD.", 
                 status=status.HTTP_400_BAD_REQUEST
             )
 
@@ -1372,10 +1345,7 @@ class PlatformStatsViewSet(HotelStatsViewSet):
         user = request.user
         
         if not user.is_superuser:
-            return Response(
-                {"error": "Access denied. Superuser access required."}, 
-                status=status.HTTP_403_FORBIDDEN
-            )
+            return forbidden_response("Access denied. Superuser access required.")
         
         # Parse date parameters
         date_from = request.query_params.get('date_from')
@@ -1393,8 +1363,8 @@ class PlatformStatsViewSet(HotelStatsViewSet):
             if date_to:
                 date_to = datetime.strptime(date_to, '%Y-%m-%d').date()
         except ValueError:
-            return Response(
-                {"error": "Invalid date format. Use YYYY-MM-DD."}, 
+            return error_response(
+                "Invalid date format. Use YYYY-MM-DD.", 
                 status=status.HTTP_400_BAD_REQUEST
             )
         
@@ -1407,10 +1377,7 @@ class PlatformStatsViewSet(HotelStatsViewSet):
         user = request.user
         
         if not user.is_superuser:
-            return Response(
-                {"error": "Access denied. Superuser access required."}, 
-                status=status.HTTP_403_FORBIDDEN
-            )
+            return forbidden_response("Access denied. Superuser access required.")
         
         # Parse date parameters
         date_from = request.query_params.get('date_from')
@@ -1428,8 +1395,8 @@ class PlatformStatsViewSet(HotelStatsViewSet):
             if date_to:
                 date_to = datetime.strptime(date_to, '%Y-%m-%d').date()
         except ValueError:
-            return Response(
-                {"error": "Invalid date format. Use YYYY-MM-DD."}, 
+            return error_response(
+                "Invalid date format. Use YYYY-MM-DD.", 
                 status=status.HTTP_400_BAD_REQUEST
             )
         
@@ -1447,8 +1414,8 @@ class PlatformStatsViewSet(HotelStatsViewSet):
         elif stat_type == 'performance':
             return self.get_performance_stats(hotels, target_date, date_from, date_to)
         else:
-            return Response(
-                {"error": f"Invalid stat type: {stat_type}"}, 
+            return error_response(
+                f"Invalid stat type: {stat_type}", 
                 status=status.HTTP_400_BAD_REQUEST
             )
 
@@ -1467,21 +1434,20 @@ class HotelComparisonView(views.APIView):
         
         # Only hotel admins, managers, and superusers can compare multiple hotels
         if not (user.is_superuser or user.user_type in ['hotel_admin', 'manager']):
-            return Response(
-                {"error": "Access denied. Only hotel admins, managers, and superusers can compare hotels."}, 
-                status=status.HTTP_403_FORBIDDEN
+            return forbidden_response(
+                "Access denied. Only hotel admins, managers, and superusers can compare hotels."
             )
         
         if not hotel_ids:
-            return Response(
-                {"error": "At least one hotel ID is required."}, 
+            return error_response(
+                "At least one hotel ID is required.", 
                 status=status.HTTP_400_BAD_REQUEST
             )
         
         hotels = Hotel.objects.filter(id__in=hotel_ids)
         if hotels.count() != len(hotel_ids):
-            return Response(
-                {"error": "One or more hotel IDs are invalid."}, 
+            return error_response(
+                "One or more hotel IDs are invalid.", 
                 status=status.HTTP_400_BAD_REQUEST
             )
         
@@ -1501,8 +1467,8 @@ class HotelComparisonView(views.APIView):
             if date_to:
                 date_to = datetime.strptime(date_to, '%Y-%m-%d').date()
         except ValueError:
-            return Response(
-                {"error": "Invalid date format. Use YYYY-MM-DD."}, 
+            return error_response(
+                "Invalid date format. Use YYYY-MM-DD.", 
                 status=status.HTTP_400_BAD_REQUEST
             )
         
@@ -1544,4 +1510,4 @@ class HotelComparisonView(views.APIView):
                 if hasattr(response_data, 'data'):
                     comparison_data[f"hotel_{hotel.id}"] = response_data.data
         
-        return Response(comparison_data)
+        return success_response(data=comparison_data)

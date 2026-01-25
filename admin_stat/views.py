@@ -3,8 +3,9 @@ from django.db.models import Sum, Count, Q
 from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
-from rest_framework.response import Response
 from rest_framework.views import APIView
+
+from lobbybee.utils.responses import success_response
 
 from hotel.models import Hotel
 from chat.models import Conversation, Message
@@ -128,7 +129,7 @@ class AdminOverviewView(DateFilterMixin, APIView):
         }
         
         serializer = OverviewSerializer(response_data)
-        return Response(serializer.data)
+        return success_response(data=serializer.data)
 
 
 class AdminHotelsStatsView(DateFilterMixin, APIView):
@@ -180,7 +181,7 @@ class AdminHotelsStatsView(DateFilterMixin, APIView):
         }
         
         serializer = HotelsStatsResponseSerializer(response_data)
-        return Response(serializer.data)
+        return success_response(data=serializer.data)
 
 
 class AdminConversationsStatsView(DateFilterMixin, APIView):
@@ -232,7 +233,7 @@ class AdminConversationsStatsView(DateFilterMixin, APIView):
         }
         
         serializer = ConversationsStatsResponseSerializer(response_data)
-        return Response(serializer.data)
+        return success_response(data=serializer.data)
 
 
 class AdminPaymentsStatsView(DateFilterMixin, APIView):
@@ -291,4 +292,4 @@ class AdminPaymentsStatsView(DateFilterMixin, APIView):
         }
         
         serializer = PaymentsStatsResponseSerializer(response_data)
-        return Response(serializer.data)
+        return success_response(data=serializer.data)
