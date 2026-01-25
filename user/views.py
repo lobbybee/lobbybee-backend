@@ -1,6 +1,6 @@
 from rest_framework import generics, status, views, viewsets, serializers
-from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAuthenticated
+from lobbybee.utils.responses import success_response, error_response, created_response, not_found_response, forbidden_response
 from django.core.mail import send_mail
 from django.conf import settings
 from django.utils.crypto import get_random_string
@@ -70,18 +70,18 @@ class LogoutView(views.APIView):
         refresh_token = request.data.get("refresh")
 
         if not refresh_token:
-            return Response(
-                {"error": "Refresh token is required"},
+            return error_response(
+                "Refresh token is required",
                 status=status.HTTP_400_BAD_REQUEST
             )
 
         try:
             token = RefreshToken(refresh_token)
             token.blacklist()
-            return Response({"message": "Successfully logged out"}, status=status.HTTP_205_RESET_CONTENT)
+            return success_response(message="Successfully logged out", status=status.HTTP_205_RESET_CONTENT)
         except Exception as e:
-            return Response(
-                {"error": "Invalid refresh token"},
+            return error_response(
+                "Invalid refresh token",
                 status=status.HTTP_400_BAD_REQUEST
             )
 
@@ -92,7 +92,7 @@ class UsernameSuggestionView(views.APIView):
     def get(self, request, *args, **kwargs):
         hotel_name = request.query_params.get('hotel_name', '')
         if not hotel_name:
-            return Response({'error': 'hotel_name query parameter is required.'}, status=status.HTTP_400_BAD_REQUEST)
+            return error_response('hotel_name query parameter is required.', status=status.HTTP_400_BAD_REQUEST)
 
         # Generate base usernames
         base_name = re.sub(r'[^a-zA-Z0-9]', '', hotel_name).lower()
@@ -121,7 +121,7 @@ class UsernameSuggestionView(views.APIView):
             if new_suggestion not in final_suggestions and not User.objects.filter(username=new_suggestion).exists():
                 final_suggestions.append(new_suggestion)
 
-        return Response({'suggestions': final_suggestions[:5]}, status=status.HTTP_200_OK)
+        return success_response(data={'suggestions': final_suggestions[:5]})
 
 
 class HotelRegistrationView(generics.CreateAPIView):
@@ -132,7 +132,7 @@ class HotelRegistrationView(generics.CreateAPIView):
         request.data['user_type'] = 'hotel_admin'
         hotel_name = request.data.get('hotel_name')
         if not hotel_name:
-            return Response({'error': 'Hotel name is required.'}, status=status.HTTP_400_BAD_REQUEST)
+            return error_response('Hotel name is required.', status=status.HTTP_400_BAD_REQUEST)
 
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -159,12 +159,12 @@ class HotelRegistrationView(generics.CreateAPIView):
                 )
         except Exception as e:
             print(f"Failed during hotel registration: {e}")
-            return Response(
-                {'error': 'An unexpected error occurred during registration. Could not send verification email.'},
+            return error_response(
+                'An unexpected error occurred during registration. Could not send verification email.',
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
-        return Response({'message': 'Hotel registration initiated. Please verify your email.'}, status=status.HTTP_201_CREATED)
+        return created_response(message='Hotel registration initiated. Please verify your email.')
 
 class PlatformCreateHotelView(generics.CreateAPIView):
     """
@@ -179,7 +179,7 @@ class PlatformCreateHotelView(generics.CreateAPIView):
         request.data['user_type'] = 'hotel_admin'
         hotel_name = request.data.get('hotel_name')
         if not hotel_name:
-            return Response({'error': 'Hotel name is required.'}, status=status.HTTP_400_BAD_REQUEST)
+            return error_response('Hotel name is required.', status=status.HTTP_400_BAD_REQUEST)
 
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -200,8 +200,8 @@ class PlatformCreateHotelView(generics.CreateAPIView):
         except Exception as e:
             # It's good practice to log the exception
             print(f"Failed during platform hotel creation: {e}")
-            return Response(
-                {'error': 'An unexpected error occurred during hotel creation.'},
+            return error_response(
+                'An unexpected error occurred during hotel creation.',
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
@@ -209,10 +209,10 @@ class PlatformCreateHotelView(generics.CreateAPIView):
         user_data['hotel_id'] = hotel.id
         user_data['hotel_name'] = hotel.name
 
-        return Response({
+        return created_response(data={
             'message': 'Hotel and admin user created successfully.',
             'data': user_data
-        }, status=status.HTTP_201_CREATED)
+        })
 
 class HotelStaffRegistrationView(generics.CreateAPIView):
     permission_classes = [IsAuthenticated, IsHotelAdmin]
@@ -243,9 +243,8 @@ class HotelStaffRegistrationView(generics.CreateAPIView):
                 )
                 created_staff.append(user)
             
-            return Response(
-                {'message': f'{len(created_staff)} staff users created successfully'},
-                status=status.HTTP_201_CREATED
+            return created_response(
+                message=f'{len(created_staff)} staff users created successfully'
             )
         
         # Single staff creation (old format)
@@ -257,7 +256,7 @@ class HotelStaffRegistrationView(generics.CreateAPIView):
             created_by=request.user,
             is_verified=True  # No email verification needed for staff
         )
-        return Response({'message': 'Staff user created successfully'}, status=status.HTTP_201_CREATED)
+        return created_response(message='Staff user created successfully')
 
 class VerifyOTPView(views.APIView):
     permission_classes = [AllowAny]
@@ -271,18 +270,18 @@ class VerifyOTPView(views.APIView):
             otp = OTP.objects.get(user=user, otp=otp_code)
 
             if otp.is_expired():
-                return Response({'error': 'OTP has expired.'}, status=status.HTTP_400_BAD_REQUEST)
+                return error_response('OTP has expired.', status=status.HTTP_400_BAD_REQUEST)
 
             user.is_verified = True
             user.save()
             otp.delete()
 
-            return Response({'message': 'Email verified successfully.','data':user.email}, status=status.HTTP_200_OK)
+            return success_response(message='Email verified successfully.', data={'email': user.email})
 
         except User.DoesNotExist:
-            return Response({'error': 'User not found.'}, status=status.HTTP_404_NOT_FOUND)
+            return not_found_response('User not found.')
         except OTP.DoesNotExist:
-            return Response({'error': 'Invalid OTP.'}, status=status.HTTP_400_BAD_REQUEST)
+            return error_response('Invalid OTP.', status=status.HTTP_400_BAD_REQUEST)
 
 class ResendOTPView(views.APIView):
     permission_classes = [AllowAny]
@@ -290,14 +289,14 @@ class ResendOTPView(views.APIView):
     def post(self, request, *args, **kwargs):
         email = request.data.get('email')
         if not email:
-            return Response({'error': 'Email is required.'}, status=status.HTTP_400_BAD_REQUEST)
+            return error_response('Email is required.', status=status.HTTP_400_BAD_REQUEST)
 
         try:
             user = User.objects.get(email=email)
             otp = OTP.objects.get(user=user)
 
             if otp.resend_attempts >= 5:
-                return Response({'error': 'You have reached the maximum number of OTP resend attempts.'}, status=status.HTTP_400_BAD_REQUEST)
+                return error_response('You have reached the maximum number of OTP resend attempts.', status=status.HTTP_400_BAD_REQUEST)
 
             # Generate a new OTP
             new_otp_code = get_random_string(length=6, allowed_chars='1234567890')
@@ -315,16 +314,16 @@ class ResendOTPView(views.APIView):
                 fail_silently=False,
             )
 
-            return Response({'message': 'A new OTP has been sent to your email.'}, status=status.HTTP_200_OK)
+            return success_response(message='A new OTP has been sent to your email.')
 
         except User.DoesNotExist:
-            return Response({'error': 'User not found.'}, status=status.HTTP_404_NOT_FOUND)
+            return not_found_response('User not found.')
         except OTP.DoesNotExist:
-            return Response({'error': 'No OTP found for this user. Please register first.'}, status=status.HTTP_404_NOT_FOUND)
+            return not_found_response('No OTP found for this user. Please register first.')
         except Exception as e:
             print(f"Failed to resend OTP: {e}")
-            return Response(
-                {'error': 'An unexpected error occurred. Could not resend OTP.'},
+            return error_response(
+                'An unexpected error occurred. Could not resend OTP.',
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
@@ -335,13 +334,13 @@ class PasswordResetRequestView(views.APIView):
     def post(self, request, *args, **kwargs):
         email = request.data.get('email')
         if not email:
-            return Response({'error': 'Email is required.'}, status=status.HTTP_400_BAD_REQUEST)
+            return error_response('Email is required.', status=status.HTTP_400_BAD_REQUEST)
 
         try:
             user = User.objects.get(email=email)
         except User.DoesNotExist:
             # Don't reveal that the user doesn't exist to prevent user enumeration attacks
-            return Response({'message': 'If an account with that email exists, a password reset OTP has been sent.'}, status=status.HTTP_200_OK)
+            return success_response(message='If an account with that email exists, a password reset OTP has been sent.')
 
         otp_code = get_random_string(length=6, allowed_chars='1234567890')
         
@@ -361,12 +360,12 @@ class PasswordResetRequestView(views.APIView):
             )
         except Exception as e:
             print(f"Failed to send password reset OTP: {e}")
-            return Response(
-                {'error': 'An unexpected error occurred. Could not send OTP.'},
+            return error_response(
+                'An unexpected error occurred. Could not send OTP.',
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
-        return Response({'message': 'If an account with that email exists, a password reset OTP has been sent.'}, status=status.HTTP_200_OK)
+        return success_response(message='If an account with that email exists, a password reset OTP has been sent.')
 
 
 class PasswordResetConfirmView(views.APIView):
@@ -378,30 +377,30 @@ class PasswordResetConfirmView(views.APIView):
         new_password = request.data.get('new_password')
 
         if not all([email, otp_code, new_password]):
-            return Response({'error': 'Email, OTP, and new password are required.'}, status=status.HTTP_400_BAD_REQUEST)
+            return error_response('Email, OTP, and new password are required.', status=status.HTTP_400_BAD_REQUEST)
 
         try:
             user = User.objects.get(email=email)
             otp = OTP.objects.get(user=user, otp=otp_code)
 
             if otp.is_expired():
-                return Response({'error': 'OTP has expired.'}, status=status.HTTP_400_BAD_REQUEST)
+                return error_response('OTP has expired.', status=status.HTTP_400_BAD_REQUEST)
             
             try:
                 validate_password(new_password, user)
             except ValidationError as e:
-                return Response({'error': list(e.messages)}, status=status.HTTP_400_BAD_REQUEST)
+                return error_response(errors=list(e.messages), status=status.HTTP_400_BAD_REQUEST)
 
             user.set_password(new_password)
             user.save()
             otp.delete()
 
-            return Response({'message': 'Password has been reset successfully.'}, status=status.HTTP_200_OK)
+            return success_response(message='Password has been reset successfully.')
 
         except User.DoesNotExist:
-            return Response({'error': 'Invalid email or OTP.'}, status=status.HTTP_400_BAD_REQUEST)
+            return error_response('Invalid email or OTP.', status=status.HTTP_400_BAD_REQUEST)
         except OTP.DoesNotExist:
-            return Response({'error': 'Invalid email or OTP.'}, status=status.HTTP_400_BAD_REQUEST)
+            return error_response('Invalid email or OTP.', status=status.HTTP_400_BAD_REQUEST)
 
 
 class ChangePasswordView(views.APIView):
@@ -412,7 +411,7 @@ class ChangePasswordView(views.APIView):
         serializer.is_valid(raise_exception=True)
         request.user.set_password(serializer.validated_data['new_password'])
         request.user.save()
-        return Response({"message": "Password updated successfully"}, status=status.HTTP_200_OK)
+        return success_response(message="Password updated successfully")
 
 
 class UserViewSet(viewsets.ModelViewSet):
@@ -461,7 +460,7 @@ class UserViewSet(viewsets.ModelViewSet):
             # Serialize the created users for the response
             response_serializer = self.get_serializer(created_users, many=True)
             headers = self.get_success_headers(response_serializer.data)
-            return Response(response_serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+            return created_response(data=response_serializer.data)
         
         # Default behavior for single user creation
         return super().create(request, *args, **kwargs)

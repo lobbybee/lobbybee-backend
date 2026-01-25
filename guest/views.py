@@ -1,7 +1,7 @@
 from rest_framework import viewsets, permissions, status, generics
 from rest_framework.decorators import action
-from rest_framework.response import Response
 from django.db.models import Q
+from lobbybee.utils.responses import success_response, error_response, created_response, not_found_response
 from django.db import transaction
 from django.utils import timezone
 from django.shortcuts import get_object_or_404
@@ -110,16 +110,16 @@ class GuestManagementViewSet(viewsets.GenericViewSet):
                         )
                         acc_doc_count += 1
 
-                return Response({
+                return created_response(data={
                     'primary_guest_id': primary_guest.id,
                     'accompanying_guest_ids': accompanying_guest_ids,
                     'message': 'Guests created successfully'
-                }, status=status.HTTP_201_CREATED)
+                })
 
         except Exception as e:
             logger.error(f"Error creating guests: {str(e)}")
-            return Response(
-                {'error': f'Failed to create guests: {str(e)}'},
+            return error_response(
+                f'Failed to create guests: {str(e)}',
                 status=status.HTTP_400_BAD_REQUEST
             )
 
@@ -140,7 +140,7 @@ class GuestManagementViewSet(viewsets.GenericViewSet):
             )
 
         serializer = GuestResponseSerializer(queryset, many=True)
-        return Response(serializer.data)
+        return success_response(data=serializer.data)
 
     @action(detail=False, methods=['get'], url_path='bookings')
     def list_bookings(self, request):
@@ -149,7 +149,7 @@ class GuestManagementViewSet(viewsets.GenericViewSet):
         """
         bookings = Booking.objects.filter(hotel=request.user.hotel)
         serializer = BookingListSerializer(bookings, many=True)
-        return Response(serializer.data)
+        return success_response(data=serializer.data)
 
 
 class StayManagementViewSet(viewsets.GenericViewSet):
@@ -229,16 +229,16 @@ class StayManagementViewSet(viewsets.GenericViewSet):
                     room.current_guest = primary_guest
                     room.save()
 
-                return Response({
+                return created_response(data={
                     'booking_id': booking.id,
                     'stay_ids': [stay.id for stay in stays],
                     'message': 'Check-in created successfully. Pending verification.'
-                }, status=status.HTTP_201_CREATED)
+                })
 
         except Exception as e:
             logger.error(f"Error creating check-in: {str(e)}")
-            return Response(
-                {'error': f'Failed to create check-in: {str(e)}'},
+            return error_response(
+                f'Failed to create check-in: {str(e)}',
                 status=status.HTTP_400_BAD_REQUEST
             )
 
@@ -251,8 +251,8 @@ class StayManagementViewSet(viewsets.GenericViewSet):
         stay = self.get_object()
 
         if stay.status != 'pending':
-            return Response(
-                {'error': f'Stay is not pending. Current status: {stay.status}'},
+            return error_response(
+                f'Stay is not pending. Current status: {stay.status}',
                 status=status.HTTP_400_BAD_REQUEST
             )
 
@@ -446,12 +446,12 @@ class StayManagementViewSet(viewsets.GenericViewSet):
                     }
                     response_data['flag_summary'] = flag_summary_data
                 
-                return Response(response_data, status=status.HTTP_200_OK)
+                return success_response(data=response_data)
 
         except Exception as e:
             logger.error(f"Error verifying check-in: {str(e)}")
-            return Response(
-                {'error': f'Failed to verify check-in: {str(e)}'},
+            return error_response(
+                f'Failed to verify check-in: {str(e)}',
                 status=status.HTTP_400_BAD_REQUEST
             )
 
@@ -497,7 +497,7 @@ class StayManagementViewSet(viewsets.GenericViewSet):
             if guest_id in flag_summary_map:
                 stay_data['flag_summary'] = flag_summary_map[guest_id]
         
-        return Response(response_data)
+        return success_response(data=response_data)
 
     @action(detail=False, methods=['get'], url_path='checked-in-users')
     def checked_in_users(self, request):
@@ -506,7 +506,7 @@ class StayManagementViewSet(viewsets.GenericViewSet):
         """
         stays = self.get_queryset().filter(status='active').order_by('-actual_check_in')
         serializer = StayListSerializer(stays, many=True)
-        return Response(serializer.data)
+        return success_response(data=serializer.data)
 
     @action(detail=True, methods=['post'], url_path='checkout')
     def checkout_user(self, request, pk=None):
@@ -528,8 +528,8 @@ class StayManagementViewSet(viewsets.GenericViewSet):
         checkout_serializer.is_valid(raise_exception=True)
 
         if stay.status != 'active':
-            return Response(
-                {'error': f'Stay is not active. Current status: {stay.status}'},
+            return error_response(
+                f'Stay is not active. Current status: {stay.status}',
                 status=status.HTTP_400_BAD_REQUEST
             )
 
@@ -668,12 +668,12 @@ Please take a moment to rate your overall experience from 1 to 5 stars. We truly
                 if stay.internal_note:
                     response_data['internal_note'] = stay.internal_note
                     
-                return Response(response_data, status=status.HTTP_200_OK)
+                return success_response(data=response_data)
 
         except Exception as e:
             logger.error(f"Error checking out guest: {str(e)}")
-            return Response(
-                {'error': f'Failed to check out guest: {str(e)}'},
+            return error_response(
+                f'Failed to check out guest: {str(e)}',
                 status=status.HTTP_400_BAD_REQUEST
             )
 
@@ -686,8 +686,8 @@ Please take a moment to rate your overall experience from 1 to 5 stars. We truly
         stay = self.get_object()
 
         if stay.status != 'active':
-            return Response(
-                {'error': f'Can only extend active stays. Current status: {stay.status}'},
+            return error_response(
+                f'Can only extend active stays. Current status: {stay.status}',
                 status=status.HTTP_400_BAD_REQUEST
             )
 
@@ -700,8 +700,8 @@ Please take a moment to rate your overall experience from 1 to 5 stars. We truly
                 
                 # Validate that new checkout date is after current checkout date
                 if new_checkout_date <= stay.check_out_date:
-                    return Response(
-                        {'error': 'New checkout date must be after the current checkout date'},
+                    return error_response(
+                        'New checkout date must be after the current checkout date',
                         status=status.HTTP_400_BAD_REQUEST
                     )
 
@@ -717,17 +717,17 @@ Please take a moment to rate your overall experience from 1 to 5 stars. We truly
 
                 logger.info(f"Extended stay for guest {stay.guest.full_name} from {old_checkout_date} to {new_checkout_date}")
 
-                return Response({
+                return success_response(data={
                     'stay_id': stay.id,
                     'old_checkout_date': old_checkout_date,
                     'new_checkout_date': new_checkout_date,
                     'message': 'Stay extended successfully'
-                }, status=status.HTTP_200_OK)
+                })
 
         except Exception as e:
             logger.error(f"Error extending stay: {str(e)}")
-            return Response(
-                {'error': f'Failed to extend stay: {str(e)}'},
+            return error_response(
+                f'Failed to extend stay: {str(e)}',
                 status=status.HTTP_400_BAD_REQUEST
             )
 
@@ -740,8 +740,8 @@ Please take a moment to rate your overall experience from 1 to 5 stars. We truly
         stay = self.get_object()
 
         if stay.status not in ['pending']:
-            return Response(
-                {'error': f'Can only reject pending checkins. Current status: {stay.status}'},
+            return error_response(
+                f'Can only reject pending checkins. Current status: {stay.status}',
                 status=status.HTTP_400_BAD_REQUEST
             )
 
@@ -786,16 +786,16 @@ Please take a moment to rate your overall experience from 1 to 5 stars. We truly
                     thread.daemon = True
                     thread.start()
 
-                return Response({
+                return success_response(data={
                     'guest_id': guest.id,
                     'guest_name': guest.full_name,
                     'whatsapp_number': guest.whatsapp_number,
                     'message': 'Checkin rejected and guest notified successfully'
-                }, status=status.HTTP_200_OK)
+                })
 
         except Exception as e:
             logger.error(f"Error rejecting checkin: {str(e)}")
-            return Response(
-                {'error': f'Failed to reject checkin: {str(e)}'},
+            return error_response(
+                f'Failed to reject checkin: {str(e)}',
                 status=status.HTTP_400_BAD_REQUEST
             )

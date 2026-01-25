@@ -2,8 +2,8 @@ from django.http import Http404
 from django.utils import timezone
 from rest_framework import viewsets, permissions, status, generics, filters
 from rest_framework.exceptions import PermissionDenied, ValidationError
-from rest_framework.response import Response
 from rest_framework.decorators import action
+from lobbybee.utils.responses import success_response, error_response, created_response, not_found_response, forbidden_response
 from rest_framework.pagination import PageNumberPagination
 import logging
 from django.conf import settings
@@ -101,7 +101,7 @@ class AdminHotelViewSet(viewsets.ModelViewSet):
         hotel.verified_at = timezone.now()
         hotel.save(update_fields=['is_verified', 'status', 'verification_notes', 'verified_at'])
         
-        return Response({'status': 'hotel verified'}, status=status.HTTP_200_OK)
+        return success_response(message='hotel verified')
 
     @action(detail=True, methods=['post'], url_path='toggle-active')
     def toggle_active(self, request, pk=None):
@@ -109,7 +109,7 @@ class AdminHotelViewSet(viewsets.ModelViewSet):
         hotel.is_active = not hotel.is_active
         hotel.save(update_fields=['is_active'])
         status_text = 'activated' if hotel.is_active else 'deactivated'
-        return Response({'status': f'hotel {status_text}'}, status=status.HTTP_200_OK)
+        return success_response(message=f'hotel {status_text}')
 
     @action(detail=True, methods=['post'], url_path='reject')
     def reject(self, request, pk=None):
@@ -123,7 +123,7 @@ class AdminHotelViewSet(viewsets.ModelViewSet):
         hotel.verification_notes = notes
         hotel.save(update_fields=['status', 'is_verified', 'verification_notes'])
         
-        return Response({'status': 'hotel rejected'}, status=status.HTTP_200_OK)
+        return success_response(message='hotel rejected')
 
 
 class UpdateProfileView(generics.UpdateAPIView):
@@ -241,10 +241,7 @@ class AdminHotelDocumentViewSet(viewsets.ModelViewSet):
         try:
             hotel = Hotel.objects.get(id=hotel_id)
         except Hotel.DoesNotExist:
-            return Response(
-                {'error': 'Hotel not found'}, 
-                status=status.HTTP_404_NOT_FOUND
-            )
+            return not_found_response('Hotel not found')
         
         # Try to find existing document by type
         existing_document = None
@@ -259,8 +256,8 @@ class AdminHotelDocumentViewSet(viewsets.ModelViewSet):
         
         # If no existing document and no file provided, return error
         if not existing_document and not request.FILES.get('document_file'):
-            return Response(
-                {'error': 'Document file is required to create a new document'}, 
+            return error_response(
+                'Document file is required to create a new document', 
                 status=status.HTTP_400_BAD_REQUEST
             )
         
@@ -269,10 +266,7 @@ class AdminHotelDocumentViewSet(viewsets.ModelViewSet):
             serializer = self.get_serializer(data=request.data)
             serializer.is_valid(raise_exception=True)
             document = serializer.save(hotel=hotel)
-            return Response(
-                HotelDocumentSerializer(document).data, 
-                status=status.HTTP_201_CREATED
-            )
+            return created_response(data=HotelDocumentSerializer(document).data)
         
         # Update existing document
         # Set the document ID for standard update flow
@@ -309,7 +303,7 @@ class RoomCategoryViewSet(viewsets.ModelViewSet):
             serializer.is_valid(raise_exception=True)
             self.perform_bulk_create(serializer)
             headers = self.get_success_headers(serializer.data)
-            return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+            return created_response(data=serializer.data)
         
         # Default behavior for single category creation
         return super().create(request, *args, **kwargs)
@@ -350,7 +344,7 @@ class RoomViewSet(viewsets.ModelViewSet):
             serializer.is_valid(raise_exception=True)
             self.perform_bulk_create(serializer)
             headers = self.get_success_headers(serializer.data)
-            return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+            return created_response(data=serializer.data)
         
         # Default behavior for single room creation
         return super().create(request, *args, **kwargs)
@@ -373,8 +367,8 @@ class RoomViewSet(viewsets.ModelViewSet):
         
         # Check if user has an associated hotel
         if not hasattr(request.user, 'hotel') or request.user.hotel is None:
-            return Response(
-                {"detail": "No hotel associated with this user."},
+            return error_response(
+                "No hotel associated with this user.",
                 status=status.HTTP_400_BAD_REQUEST
             )
         
@@ -385,8 +379,8 @@ class RoomViewSet(viewsets.ModelViewSet):
             # Check if incoming data is a list for multiple ranges
             if isinstance(data, list):
                 if not data:
-                    return Response(
-                        {"detail": "Request data cannot be an empty list."},
+                    return error_response(
+                        "Request data cannot be an empty list.",
                         status=status.HTTP_400_BAD_REQUEST
                     )
                 # Process each range
@@ -424,9 +418,8 @@ class RoomViewSet(viewsets.ModelViewSet):
                 )
                 all_created_rooms.extend(created_rooms)
             
-            return Response(
-                {"detail": f"{len(all_created_rooms)} rooms created successfully."},
-                status=status.HTTP_201_CREATED
+            return created_response(
+                message=f"{len(all_created_rooms)} rooms created successfully."
             )
         except DRFValidationError as e:
             # Handle DRF ValidationError (from serializer.is_valid)
@@ -434,27 +427,27 @@ class RoomViewSet(viewsets.ModelViewSet):
             if isinstance(error_detail, dict):
                 # Format field errors nicely
                 errors = {field: msgs if isinstance(msgs, list) else [str(msgs)] for field, msgs in error_detail.items()}
-                return Response({"errors": errors}, status=status.HTTP_400_BAD_REQUEST)
-            return Response({"detail": str(error_detail)}, status=status.HTTP_400_BAD_REQUEST)
+                return error_response(errors=errors, status=status.HTTP_400_BAD_REQUEST)
+            return error_response(str(error_detail), status=status.HTTP_400_BAD_REQUEST)
         except DjangoValidationError as e:
             # Handle Django ValidationError (from model's bulk_create_rooms)
             if hasattr(e, 'message_dict'):
-                return Response({"errors": e.message_dict}, status=status.HTTP_400_BAD_REQUEST)
+                return error_response(errors=e.message_dict, status=status.HTTP_400_BAD_REQUEST)
             elif hasattr(e, 'messages'):
-                return Response({"detail": "; ".join(e.messages)}, status=status.HTTP_400_BAD_REQUEST)
-            return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+                return error_response("; ".join(e.messages), status=status.HTTP_400_BAD_REQUEST)
+            return error_response(str(e), status=status.HTTP_400_BAD_REQUEST)
         except IntegrityError as e:
             # Handle database integrity errors (duplicate rooms, etc.)
             logger.error(f"IntegrityError during bulk room creation: {str(e)}")
-            return Response(
-                {"detail": "Some rooms already exist or there was a database constraint violation."},
+            return error_response(
+                "Some rooms already exist or there was a database constraint violation.",
                 status=status.HTTP_400_BAD_REQUEST
             )
         except Exception as e:
             # Catch any other unexpected errors to prevent 500
             logger.exception(f"Unexpected error during bulk room creation: {str(e)}")
-            return Response(
-                {"detail": "An unexpected error occurred while creating rooms. Please try again."},
+            return error_response(
+                "An unexpected error occurred while creating rooms. Please try again.",
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
@@ -464,7 +457,7 @@ class RoomViewSet(viewsets.ModelViewSet):
         Get all floors for the hotel.
         """
         floors = Room.objects.get_floors_for_hotel(request.user.hotel)
-        return Response({"floors": list(floors)}, status=status.HTTP_200_OK)
+        return success_response(data={"floors": list(floors)})
 
 
 class PaymentQRCodeViewSet(viewsets.ModelViewSet):
@@ -510,18 +503,16 @@ class PaymentQRCodeViewSet(viewsets.ModelViewSet):
         """
         # Check if user has permission (admin or manager)
         if request.user.user_type == 'receptionist':
-            return Response(
-                {"detail": "You do not have permission to perform this action."},
-                status=status.HTTP_403_FORBIDDEN
+            return forbidden_response(
+                "You do not have permission to perform this action."
             )
         
         qr_code = self.get_object()
         qr_code.active = not qr_code.active
         qr_code.save(update_fields=['active'])
         status_text = 'activated' if qr_code.active else 'deactivated'
-        return Response(
-            {"status": f"QR code {status_text}"},
-            status=status.HTTP_200_OK
+        return success_response(
+            message=f"QR code {status_text}"
         )
 
     @action(detail=False, methods=['post'], url_path='send-to-whatsapp')
@@ -534,8 +525,8 @@ class PaymentQRCodeViewSet(viewsets.ModelViewSet):
         guest_id = request.data.get('guest_id')
         
         if not qr_code_id or not guest_id:
-            return Response(
-                {"detail": "Both qr_code_id and guest_id are required."},
+            return error_response(
+                "Both qr_code_id and guest_id are required.",
                 status=status.HTTP_400_BAD_REQUEST
             )
         
@@ -548,8 +539,8 @@ class PaymentQRCodeViewSet(viewsets.ModelViewSet):
             
             # Validate QR code has image
             if not qr_code.image:
-                return Response(
-                    {"detail": "QR code does not have an image."},
+                return error_response(
+                    "QR code does not have an image.",
                     status=status.HTTP_400_BAD_REQUEST
                 )
             
@@ -570,21 +561,14 @@ class PaymentQRCodeViewSet(viewsets.ModelViewSet):
             thread.daemon = True
             thread.start()
             
-            return Response(
-                {"detail": f"QR code is being sent to {guest.full_name} at {guest.whatsapp_number}"},
-                status=status.HTTP_200_OK
+            return success_response(
+                message=f"QR code is being sent to {guest.full_name} at {guest.whatsapp_number}"
             )
             
         except PaymentQRCode.DoesNotExist:
-            return Response(
-                {"detail": "QR code not found."},
-                status=status.HTTP_404_NOT_FOUND
-            )
+            return not_found_response("QR code not found.")
         except Guest.DoesNotExist:
-            return Response(
-                {"detail": "Guest not found."},
-                status=status.HTTP_404_NOT_FOUND
-            )
+            return not_found_response("Guest not found.")
 
 
 class WiFiCredentialViewSet(viewsets.ModelViewSet):
@@ -621,18 +605,16 @@ class WiFiCredentialViewSet(viewsets.ModelViewSet):
         """
         # Check if user has permission (admin or manager)
         if request.user.user_type == 'receptionist':
-            return Response(
-                {"detail": "You do not have permission to perform this action."},
-                status=status.HTTP_403_FORBIDDEN
+            return forbidden_response(
+                "You do not have permission to perform this action."
             )
         
         wifi_credential = self.get_object()
         wifi_credential.is_active = not wifi_credential.is_active
         wifi_credential.save(update_fields=['is_active'])
         status_text = 'activated' if wifi_credential.is_active else 'deactivated'
-        return Response(
-            {"status": f"WiFi credentials {status_text}"},
-            status=status.HTTP_200_OK
+        return success_response(
+            message=f"WiFi credentials {status_text}"
         )
 
     @action(detail=False, methods=['get'], url_path='by-room/(?P<room_id>[^/.]+)')
@@ -644,13 +626,10 @@ class WiFiCredentialViewSet(viewsets.ModelViewSet):
         try:
             room = Room.objects.get(id=room_id, hotel=request.user.hotel)
         except Room.DoesNotExist:
-            return Response(
-                {"detail": "Room not found."},
-                status=status.HTTP_404_NOT_FOUND
-            )
+            return not_found_response("Room not found.")
 
         serializer = RoomWiFiCredentialSerializer(room)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        return success_response(data=serializer.data)
 
     @action(detail=False, methods=['get'], url_path='by-floor/(?P<floor>[^/.]+)')
     def get_by_floor(self, request, floor=None):
@@ -660,14 +639,14 @@ class WiFiCredentialViewSet(viewsets.ModelViewSet):
         try:
             floor = int(floor)
         except ValueError:
-            return Response(
-                {"detail": "Invalid floor number."},
+            return error_response(
+                "Invalid floor number.",
                 status=status.HTTP_400_BAD_REQUEST
             )
 
         credentials = self.get_queryset().filter(floor=floor)
         serializer = self.get_serializer(credentials, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        return success_response(data=serializer.data)
 
     @action(detail=False, methods=['get'], url_path='available-floors')
     def get_available_floors(self, request):
@@ -675,6 +654,6 @@ class WiFiCredentialViewSet(viewsets.ModelViewSet):
         Get all floors that have WiFi credentials configured.
         """
         floors = self.get_queryset().values_list('floor', flat=True).distinct().order_by('floor')
-        return Response({"floors": list(floors)}, status=status.HTTP_200_OK)
+        return success_response(data={"floors": list(floors)})
 
 
