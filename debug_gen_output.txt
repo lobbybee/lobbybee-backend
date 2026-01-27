@@ -1,0 +1,27 @@
+Development settings imported
+DEBUG: Mapping found for GuestManagementViewSet. Action: create_guest
+DEBUG: Mapped create_guest to <class 'guest.serializers.CreateGuestSerializer'>
+DEBUG: Mapping found for GuestManagementViewSet. Action: create_guest
+DEBUG: Mapped create_guest to <class 'guest.serializers.CreateGuestSerializer'>
+DEBUG: Mapping found for GuestManagementViewSet. Action: list_bookings
+DEBUG: Mapped list_bookings to <class 'guest.serializers.BookingListSerializer'>
+DEBUG: Mapping found for GuestManagementViewSet. Action: list_bookings
+DEBUG: Mapped list_bookings to <class 'guest.serializers.BookingListSerializer'>
+DEBUG: Mapping found for GuestManagementViewSet. Action: list_guests
+DEBUG: Mapped list_guests to <class 'guest.serializers.GuestResponseSerializer'>
+DEBUG: Mapping found for GuestManagementViewSet. Action: list_guests
+DEBUG: Mapped list_guests to <class 'guest.serializers.GuestResponseSerializer'>
+DEBUG: Mapping found for StayManagementViewSet. Action: checked_in_users
+DEBUG: Mapping found for StayManagementViewSet. Action: checked_in_users
+DEBUG: Mapping found for StayManagementViewSet. Action: checkin_offline
+DEBUG: Mapping found for StayManagementViewSet. Action: checkin_offline
+DEBUG: Mapping found for StayManagementViewSet. Action: pending_stays
+DEBUG: Mapping found for StayManagementViewSet. Action: pending_stays
+DEBUG: Mapping found for StayManagementViewSet. Action: checkout_user
+DEBUG: Mapping found for StayManagementViewSet. Action: checkout_user
+DEBUG: Mapping found for StayManagementViewSet. Action: extend_stay
+DEBUG: Mapping found for StayManagementViewSet. Action: extend_stay
+DEBUG: Mapping found for StayManagementViewSet. Action: reject_checkin
+DEBUG: Mapping found for StayManagementViewSet. Action: reject_checkin
+DEBUG: Mapping found for StayManagementViewSet. Action: verify_checkin
+DEBUG: Mapping found for StayManagementViewSet. Action: verify_checkin

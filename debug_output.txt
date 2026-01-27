@@ -1,0 +1,842 @@
+Development settings imported
+Inspecting 11 patterns at prefix ''
+  [RESOLVER] admin/ -> [<URLPattern '' [name='index']>]...
+Inspecting 36 patterns at prefix 'admin/'
+  [PATTERN] admin/ -> <function AdminSite.index at 0x73b3539db240>
+      No cls attribute
+  [PATTERN] admin/login/ -> <bound method AdminSite.login of AdminSite(name='admin')>
+      No cls attribute
+  [PATTERN] admin/logout/ -> <function AdminSite.logout at 0x73b353a142c0>
+      No cls attribute
+  [PATTERN] admin/password_change/ -> <function AdminSite.password_change at 0x73b353a14360>
+      No cls attribute
+  [PATTERN] admin/password_change/done/ -> <function AdminSite.password_change_done at 0x73b353a14400>
+      No cls attribute
+  [PATTERN] admin/autocomplete/ -> <function AdminSite.autocomplete_view at 0x73b353a144a0>
+      No cls attribute
+  [PATTERN] admin/jsi18n/ -> <function AdminSite.i18n_javascript at 0x73b353a14220>
+      No cls attribute
+  [PATTERN] admin/r/<path:content_type_id>/<path:object_id>/ -> <function shortcut at 0x73b353a14540>
+      No cls attribute
+  [RESOLVER] auth/group/ -> [<URLPattern '' [name='auth_group_changelist']>]...
+Inspecting 6 patterns at prefix 'admin/auth/group/'
+  [PATTERN] admin/auth/group/ -> <function ModelAdmin.changelist_view at 0x73b353a145e0>
+      No cls attribute
+  [PATTERN] admin/auth/group/add/ -> <function ModelAdmin.add_view at 0x73b353a14720>
+      No cls attribute
+  [PATTERN] admin/auth/group/<path:object_id>/history/ -> <function ModelAdmin.history_view at 0x73b353a147c0>
+      No cls attribute
+  [PATTERN] admin/auth/group/<path:object_id>/delete/ -> <function ModelAdmin.delete_view at 0x73b353a14860>
+      No cls attribute
+  [PATTERN] admin/auth/group/<path:object_id>/change/ -> <function ModelAdmin.change_view at 0x73b353a14900>
+      No cls attribute
+  [PATTERN] admin/auth/group/<path:object_id>/ -> <function View.as_view.<locals>.view at 0x73b353a14b80>
+      No cls attribute
+  [RESOLVER] token_blacklist/outstandingtoken/ -> [<URLPattern '' [name='token_blacklist_outstandingtoken_changelist']>]...
+Inspecting 6 patterns at prefix 'admin/token_blacklist/outstandingtoken/'
+  [PATTERN] admin/token_blacklist/outstandingtoken/ -> <function ModelAdmin.changelist_view at 0x73b353a14d60>
+      No cls attribute
+  [PATTERN] admin/token_blacklist/outstandingtoken/add/ -> <function ModelAdmin.add_view at 0x73b353a14e00>
+      No cls attribute
+  [PATTERN] admin/token_blacklist/outstandingtoken/<path:object_id>/history/ -> <function ModelAdmin.history_view at 0x73b353a14ea0>
+      No cls attribute
+  [PATTERN] admin/token_blacklist/outstandingtoken/<path:object_id>/delete/ -> <function ModelAdmin.delete_view at 0x73b353a14f40>
+      No cls attribute
+  [PATTERN] admin/token_blacklist/outstandingtoken/<path:object_id>/change/ -> <function ModelAdmin.change_view at 0x73b353a14fe0>
+      No cls attribute
+  [PATTERN] admin/token_blacklist/outstandingtoken/<path:object_id>/ -> <function View.as_view.<locals>.view at 0x73b353a15120>
+      No cls attribute
+  [RESOLVER] token_blacklist/blacklistedtoken/ -> [<URLPattern '' [name='token_blacklist_blacklistedtoken_changelist']>]...
+Inspecting 6 patterns at prefix 'admin/token_blacklist/blacklistedtoken/'
+  [PATTERN] admin/token_blacklist/blacklistedtoken/ -> <function ModelAdmin.changelist_view at 0x73b353a151c0>
+      No cls attribute
+  [PATTERN] admin/token_blacklist/blacklistedtoken/add/ -> <function ModelAdmin.add_view at 0x73b353a15260>
+      No cls attribute
+  [PATTERN] admin/token_blacklist/blacklistedtoken/<path:object_id>/history/ -> <function ModelAdmin.history_view at 0x73b353a15300>
+      No cls attribute
+  [PATTERN] admin/token_blacklist/blacklistedtoken/<path:object_id>/delete/ -> <function ModelAdmin.delete_view at 0x73b353a153a0>
+      No cls attribute
+  [PATTERN] admin/token_blacklist/blacklistedtoken/<path:object_id>/change/ -> <function ModelAdmin.change_view at 0x73b353a15440>
+      No cls attribute
+  [PATTERN] admin/token_blacklist/blacklistedtoken/<path:object_id>/ -> <function View.as_view.<locals>.view at 0x73b353a15580>
+      No cls attribute
+  [RESOLVER] hotel/hotel/ -> [<URLPattern '' [name='hotel_hotel_changelist']>]...
+Inspecting 6 patterns at prefix 'admin/hotel/hotel/'
+  [PATTERN] admin/hotel/hotel/ -> <function ModelAdmin.changelist_view at 0x73b353a15620>
+      No cls attribute
+  [PATTERN] admin/hotel/hotel/add/ -> <function ModelAdmin.add_view at 0x73b353a156c0>
+      No cls attribute
+  [PATTERN] admin/hotel/hotel/<path:object_id>/history/ -> <function ModelAdmin.history_view at 0x73b353a15760>
+      No cls attribute
+  [PATTERN] admin/hotel/hotel/<path:object_id>/delete/ -> <function ModelAdmin.delete_view at 0x73b353a15800>
+      No cls attribute
+  [PATTERN] admin/hotel/hotel/<path:object_id>/change/ -> <function ModelAdmin.change_view at 0x73b353a158a0>
+      No cls attribute
+  [PATTERN] admin/hotel/hotel/<path:object_id>/ -> <function View.as_view.<locals>.view at 0x73b353a159e0>
+      No cls attribute
+  [RESOLVER] hotel/hoteldocument/ -> [<URLPattern '' [name='hotel_hoteldocument_changelist']>]...
+Inspecting 6 patterns at prefix 'admin/hotel/hoteldocument/'
+  [PATTERN] admin/hotel/hoteldocument/ -> <function ModelAdmin.changelist_view at 0x73b353a15a80>
+      No cls attribute
+  [PATTERN] admin/hotel/hoteldocument/add/ -> <function ModelAdmin.add_view at 0x73b353a15b20>
+      No cls attribute
+  [PATTERN] admin/hotel/hoteldocument/<path:object_id>/history/ -> <function ModelAdmin.history_view at 0x73b353a15bc0>
+      No cls attribute
+  [PATTERN] admin/hotel/hoteldocument/<path:object_id>/delete/ -> <function ModelAdmin.delete_view at 0x73b353a15c60>
+      No cls attribute
+  [PATTERN] admin/hotel/hoteldocument/<path:object_id>/change/ -> <function ModelAdmin.change_view at 0x73b353a15d00>
+      No cls attribute
+  [PATTERN] admin/hotel/hoteldocument/<path:object_id>/ -> <function View.as_view.<locals>.view at 0x73b353a15e40>
+      No cls attribute
+  [RESOLVER] hotel/room/ -> [<URLPattern '' [name='hotel_room_changelist']>]...
+Inspecting 6 patterns at prefix 'admin/hotel/room/'
+  [PATTERN] admin/hotel/room/ -> <function ModelAdmin.changelist_view at 0x73b353a15f80>
+      No cls attribute
+  [PATTERN] admin/hotel/room/add/ -> <function ModelAdmin.add_view at 0x73b353a16020>
+      No cls attribute
+  [PATTERN] admin/hotel/room/<path:object_id>/history/ -> <function ModelAdmin.history_view at 0x73b353a160c0>
+      No cls attribute
+  [PATTERN] admin/hotel/room/<path:object_id>/delete/ -> <function ModelAdmin.delete_view at 0x73b353a16160>
+      No cls attribute
+  [PATTERN] admin/hotel/room/<path:object_id>/change/ -> <function ModelAdmin.change_view at 0x73b353a16200>
+      No cls attribute
+  [PATTERN] admin/hotel/room/<path:object_id>/ -> <function View.as_view.<locals>.view at 0x73b353a16340>
+      No cls attribute
+  [RESOLVER] hotel/roomcategory/ -> [<URLPattern '' [name='hotel_roomcategory_changelist']>]...
+Inspecting 6 patterns at prefix 'admin/hotel/roomcategory/'
+  [PATTERN] admin/hotel/roomcategory/ -> <function ModelAdmin.changelist_view at 0x73b353a16520>
+      No cls attribute
+  [PATTERN] admin/hotel/roomcategory/add/ -> <function ModelAdmin.add_view at 0x73b353a165c0>
+      No cls attribute
+  [PATTERN] admin/hotel/roomcategory/<path:object_id>/history/ -> <function ModelAdmin.history_view at 0x73b353a16660>
+      No cls attribute
+  [PATTERN] admin/hotel/roomcategory/<path:object_id>/delete/ -> <function ModelAdmin.delete_view at 0x73b353a16700>
+      No cls attribute
+  [PATTERN] admin/hotel/roomcategory/<path:object_id>/change/ -> <function ModelAdmin.change_view at 0x73b353a167a0>
+      No cls attribute
+  [PATTERN] admin/hotel/roomcategory/<path:object_id>/ -> <function View.as_view.<locals>.view at 0x73b353a168e0>
+      No cls attribute
+  [RESOLVER] user/user/ -> [<URLPattern '<id>/password/' [name='auth_user_password_change']>]...
+Inspecting 7 patterns at prefix 'admin/user/user/'
+  [PATTERN] admin/user/user/<id>/password/ -> <function UserAdmin.user_change_password at 0x73b353a16ca0>
+      No cls attribute
+  [PATTERN] admin/user/user/ -> <function ModelAdmin.changelist_view at 0x73b353a16de0>
+      No cls attribute
+  [PATTERN] admin/user/user/add/ -> <function UserAdmin.add_view at 0x73b353a16e80>
+      No cls attribute
+  [PATTERN] admin/user/user/<path:object_id>/history/ -> <function ModelAdmin.history_view at 0x73b353a16f20>
+      No cls attribute
+  [PATTERN] admin/user/user/<path:object_id>/delete/ -> <function ModelAdmin.delete_view at 0x73b353a16fc0>
+      No cls attribute
+  [PATTERN] admin/user/user/<path:object_id>/change/ -> <function ModelAdmin.change_view at 0x73b353a17060>
+      No cls attribute
+  [PATTERN] admin/user/user/<path:object_id>/ -> <function View.as_view.<locals>.view at 0x73b353a171a0>
+      No cls attribute
+  [RESOLVER] guest/guest/ -> [<URLPattern '' [name='guest_guest_changelist']>]...
+Inspecting 6 patterns at prefix 'admin/guest/guest/'
+  [PATTERN] admin/guest/guest/ -> <function ModelAdmin.changelist_view at 0x73b353a17240>
+      No cls attribute
+  [PATTERN] admin/guest/guest/add/ -> <function ModelAdmin.add_view at 0x73b353a172e0>
+      No cls attribute
+  [PATTERN] admin/guest/guest/<path:object_id>/history/ -> <function ModelAdmin.history_view at 0x73b353a17380>
+      No cls attribute
+  [PATTERN] admin/guest/guest/<path:object_id>/delete/ -> <function ModelAdmin.delete_view at 0x73b353a17420>
+      No cls attribute
+  [PATTERN] admin/guest/guest/<path:object_id>/change/ -> <function ModelAdmin.change_view at 0x73b353a174c0>
+      No cls attribute
+  [PATTERN] admin/guest/guest/<path:object_id>/ -> <function View.as_view.<locals>.view at 0x73b353a17600>
+      No cls attribute
+  [RESOLVER] guest/guestidentitydocument/ -> [<URLPattern '' [name='guest_guestidentitydocument_changelist']>]...
+Inspecting 6 patterns at prefix 'admin/guest/guestidentitydocument/'
+  [PATTERN] admin/guest/guestidentitydocument/ -> <function ModelAdmin.changelist_view at 0x73b353a176a0>
+      No cls attribute
+  [PATTERN] admin/guest/guestidentitydocument/add/ -> <function ModelAdmin.add_view at 0x73b353a17740>
+      No cls attribute
+  [PATTERN] admin/guest/guestidentitydocument/<path:object_id>/history/ -> <function ModelAdmin.history_view at 0x73b353a177e0>
+      No cls attribute
+  [PATTERN] admin/guest/guestidentitydocument/<path:object_id>/delete/ -> <function ModelAdmin.delete_view at 0x73b353a17880>
+      No cls attribute
+  [PATTERN] admin/guest/guestidentitydocument/<path:object_id>/change/ -> <function ModelAdmin.change_view at 0x73b353a17920>
+      No cls attribute
+  [PATTERN] admin/guest/guestidentitydocument/<path:object_id>/ -> <function View.as_view.<locals>.view at 0x73b353a17a60>
+      No cls attribute
+  [RESOLVER] guest/stay/ -> [<URLPattern '' [name='guest_stay_changelist']>]...
+Inspecting 6 patterns at prefix 'admin/guest/stay/'
+  [PATTERN] admin/guest/stay/ -> <function ModelAdmin.changelist_view at 0x73b353a17b00>
+      No cls attribute
+  [PATTERN] admin/guest/stay/add/ -> <function ModelAdmin.add_view at 0x73b353a17ba0>
+      No cls attribute
+  [PATTERN] admin/guest/stay/<path:object_id>/history/ -> <function ModelAdmin.history_view at 0x73b353a17c40>
+      No cls attribute
+  [PATTERN] admin/guest/stay/<path:object_id>/delete/ -> <function ModelAdmin.delete_view at 0x73b353a17ce0>
+      No cls attribute
+  [PATTERN] admin/guest/stay/<path:object_id>/change/ -> <function ModelAdmin.change_view at 0x73b353a17d80>
+      No cls attribute
+  [PATTERN] admin/guest/stay/<path:object_id>/ -> <function View.as_view.<locals>.view at 0x73b353a17ec0>
+      No cls attribute
+  [RESOLVER] guest/booking/ -> [<URLPattern '' [name='guest_booking_changelist']>]...
+Inspecting 6 patterns at prefix 'admin/guest/booking/'
+  [PATTERN] admin/guest/booking/ -> <function ModelAdmin.changelist_view at 0x73b353a17f60>
+      No cls attribute
+  [PATTERN] admin/guest/booking/add/ -> <function ModelAdmin.add_view at 0x73b353a30040>
+      No cls attribute
+  [PATTERN] admin/guest/booking/<path:object_id>/history/ -> <function ModelAdmin.history_view at 0x73b353a300e0>
+      No cls attribute
+  [PATTERN] admin/guest/booking/<path:object_id>/delete/ -> <function ModelAdmin.delete_view at 0x73b353a30180>
+      No cls attribute
+  [PATTERN] admin/guest/booking/<path:object_id>/change/ -> <function ModelAdmin.change_view at 0x73b353a30220>
+      No cls attribute
+  [PATTERN] admin/guest/booking/<path:object_id>/ -> <function View.as_view.<locals>.view at 0x73b353a30360>
+      No cls attribute
+  [RESOLVER] django_celery_beat/periodictask/ -> [<URLPattern '' [name='django_celery_beat_periodictask_changelist']>]...
+Inspecting 6 patterns at prefix 'admin/django_celery_beat/periodictask/'
+  [PATTERN] admin/django_celery_beat/periodictask/ -> <function PeriodicTaskAdmin.changelist_view at 0x73b353a304a0>
+      No cls attribute
+  [PATTERN] admin/django_celery_beat/periodictask/add/ -> <function ModelAdmin.add_view at 0x73b353a30540>
+      No cls attribute
+  [PATTERN] admin/django_celery_beat/periodictask/<path:object_id>/history/ -> <function ModelAdmin.history_view at 0x73b353a305e0>
+      No cls attribute
+  [PATTERN] admin/django_celery_beat/periodictask/<path:object_id>/delete/ -> <function ModelAdmin.delete_view at 0x73b353a30680>
+      No cls attribute
+  [PATTERN] admin/django_celery_beat/periodictask/<path:object_id>/change/ -> <function ModelAdmin.change_view at 0x73b353a30720>
+      No cls attribute
+  [PATTERN] admin/django_celery_beat/periodictask/<path:object_id>/ -> <function View.as_view.<locals>.view at 0x73b353a30860>
+      No cls attribute
+  [RESOLVER] django_celery_beat/clockedschedule/ -> [<URLPattern '' [name='django_celery_beat_clockedschedule_changelist']>]...
+Inspecting 6 patterns at prefix 'admin/django_celery_beat/clockedschedule/'
+  [PATTERN] admin/django_celery_beat/clockedschedule/ -> <function ModelAdmin.changelist_view at 0x73b353a309a0>
+      No cls attribute
+  [PATTERN] admin/django_celery_beat/clockedschedule/add/ -> <function ModelAdmin.add_view at 0x73b353a30a40>
+      No cls attribute
+  [PATTERN] admin/django_celery_beat/clockedschedule/<path:object_id>/history/ -> <function ModelAdmin.history_view at 0x73b353a30ae0>
+      No cls attribute
+  [PATTERN] admin/django_celery_beat/clockedschedule/<path:object_id>/delete/ -> <function ModelAdmin.delete_view at 0x73b353a30b80>
+      No cls attribute
+  [PATTERN] admin/django_celery_beat/clockedschedule/<path:object_id>/change/ -> <function ModelAdmin.change_view at 0x73b353a30c20>
+      No cls attribute
+  [PATTERN] admin/django_celery_beat/clockedschedule/<path:object_id>/ -> <function View.as_view.<locals>.view at 0x73b353a30d60>
+      No cls attribute
+  [RESOLVER] django_celery_beat/crontabschedule/ -> [<URLPattern '' [name='django_celery_beat_crontabschedule_changelist']>]...
+Inspecting 6 patterns at prefix 'admin/django_celery_beat/crontabschedule/'
+  [PATTERN] admin/django_celery_beat/crontabschedule/ -> <function ModelAdmin.changelist_view at 0x73b353a30e00>
+      No cls attribute
+  [PATTERN] admin/django_celery_beat/crontabschedule/add/ -> <function ModelAdmin.add_view at 0x73b353a30ea0>
+      No cls attribute
+  [PATTERN] admin/django_celery_beat/crontabschedule/<path:object_id>/history/ -> <function ModelAdmin.history_view at 0x73b353a30f40>
+      No cls attribute
+  [PATTERN] admin/django_celery_beat/crontabschedule/<path:object_id>/delete/ -> <function ModelAdmin.delete_view at 0x73b353a30fe0>
+      No cls attribute
+  [PATTERN] admin/django_celery_beat/crontabschedule/<path:object_id>/change/ -> <function ModelAdmin.change_view at 0x73b353a31080>
+      No cls attribute
+  [PATTERN] admin/django_celery_beat/crontabschedule/<path:object_id>/ -> <function View.as_view.<locals>.view at 0x73b353a311c0>
+      No cls attribute
+  [RESOLVER] django_celery_beat/solarschedule/ -> [<URLPattern '' [name='django_celery_beat_solarschedule_changelist']>]...
+Inspecting 6 patterns at prefix 'admin/django_celery_beat/solarschedule/'
+  [PATTERN] admin/django_celery_beat/solarschedule/ -> <function ModelAdmin.changelist_view at 0x73b353a31260>
+      No cls attribute
+  [PATTERN] admin/django_celery_beat/solarschedule/add/ -> <function ModelAdmin.add_view at 0x73b353a31300>
+      No cls attribute
+  [PATTERN] admin/django_celery_beat/solarschedule/<path:object_id>/history/ -> <function ModelAdmin.history_view at 0x73b353a313a0>
+      No cls attribute
+  [PATTERN] admin/django_celery_beat/solarschedule/<path:object_id>/delete/ -> <function ModelAdmin.delete_view at 0x73b353a31440>
+      No cls attribute
+  [PATTERN] admin/django_celery_beat/solarschedule/<path:object_id>/change/ -> <function ModelAdmin.change_view at 0x73b353a314e0>
+      No cls attribute
+  [PATTERN] admin/django_celery_beat/solarschedule/<path:object_id>/ -> <function View.as_view.<locals>.view at 0x73b353a31620>
+      No cls attribute
+  [RESOLVER] django_celery_beat/intervalschedule/ -> [<URLPattern '' [name='django_celery_beat_intervalschedule_changelist']>]...
+Inspecting 6 patterns at prefix 'admin/django_celery_beat/intervalschedule/'
+  [PATTERN] admin/django_celery_beat/intervalschedule/ -> <function ModelAdmin.changelist_view at 0x73b353a316c0>
+      No cls attribute
+  [PATTERN] admin/django_celery_beat/intervalschedule/add/ -> <function ModelAdmin.add_view at 0x73b353a31760>
+      No cls attribute
+  [PATTERN] admin/django_celery_beat/intervalschedule/<path:object_id>/history/ -> <function ModelAdmin.history_view at 0x73b353a31800>
+      No cls attribute
+  [PATTERN] admin/django_celery_beat/intervalschedule/<path:object_id>/delete/ -> <function ModelAdmin.delete_view at 0x73b353a318a0>
+      No cls attribute
+  [PATTERN] admin/django_celery_beat/intervalschedule/<path:object_id>/change/ -> <function ModelAdmin.change_view at 0x73b353a31940>
+      No cls attribute
+  [PATTERN] admin/django_celery_beat/intervalschedule/<path:object_id>/ -> <function View.as_view.<locals>.view at 0x73b353a31a80>
+      No cls attribute
+  [RESOLVER] payments/subscriptionplan/ -> [<URLPattern '' [name='payments_subscriptionplan_changelist']>]...
+Inspecting 6 patterns at prefix 'admin/payments/subscriptionplan/'
+  [PATTERN] admin/payments/subscriptionplan/ -> <function ModelAdmin.changelist_view at 0x73b353a31b20>
+      No cls attribute
+  [PATTERN] admin/payments/subscriptionplan/add/ -> <function ModelAdmin.add_view at 0x73b353a31bc0>
+      No cls attribute
+  [PATTERN] admin/payments/subscriptionplan/<path:object_id>/history/ -> <function ModelAdmin.history_view at 0x73b353a31c60>
+      No cls attribute
+  [PATTERN] admin/payments/subscriptionplan/<path:object_id>/delete/ -> <function ModelAdmin.delete_view at 0x73b353a31d00>
+      No cls attribute
+  [PATTERN] admin/payments/subscriptionplan/<path:object_id>/change/ -> <function ModelAdmin.change_view at 0x73b353a31da0>
+      No cls attribute
+  [PATTERN] admin/payments/subscriptionplan/<path:object_id>/ -> <function View.as_view.<locals>.view at 0x73b353a31ee0>
+      No cls attribute
+  [RESOLVER] payments/transaction/ -> [<URLPattern '' [name='payments_transaction_changelist']>]...
+Inspecting 6 patterns at prefix 'admin/payments/transaction/'
+  [PATTERN] admin/payments/transaction/ -> <function ModelAdmin.changelist_view at 0x73b353a31f80>
+      No cls attribute
+  [PATTERN] admin/payments/transaction/add/ -> <function ModelAdmin.add_view at 0x73b353a32020>
+      No cls attribute
+  [PATTERN] admin/payments/transaction/<path:object_id>/history/ -> <function ModelAdmin.history_view at 0x73b353a320c0>
+      No cls attribute
+  [PATTERN] admin/payments/transaction/<path:object_id>/delete/ -> <function ModelAdmin.delete_view at 0x73b353a32160>
+      No cls attribute
+  [PATTERN] admin/payments/transaction/<path:object_id>/change/ -> <function ModelAdmin.change_view at 0x73b353a32200>
+      No cls attribute
+  [PATTERN] admin/payments/transaction/<path:object_id>/ -> <function View.as_view.<locals>.view at 0x73b353a32340>
+      No cls attribute
+  [RESOLVER] payments/hotelsubscription/ -> [<URLPattern '' [name='payments_hotelsubscription_changelist']>]...
+Inspecting 6 patterns at prefix 'admin/payments/hotelsubscription/'
+  [PATTERN] admin/payments/hotelsubscription/ -> <function ModelAdmin.changelist_view at 0x73b353a323e0>
+      No cls attribute
+  [PATTERN] admin/payments/hotelsubscription/add/ -> <function ModelAdmin.add_view at 0x73b353a32480>
+      No cls attribute
+  [PATTERN] admin/payments/hotelsubscription/<path:object_id>/history/ -> <function ModelAdmin.history_view at 0x73b353a32520>
+      No cls attribute
+  [PATTERN] admin/payments/hotelsubscription/<path:object_id>/delete/ -> <function ModelAdmin.delete_view at 0x73b353a325c0>
+      No cls attribute
+  [PATTERN] admin/payments/hotelsubscription/<path:object_id>/change/ -> <function ModelAdmin.change_view at 0x73b353a32660>
+      No cls attribute
+  [PATTERN] admin/payments/hotelsubscription/<path:object_id>/ -> <function View.as_view.<locals>.view at 0x73b353a327a0>
+      No cls attribute
+  [RESOLVER] chat/conversation/ -> [<URLPattern '' [name='chat_conversation_changelist']>]...
+Inspecting 6 patterns at prefix 'admin/chat/conversation/'
+  [PATTERN] admin/chat/conversation/ -> <function ModelAdmin.changelist_view at 0x73b353a32840>
+      No cls attribute
+  [PATTERN] admin/chat/conversation/add/ -> <function ModelAdmin.add_view at 0x73b353a328e0>
+      No cls attribute
+  [PATTERN] admin/chat/conversation/<path:object_id>/history/ -> <function ModelAdmin.history_view at 0x73b353a32980>
+      No cls attribute
+  [PATTERN] admin/chat/conversation/<path:object_id>/delete/ -> <function ModelAdmin.delete_view at 0x73b353a32a20>
+      No cls attribute
+  [PATTERN] admin/chat/conversation/<path:object_id>/change/ -> <function ModelAdmin.change_view at 0x73b353a32ac0>
+      No cls attribute
+  [PATTERN] admin/chat/conversation/<path:object_id>/ -> <function View.as_view.<locals>.view at 0x73b353a32c00>
+      No cls attribute
+  [RESOLVER] chat/message/ -> [<URLPattern '' [name='chat_message_changelist']>]...
+Inspecting 6 patterns at prefix 'admin/chat/message/'
+  [PATTERN] admin/chat/message/ -> <function ModelAdmin.changelist_view at 0x73b353a32ca0>
+      No cls attribute
+  [PATTERN] admin/chat/message/add/ -> <function ModelAdmin.add_view at 0x73b353a32d40>
+      No cls attribute
+  [PATTERN] admin/chat/message/<path:object_id>/history/ -> <function ModelAdmin.history_view at 0x73b353a32de0>
+      No cls attribute
+  [PATTERN] admin/chat/message/<path:object_id>/delete/ -> <function ModelAdmin.delete_view at 0x73b353a32e80>
+      No cls attribute
+  [PATTERN] admin/chat/message/<path:object_id>/change/ -> <function ModelAdmin.change_view at 0x73b353a32f20>
+      No cls attribute
+  [PATTERN] admin/chat/message/<path:object_id>/ -> <function View.as_view.<locals>.view at 0x73b353a33060>
+      No cls attribute
+  [RESOLVER] chat/conversationparticipant/ -> [<URLPattern '' [name='chat_conversationparticipant_changelist']>]...
+Inspecting 6 patterns at prefix 'admin/chat/conversationparticipant/'
+  [PATTERN] admin/chat/conversationparticipant/ -> <function ModelAdmin.changelist_view at 0x73b353a33100>
+      No cls attribute
+  [PATTERN] admin/chat/conversationparticipant/add/ -> <function ModelAdmin.add_view at 0x73b353a331a0>
+      No cls attribute
+  [PATTERN] admin/chat/conversationparticipant/<path:object_id>/history/ -> <function ModelAdmin.history_view at 0x73b353a33240>
+      No cls attribute
+  [PATTERN] admin/chat/conversationparticipant/<path:object_id>/delete/ -> <function ModelAdmin.delete_view at 0x73b353a332e0>
+      No cls attribute
+  [PATTERN] admin/chat/conversationparticipant/<path:object_id>/change/ -> <function ModelAdmin.change_view at 0x73b353a33380>
+      No cls attribute
+  [PATTERN] admin/chat/conversationparticipant/<path:object_id>/ -> <function View.as_view.<locals>.view at 0x73b353a334c0>
+      No cls attribute
+  [RESOLVER] chat/messagetemplate/ -> [<URLPattern '' [name='chat_messagetemplate_changelist']>]...
+Inspecting 6 patterns at prefix 'admin/chat/messagetemplate/'
+  [PATTERN] admin/chat/messagetemplate/ -> <function ModelAdmin.changelist_view at 0x73b353a33560>
+      No cls attribute
+  [PATTERN] admin/chat/messagetemplate/add/ -> <function ModelAdmin.add_view at 0x73b353a33600>
+      No cls attribute
+  [PATTERN] admin/chat/messagetemplate/<path:object_id>/history/ -> <function ModelAdmin.history_view at 0x73b353a336a0>
+      No cls attribute
+  [PATTERN] admin/chat/messagetemplate/<path:object_id>/delete/ -> <function ModelAdmin.delete_view at 0x73b353a33740>
+      No cls attribute
+  [PATTERN] admin/chat/messagetemplate/<path:object_id>/change/ -> <function ModelAdmin.change_view at 0x73b353a337e0>
+      No cls attribute
+  [PATTERN] admin/chat/messagetemplate/<path:object_id>/ -> <function View.as_view.<locals>.view at 0x73b353a33920>
+      No cls attribute
+  [RESOLVER] chat/custommessagetemplate/ -> [<URLPattern '' [name='chat_custommessagetemplate_changelist']>]...
+Inspecting 6 patterns at prefix 'admin/chat/custommessagetemplate/'
+  [PATTERN] admin/chat/custommessagetemplate/ -> <function ModelAdmin.changelist_view at 0x73b353a339c0>
+      No cls attribute
+  [PATTERN] admin/chat/custommessagetemplate/add/ -> <function ModelAdmin.add_view at 0x73b353a33a60>
+      No cls attribute
+  [PATTERN] admin/chat/custommessagetemplate/<path:object_id>/history/ -> <function ModelAdmin.history_view at 0x73b353a33b00>
+      No cls attribute
+  [PATTERN] admin/chat/custommessagetemplate/<path:object_id>/delete/ -> <function ModelAdmin.delete_view at 0x73b353a33ba0>
+      No cls attribute
+  [PATTERN] admin/chat/custommessagetemplate/<path:object_id>/change/ -> <function ModelAdmin.change_view at 0x73b353a33c40>
+      No cls attribute
+  [PATTERN] admin/chat/custommessagetemplate/<path:object_id>/ -> <function View.as_view.<locals>.view at 0x73b353a33d80>
+      No cls attribute
+  [RESOLVER] notifications/notification/ -> [<URLPattern '' [name='notifications_notification_changelist']>]...
+Inspecting 6 patterns at prefix 'admin/notifications/notification/'
+  [PATTERN] admin/notifications/notification/ -> <function ModelAdmin.changelist_view at 0x73b353a33e20>
+      No cls attribute
+  [PATTERN] admin/notifications/notification/add/ -> <function ModelAdmin.add_view at 0x73b353a33ec0>
+      No cls attribute
+  [PATTERN] admin/notifications/notification/<path:object_id>/history/ -> <function ModelAdmin.history_view at 0x73b353a33f60>
+      No cls attribute
+  [PATTERN] admin/notifications/notification/<path:object_id>/delete/ -> <function ModelAdmin.delete_view at 0x73b353a4c040>
+      No cls attribute
+  [PATTERN] admin/notifications/notification/<path:object_id>/change/ -> <function ModelAdmin.change_view at 0x73b353a4c0e0>
+      No cls attribute
+  [PATTERN] admin/notifications/notification/<path:object_id>/ -> <function View.as_view.<locals>.view at 0x73b353a4c220>
+      No cls attribute
+  [PATTERN] admin/^(?P<app_label>auth|token_blacklist|hotel|user|guest|django_celery_beat|payments|chat|notifications)/$ -> <function AdminSite.app_index at 0x73b353a30900>
+      No cls attribute
+  [PATTERN] admin/(?P<url>.*)$ -> <function AdminSite.catch_all_view at 0x73b353a4c2c0>
+      No cls attribute
+  [RESOLVER] api/ -> [<URLPattern 'hotel/register/' [name='hotel-registration']>]...
+Inspecting 14 patterns at prefix 'api/'
+  [PATTERN] api/hotel/register/ -> <function View.as_view.<locals>.view at 0x73b350da65c0>
+      View Class: HotelRegistrationView
+  [PATTERN] api/hotel/staff/create/ -> <function View.as_view.<locals>.view at 0x73b350dfdbc0>
+      View Class: HotelStaffRegistrationView
+  [PATTERN] api/verify-otp/ -> <function View.as_view.<locals>.view at 0x73b350dfdd00>
+      View Class: VerifyOTPView
+  [PATTERN] api/username-suggestions/ -> <function View.as_view.<locals>.view at 0x73b350dfde40>
+      View Class: UsernameSuggestionView
+  [PATTERN] api/resend-otp/ -> <function View.as_view.<locals>.view at 0x73b350dfdf80>
+      View Class: ResendOTPView
+  [PATTERN] api/login/ -> <function View.as_view.<locals>.view at 0x73b350dfe0c0>
+      View Class: CustomTokenObtainPairView
+  [PATTERN] api/login/refresh/ -> <function View.as_view.<locals>.view at 0x73b350dfe200>
+      View Class: TokenRefreshView
+  [PATTERN] api/logout/ -> <function View.as_view.<locals>.view at 0x73b350dfe340>
+      View Class: LogoutView
+  [PATTERN] api/password-reset/request/ -> <function View.as_view.<locals>.view at 0x73b350dfe480>
+      View Class: PasswordResetRequestView
+  [PATTERN] api/password-reset/confirm/ -> <function View.as_view.<locals>.view at 0x73b350dfe5c0>
+      View Class: PasswordResetConfirmView
+  [PATTERN] api/change-password/ -> <function View.as_view.<locals>.view at 0x73b350dfe700>
+      View Class: ChangePasswordView
+  [PATTERN] api/admin/create-hotel/ -> <function View.as_view.<locals>.view at 0x73b350dfe840>
+      View Class: PlatformCreateHotelView
+  [RESOLVER] admin/ -> [<URLPattern '^users/$' [name='platform-user-list']>]...
+Inspecting 6 patterns at prefix 'api/admin/'
+  [PATTERN] api/admin/^users/$ -> <function PlatformUserViewSet at 0x73b350dfe980>
+      View Class: PlatformUserViewSet
+  [PATTERN] api/admin/^users\.(?P<format>[a-z0-9]+)/?$ -> <function PlatformUserViewSet at 0x73b350dfe980>
+      View Class: PlatformUserViewSet
+  [PATTERN] api/admin/^users/(?P<pk>[^/.]+)/$ -> <function PlatformUserViewSet at 0x73b350dfeac0>
+      View Class: PlatformUserViewSet
+  [PATTERN] api/admin/^users/(?P<pk>[^/.]+)\.(?P<format>[a-z0-9]+)/?$ -> <function PlatformUserViewSet at 0x73b350dfeac0>
+      View Class: PlatformUserViewSet
+  [PATTERN] api/admin/ -> <function View.as_view.<locals>.view at 0x73b350dfec00>
+      View Class: APIRootView
+  [PATTERN] api/admin/<drf_format_suffix:format> -> <function View.as_view.<locals>.view at 0x73b350dfec00>
+      View Class: APIRootView
+  [RESOLVER]  -> [<URLPattern '^users/$' [name='user-list']>]...
+Inspecting 6 patterns at prefix 'api/'
+  [PATTERN] api/^users/$ -> <function UserViewSet at 0x73b350dfefc0>
+      View Class: UserViewSet
+  [PATTERN] api/^users\.(?P<format>[a-z0-9]+)/?$ -> <function UserViewSet at 0x73b350dfefc0>
+      View Class: UserViewSet
+  [PATTERN] api/^users/(?P<pk>[^/.]+)/$ -> <function UserViewSet at 0x73b350dff100>
+      View Class: UserViewSet
+  [PATTERN] api/^users/(?P<pk>[^/.]+)\.(?P<format>[a-z0-9]+)/?$ -> <function UserViewSet at 0x73b350dff100>
+      View Class: UserViewSet
+  [PATTERN] api/ -> <function View.as_view.<locals>.view at 0x73b350dff240>
+      View Class: APIRootView
+  [PATTERN] api/<drf_format_suffix:format> -> <function View.as_view.<locals>.view at 0x73b350dff240>
+      View Class: APIRootView
+  [RESOLVER] api/ -> [<URLResolver <URLPattern list> (None:None) ''>]...
+Inspecting 7 patterns at prefix 'api/'
+  [RESOLVER]  -> [<URLPattern '^hotels/$' [name='hotel-list']>]...
+Inspecting 38 patterns at prefix 'api/'
+  [PATTERN] api/^hotels/$ -> <function HotelViewSet at 0x73b350dff420>
+      View Class: HotelViewSet
+  [PATTERN] api/^hotels\.(?P<format>[a-z0-9]+)/?$ -> <function HotelViewSet at 0x73b350dff420>
+      View Class: HotelViewSet
+  [PATTERN] api/^hotels/(?P<pk>[^/.]+)/$ -> <function HotelViewSet at 0x73b350c2e3e0>
+      View Class: HotelViewSet
+  [PATTERN] api/^hotels/(?P<pk>[^/.]+)\.(?P<format>[a-z0-9]+)/?$ -> <function HotelViewSet at 0x73b350c2e3e0>
+      View Class: HotelViewSet
+  [PATTERN] api/^room-categories/$ -> <function RoomCategoryViewSet at 0x73b350c2e840>
+      View Class: RoomCategoryViewSet
+  [PATTERN] api/^room-categories\.(?P<format>[a-z0-9]+)/?$ -> <function RoomCategoryViewSet at 0x73b350c2e840>
+      View Class: RoomCategoryViewSet
+  [PATTERN] api/^room-categories/(?P<pk>[^/.]+)/$ -> <function RoomCategoryViewSet at 0x73b350c2ea20>
+      View Class: RoomCategoryViewSet
+  [PATTERN] api/^room-categories/(?P<pk>[^/.]+)\.(?P<format>[a-z0-9]+)/?$ -> <function RoomCategoryViewSet at 0x73b350c2ea20>
+      View Class: RoomCategoryViewSet
+  [PATTERN] api/^rooms/$ -> <function RoomViewSet at 0x73b350c2eb60>
+      View Class: RoomViewSet
+  [PATTERN] api/^rooms\.(?P<format>[a-z0-9]+)/?$ -> <function RoomViewSet at 0x73b350c2eb60>
+      View Class: RoomViewSet
+  [PATTERN] api/^rooms/bulk-create/$ -> <function RoomViewSet at 0x73b350c2eca0>
+      View Class: RoomViewSet
+  [PATTERN] api/^rooms/bulk-create\.(?P<format>[a-z0-9]+)/?$ -> <function RoomViewSet at 0x73b350c2eca0>
+      View Class: RoomViewSet
+  [PATTERN] api/^rooms/floors/$ -> <function RoomViewSet at 0x73b350c2ede0>
+      View Class: RoomViewSet
+  [PATTERN] api/^rooms/floors\.(?P<format>[a-z0-9]+)/?$ -> <function RoomViewSet at 0x73b350c2ede0>
+      View Class: RoomViewSet
+  [PATTERN] api/^rooms/(?P<pk>[^/.]+)/$ -> <function RoomViewSet at 0x73b350c2ef20>
+      View Class: RoomViewSet
+  [PATTERN] api/^rooms/(?P<pk>[^/.]+)\.(?P<format>[a-z0-9]+)/?$ -> <function RoomViewSet at 0x73b350c2ef20>
+      View Class: RoomViewSet
+  [PATTERN] api/^payment-qr-codes/$ -> <function PaymentQRCodeViewSet at 0x73b350c2f060>
+      View Class: PaymentQRCodeViewSet
+  [PATTERN] api/^payment-qr-codes\.(?P<format>[a-z0-9]+)/?$ -> <function PaymentQRCodeViewSet at 0x73b350c2f060>
+      View Class: PaymentQRCodeViewSet
+  [PATTERN] api/^payment-qr-codes/send-to-whatsapp/$ -> <function PaymentQRCodeViewSet at 0x73b350c2f1a0>
+      View Class: PaymentQRCodeViewSet
+  [PATTERN] api/^payment-qr-codes/send-to-whatsapp\.(?P<format>[a-z0-9]+)/?$ -> <function PaymentQRCodeViewSet at 0x73b350c2f1a0>
+      View Class: PaymentQRCodeViewSet
+  [PATTERN] api/^payment-qr-codes/(?P<pk>[^/.]+)/$ -> <function PaymentQRCodeViewSet at 0x73b350c2f2e0>
+      View Class: PaymentQRCodeViewSet
+  [PATTERN] api/^payment-qr-codes/(?P<pk>[^/.]+)\.(?P<format>[a-z0-9]+)/?$ -> <function PaymentQRCodeViewSet at 0x73b350c2f2e0>
+      View Class: PaymentQRCodeViewSet
+  [PATTERN] api/^payment-qr-codes/(?P<pk>[^/.]+)/toggle-active/$ -> <function PaymentQRCodeViewSet at 0x73b350c2f420>
+      View Class: PaymentQRCodeViewSet
+  [PATTERN] api/^payment-qr-codes/(?P<pk>[^/.]+)/toggle-active\.(?P<format>[a-z0-9]+)/?$ -> <function PaymentQRCodeViewSet at 0x73b350c2f420>
+      View Class: PaymentQRCodeViewSet
+  [PATTERN] api/^wifi-credentials/$ -> <function WiFiCredentialViewSet at 0x73b350c2f560>
+      View Class: WiFiCredentialViewSet
+  [PATTERN] api/^wifi-credentials\.(?P<format>[a-z0-9]+)/?$ -> <function WiFiCredentialViewSet at 0x73b350c2f560>
+      View Class: WiFiCredentialViewSet
+  [PATTERN] api/^wifi-credentials/available-floors/$ -> <function WiFiCredentialViewSet at 0x73b350c2f6a0>
+      View Class: WiFiCredentialViewSet
+  [PATTERN] api/^wifi-credentials/available-floors\.(?P<format>[a-z0-9]+)/?$ -> <function WiFiCredentialViewSet at 0x73b350c2f6a0>
+      View Class: WiFiCredentialViewSet
+  [PATTERN] api/^wifi-credentials/by-floor/(?P<floor>[^/.]+)/$ -> <function WiFiCredentialViewSet at 0x73b350c2f7e0>
+      View Class: WiFiCredentialViewSet
+  [PATTERN] api/^wifi-credentials/by-floor/(?P<floor>[^/.]+)\.(?P<format>[a-z0-9]+)/?$ -> <function WiFiCredentialViewSet at 0x73b350c2f7e0>
+      View Class: WiFiCredentialViewSet
+  [PATTERN] api/^wifi-credentials/by-room/(?P<room_id>[^/.]+)/$ -> <function WiFiCredentialViewSet at 0x73b350c2f920>
+      View Class: WiFiCredentialViewSet
+  [PATTERN] api/^wifi-credentials/by-room/(?P<room_id>[^/.]+)\.(?P<format>[a-z0-9]+)/?$ -> <function WiFiCredentialViewSet at 0x73b350c2f920>
+      View Class: WiFiCredentialViewSet
+  [PATTERN] api/^wifi-credentials/(?P<pk>[^/.]+)/$ -> <function WiFiCredentialViewSet at 0x73b350c2fa60>
+      View Class: WiFiCredentialViewSet
+  [PATTERN] api/^wifi-credentials/(?P<pk>[^/.]+)\.(?P<format>[a-z0-9]+)/?$ -> <function WiFiCredentialViewSet at 0x73b350c2fa60>
+      View Class: WiFiCredentialViewSet
+  [PATTERN] api/^wifi-credentials/(?P<pk>[^/.]+)/toggle-active/$ -> <function WiFiCredentialViewSet at 0x73b350c2fba0>
+      View Class: WiFiCredentialViewSet
+  [PATTERN] api/^wifi-credentials/(?P<pk>[^/.]+)/toggle-active\.(?P<format>[a-z0-9]+)/?$ -> <function WiFiCredentialViewSet at 0x73b350c2fba0>
+      View Class: WiFiCredentialViewSet
+  [PATTERN] api/ -> <function View.as_view.<locals>.view at 0x73b350c2fce0>
+      View Class: APIRootView
+  [PATTERN] api/<drf_format_suffix:format> -> <function View.as_view.<locals>.view at 0x73b350c2fce0>
+      View Class: APIRootView
+  [RESOLVER] admin/ -> [<URLPattern '^hotels/$' [name='admin-hotel-list']>]...
+Inspecting 12 patterns at prefix 'api/admin/'
+  [PATTERN] api/admin/^hotels/$ -> <function AdminHotelViewSet at 0x73b350c2fe20>
+      View Class: AdminHotelViewSet
+  [PATTERN] api/admin/^hotels\.(?P<format>[a-z0-9]+)/?$ -> <function AdminHotelViewSet at 0x73b350c2fe20>
+      View Class: AdminHotelViewSet
+  [PATTERN] api/admin/^hotels/(?P<pk>[^/.]+)/$ -> <function AdminHotelViewSet at 0x73b350c2ff60>
+      View Class: AdminHotelViewSet
+  [PATTERN] api/admin/^hotels/(?P<pk>[^/.]+)\.(?P<format>[a-z0-9]+)/?$ -> <function AdminHotelViewSet at 0x73b350c2ff60>
+      View Class: AdminHotelViewSet
+  [PATTERN] api/admin/^hotels/(?P<pk>[^/.]+)/reject/$ -> <function AdminHotelViewSet at 0x73b350c480e0>
+      View Class: AdminHotelViewSet
+  [PATTERN] api/admin/^hotels/(?P<pk>[^/.]+)/reject\.(?P<format>[a-z0-9]+)/?$ -> <function AdminHotelViewSet at 0x73b350c480e0>
+      View Class: AdminHotelViewSet
+  [PATTERN] api/admin/^hotels/(?P<pk>[^/.]+)/toggle-active/$ -> <function AdminHotelViewSet at 0x73b350c48220>
+      View Class: AdminHotelViewSet
+  [PATTERN] api/admin/^hotels/(?P<pk>[^/.]+)/toggle-active\.(?P<format>[a-z0-9]+)/?$ -> <function AdminHotelViewSet at 0x73b350c48220>
+      View Class: AdminHotelViewSet
+  [PATTERN] api/admin/^hotels/(?P<pk>[^/.]+)/verify/$ -> <function AdminHotelViewSet at 0x73b350c48360>
+      View Class: AdminHotelViewSet
+  [PATTERN] api/admin/^hotels/(?P<pk>[^/.]+)/verify\.(?P<format>[a-z0-9]+)/?$ -> <function AdminHotelViewSet at 0x73b350c48360>
+      View Class: AdminHotelViewSet
+  [PATTERN] api/admin/ -> <function View.as_view.<locals>.view at 0x73b350c484a0>
+      View Class: APIRootView
+  [PATTERN] api/admin/<drf_format_suffix:format> -> <function View.as_view.<locals>.view at 0x73b350c484a0>
+      View Class: APIRootView
+  [RESOLVER] admin/hotels/<uuid:hotel_pk>/ -> [<URLPattern '^documents/$' [name='admin-hotel-documents-list']>]...
+Inspecting 6 patterns at prefix 'api/admin/hotels/<uuid:hotel_pk>/'
+  [PATTERN] api/admin/hotels/<uuid:hotel_pk>/^documents/$ -> <function AdminHotelDocumentViewSet at 0x73b350c485e0>
+      View Class: AdminHotelDocumentViewSet
+  [PATTERN] api/admin/hotels/<uuid:hotel_pk>/^documents\.(?P<format>[a-z0-9]+)/?$ -> <function AdminHotelDocumentViewSet at 0x73b350c485e0>
+      View Class: AdminHotelDocumentViewSet
+  [PATTERN] api/admin/hotels/<uuid:hotel_pk>/^documents/(?P<pk>[^/.]+)/$ -> <function AdminHotelDocumentViewSet at 0x73b350c48720>
+      View Class: AdminHotelDocumentViewSet
+  [PATTERN] api/admin/hotels/<uuid:hotel_pk>/^documents/(?P<pk>[^/.]+)\.(?P<format>[a-z0-9]+)/?$ -> <function AdminHotelDocumentViewSet at 0x73b350c48720>
+      View Class: AdminHotelDocumentViewSet
+  [PATTERN] api/admin/hotels/<uuid:hotel_pk>/ -> <function View.as_view.<locals>.view at 0x73b350c48860>
+      View Class: APIRootView
+  [PATTERN] api/admin/hotels/<uuid:hotel_pk>/<drf_format_suffix:format> -> <function View.as_view.<locals>.view at 0x73b350c48860>
+      View Class: APIRootView
+  [PATTERN] api/admin/hotels/<uuid:hotel_pk>/documents/update-by-type/ -> <function AdminHotelDocumentViewSet at 0x73b350c48900>
+      View Class: AdminHotelDocumentViewSet
+  [PATTERN] api/profile/update/ -> <function View.as_view.<locals>.view at 0x73b350c48ae0>
+      View Class: UpdateProfileView
+  [PATTERN] api/documents/upload/ -> <function View.as_view.<locals>.view at 0x73b350c48c20>
+      View Class: HotelDocumentUploadView
+  [PATTERN] api/documents/<uuid:pk>/update/ -> <function View.as_view.<locals>.view at 0x73b350c48d60>
+      View Class: HotelDocumentUpdateView
+  [RESOLVER] api/ -> [<URLResolver <URLPattern list> (None:None) ''>]...
+Inspecting 1 patterns at prefix 'api/'
+  [RESOLVER]  -> [<URLPattern '^guest-management/create-guest/$' [name='guest-management-create-guest']>]...
+Inspecting 22 patterns at prefix 'api/'
+  [PATTERN] api/^guest-management/create-guest/$ -> <function GuestManagementViewSet at 0x73b350c48f40>
+      View Class: GuestManagementViewSet
+  [PATTERN] api/^guest-management/create-guest\.(?P<format>[a-z0-9]+)/?$ -> <function GuestManagementViewSet at 0x73b350c48f40>
+      View Class: GuestManagementViewSet
+  [PATTERN] api/^guest-management/bookings/$ -> <function GuestManagementViewSet at 0x73b350c4ae80>
+      View Class: GuestManagementViewSet
+  [PATTERN] api/^guest-management/bookings\.(?P<format>[a-z0-9]+)/?$ -> <function GuestManagementViewSet at 0x73b350c4ae80>
+      View Class: GuestManagementViewSet
+  [PATTERN] api/^guest-management/guests/$ -> <function GuestManagementViewSet at 0x73b350c4b420>
+      View Class: GuestManagementViewSet
+  [PATTERN] api/^guest-management/guests\.(?P<format>[a-z0-9]+)/?$ -> <function GuestManagementViewSet at 0x73b350c4b420>
+      View Class: GuestManagementViewSet
+  [PATTERN] api/^stay-management/checked-in-users/$ -> <function StayManagementViewSet at 0x73b350c4b560>
+      View Class: StayManagementViewSet
+  [PATTERN] api/^stay-management/checked-in-users\.(?P<format>[a-z0-9]+)/?$ -> <function StayManagementViewSet at 0x73b350c4b560>
+      View Class: StayManagementViewSet
+  [PATTERN] api/^stay-management/checkin-offline/$ -> <function StayManagementViewSet at 0x73b350c4b6a0>
+      View Class: StayManagementViewSet
+  [PATTERN] api/^stay-management/checkin-offline\.(?P<format>[a-z0-9]+)/?$ -> <function StayManagementViewSet at 0x73b350c4b6a0>
+      View Class: StayManagementViewSet
+  [PATTERN] api/^stay-management/pending-stays/$ -> <function StayManagementViewSet at 0x73b350c4b7e0>
+      View Class: StayManagementViewSet
+  [PATTERN] api/^stay-management/pending-stays\.(?P<format>[a-z0-9]+)/?$ -> <function StayManagementViewSet at 0x73b350c4b7e0>
+      View Class: StayManagementViewSet
+  [PATTERN] api/^stay-management/(?P<pk>[^/.]+)/checkout/$ -> <function StayManagementViewSet at 0x73b350c4b920>
+      View Class: StayManagementViewSet
+  [PATTERN] api/^stay-management/(?P<pk>[^/.]+)/checkout\.(?P<format>[a-z0-9]+)/?$ -> <function StayManagementViewSet at 0x73b350c4b920>
+      View Class: StayManagementViewSet
+  [PATTERN] api/^stay-management/(?P<pk>[^/.]+)/extend-stay/$ -> <function StayManagementViewSet at 0x73b350c4ba60>
+      View Class: StayManagementViewSet
+  [PATTERN] api/^stay-management/(?P<pk>[^/.]+)/extend-stay\.(?P<format>[a-z0-9]+)/?$ -> <function StayManagementViewSet at 0x73b350c4ba60>
+      View Class: StayManagementViewSet
+  [PATTERN] api/^stay-management/(?P<pk>[^/.]+)/reject-checkin/$ -> <function StayManagementViewSet at 0x73b350c4bba0>
+      View Class: StayManagementViewSet
+  [PATTERN] api/^stay-management/(?P<pk>[^/.]+)/reject-checkin\.(?P<format>[a-z0-9]+)/?$ -> <function StayManagementViewSet at 0x73b350c4bba0>
+      View Class: StayManagementViewSet
+  [PATTERN] api/^stay-management/(?P<pk>[^/.]+)/verify-checkin/$ -> <function StayManagementViewSet at 0x73b350c4bce0>
+      View Class: StayManagementViewSet
+  [PATTERN] api/^stay-management/(?P<pk>[^/.]+)/verify-checkin\.(?P<format>[a-z0-9]+)/?$ -> <function StayManagementViewSet at 0x73b350c4bce0>
+      View Class: StayManagementViewSet
+  [PATTERN] api/ -> <function View.as_view.<locals>.view at 0x73b350c4be20>
+      View Class: APIRootView
+  [PATTERN] api/<drf_format_suffix:format> -> <function View.as_view.<locals>.view at 0x73b350c4be20>
+      View Class: APIRootView
+  [RESOLVER] api/ -> [<URLResolver <URLPattern list> (None:None) ''>]...
+Inspecting 2 patterns at prefix 'api/'
+  [RESOLVER]  -> [<URLPattern '^flags/$' [name='guest-flag-list']>]...
+Inspecting 10 patterns at prefix 'api/'
+  [PATTERN] api/^flags/$ -> <function GuestFlagViewSet at 0x73b350c7c360>
+      View Class: GuestFlagViewSet
+  [PATTERN] api/^flags\.(?P<format>[a-z0-9]+)/?$ -> <function GuestFlagViewSet at 0x73b350c7c360>
+      View Class: GuestFlagViewSet
+  [PATTERN] api/^flags/check/(?P<guest_id>\d+)/$ -> <function GuestFlagViewSet at 0x73b350c7c0e0>
+      View Class: GuestFlagViewSet
+  [PATTERN] api/^flags/check/(?P<guest_id>\d+)\.(?P<format>[a-z0-9]+)/?$ -> <function GuestFlagViewSet at 0x73b350c7c0e0>
+      View Class: GuestFlagViewSet
+  [PATTERN] api/^flags/(?P<pk>[^/.]+)/$ -> <function GuestFlagViewSet at 0x73b350c7d4e0>
+      View Class: GuestFlagViewSet
+  [PATTERN] api/^flags/(?P<pk>[^/.]+)\.(?P<format>[a-z0-9]+)/?$ -> <function GuestFlagViewSet at 0x73b350c7d4e0>
+      View Class: GuestFlagViewSet
+  [PATTERN] api/^flags/(?P<pk>[^/.]+)/reset/$ -> <function GuestFlagViewSet at 0x73b350c7d620>
+      View Class: GuestFlagViewSet
+  [PATTERN] api/^flags/(?P<pk>[^/.]+)/reset\.(?P<format>[a-z0-9]+)/?$ -> <function GuestFlagViewSet at 0x73b350c7d620>
+      View Class: GuestFlagViewSet
+  [PATTERN] api/ -> <function View.as_view.<locals>.view at 0x73b350c7d760>
+      View Class: APIRootView
+  [PATTERN] api/<drf_format_suffix:format> -> <function View.as_view.<locals>.view at 0x73b350c7d760>
+      View Class: APIRootView
+  [PATTERN] api/search-guests/ -> <function View.as_view.<locals>.view at 0x73b350c7d440>
+      View Class: search_guests
+  [RESOLVER] api/hotel_stat/ -> [<URLResolver <URLPattern list> (None:None) ''>]...
+Inspecting 3 patterns at prefix 'api/hotel_stat/'
+  [RESOLVER]  -> [<URLPattern '^$' [name='hotel-user-stat-list']>]...
+Inspecting 24 patterns at prefix 'api/hotel_stat/'
+  [PATTERN] api/hotel_stat/^$ -> <function HotelUserStatsViewSet at 0x73b350c7d9e0>
+      View Class: HotelUserStatsViewSet
+  [PATTERN] api/hotel_stat/^\.(?P<format>[a-z0-9]+)/?$ -> <function HotelUserStatsViewSet at 0x73b350c7d9e0>
+      View Class: HotelUserStatsViewSet
+  [PATTERN] api/hotel_stat/^conversation-history/$ -> <function HotelUserStatsViewSet at 0x73b350c7f240>
+      View Class: HotelUserStatsViewSet
+  [PATTERN] api/hotel_stat/^conversation-history\.(?P<format>[a-z0-9]+)/?$ -> <function HotelUserStatsViewSet at 0x73b350c7f240>
+      View Class: HotelUserStatsViewSet
+  [PATTERN] api/hotel_stat/^feedback-analytics/$ -> <function HotelUserStatsViewSet at 0x73b350c7f380>
+      View Class: HotelUserStatsViewSet
+  [PATTERN] api/hotel_stat/^feedback-analytics\.(?P<format>[a-z0-9]+)/?$ -> <function HotelUserStatsViewSet at 0x73b350c7f380>
+      View Class: HotelUserStatsViewSet
+  [PATTERN] api/hotel_stat/^guest-history/$ -> <function HotelUserStatsViewSet at 0x73b350c7f4c0>
+      View Class: HotelUserStatsViewSet
+  [PATTERN] api/hotel_stat/^guest-history\.(?P<format>[a-z0-9]+)/?$ -> <function HotelUserStatsViewSet at 0x73b350c7f4c0>
+      View Class: HotelUserStatsViewSet
+  [PATTERN] api/hotel_stat/^guests/$ -> <function HotelUserStatsViewSet at 0x73b350c7f600>
+      View Class: HotelUserStatsViewSet
+  [PATTERN] api/hotel_stat/^guests\.(?P<format>[a-z0-9]+)/?$ -> <function HotelUserStatsViewSet at 0x73b350c7f600>
+      View Class: HotelUserStatsViewSet
+  [PATTERN] api/hotel_stat/^occupancy/$ -> <function HotelUserStatsViewSet at 0x73b350c7f740>
+      View Class: HotelUserStatsViewSet
+  [PATTERN] api/hotel_stat/^occupancy\.(?P<format>[a-z0-9]+)/?$ -> <function HotelUserStatsViewSet at 0x73b350c7f740>
+      View Class: HotelUserStatsViewSet
+  [PATTERN] api/hotel_stat/^overview/$ -> <function HotelUserStatsViewSet at 0x73b350c7f880>
+      View Class: HotelUserStatsViewSet
+  [PATTERN] api/hotel_stat/^overview\.(?P<format>[a-z0-9]+)/?$ -> <function HotelUserStatsViewSet at 0x73b350c7f880>
+      View Class: HotelUserStatsViewSet
+  [PATTERN] api/hotel_stat/^performance/$ -> <function HotelUserStatsViewSet at 0x73b350c7f9c0>
+      View Class: HotelUserStatsViewSet
+  [PATTERN] api/hotel_stat/^performance\.(?P<format>[a-z0-9]+)/?$ -> <function HotelUserStatsViewSet at 0x73b350c7f9c0>
+      View Class: HotelUserStatsViewSet
+  [PATTERN] api/hotel_stat/^room-history/$ -> <function HotelUserStatsViewSet at 0x73b350c7fb00>
+      View Class: HotelUserStatsViewSet
+  [PATTERN] api/hotel_stat/^room-history\.(?P<format>[a-z0-9]+)/?$ -> <function HotelUserStatsViewSet at 0x73b350c7fb00>
+      View Class: HotelUserStatsViewSet
+  [PATTERN] api/hotel_stat/^rooms/$ -> <function HotelUserStatsViewSet at 0x73b350c7fc40>
+      View Class: HotelUserStatsViewSet
+  [PATTERN] api/hotel_stat/^rooms\.(?P<format>[a-z0-9]+)/?$ -> <function HotelUserStatsViewSet at 0x73b350c7fc40>
+      View Class: HotelUserStatsViewSet
+  [PATTERN] api/hotel_stat/^staff/$ -> <function HotelUserStatsViewSet at 0x73b350c7fd80>
+      View Class: HotelUserStatsViewSet
+  [PATTERN] api/hotel_stat/^staff\.(?P<format>[a-z0-9]+)/?$ -> <function HotelUserStatsViewSet at 0x73b350c7fd80>
+      View Class: HotelUserStatsViewSet
+  [PATTERN] api/hotel_stat/ -> <function View.as_view.<locals>.view at 0x73b350c7fec0>
+      View Class: APIRootView
+  [PATTERN] api/hotel_stat/<drf_format_suffix:format> -> <function View.as_view.<locals>.view at 0x73b350c7fec0>
+      View Class: APIRootView
+  [RESOLVER] admin/ -> [<URLPattern '^hotels/$' [name='admin-hotel-stat-list']>]...
+Inspecting 12 patterns at prefix 'api/hotel_stat/admin/'
+  [PATTERN] api/hotel_stat/admin/^hotels/$ -> <function HotelStatsViewSet at 0x73b350cac0e0>
+      View Class: HotelStatsViewSet
+  [PATTERN] api/hotel_stat/admin/^hotels\.(?P<format>[a-z0-9]+)/?$ -> <function HotelStatsViewSet at 0x73b350cac0e0>
+      View Class: HotelStatsViewSet
+  [PATTERN] api/hotel_stat/admin/^hotels/(?P<pk>[^/.]+)/$ -> <function HotelStatsViewSet at 0x73b350cac220>
+      View Class: HotelStatsViewSet
+  [PATTERN] api/hotel_stat/admin/^hotels/(?P<pk>[^/.]+)\.(?P<format>[a-z0-9]+)/?$ -> <function HotelStatsViewSet at 0x73b350cac220>
+      View Class: HotelStatsViewSet
+  [PATTERN] api/hotel_stat/admin/^platform/$ -> <function PlatformStatsViewSet at 0x73b350cac360>
+      View Class: PlatformStatsViewSet
+  [PATTERN] api/hotel_stat/admin/^platform\.(?P<format>[a-z0-9]+)/?$ -> <function PlatformStatsViewSet at 0x73b350cac360>
+      View Class: PlatformStatsViewSet
+  [PATTERN] api/hotel_stat/admin/^platform/(?P<stat_type>[^/.]+)/$ -> <function PlatformStatsViewSet at 0x73b350cac4a0>
+      View Class: PlatformStatsViewSet
+  [PATTERN] api/hotel_stat/admin/^platform/(?P<stat_type>[^/.]+)\.(?P<format>[a-z0-9]+)/?$ -> <function PlatformStatsViewSet at 0x73b350cac4a0>
+      View Class: PlatformStatsViewSet
+  [PATTERN] api/hotel_stat/admin/^platform/(?P<pk>[^/.]+)/$ -> <function PlatformStatsViewSet at 0x73b350cac5e0>
+      View Class: PlatformStatsViewSet
+  [PATTERN] api/hotel_stat/admin/^platform/(?P<pk>[^/.]+)\.(?P<format>[a-z0-9]+)/?$ -> <function PlatformStatsViewSet at 0x73b350cac5e0>
+      View Class: PlatformStatsViewSet
+  [PATTERN] api/hotel_stat/admin/ -> <function View.as_view.<locals>.view at 0x73b350cac720>
+      View Class: APIRootView
+  [PATTERN] api/hotel_stat/admin/<drf_format_suffix:format> -> <function View.as_view.<locals>.view at 0x73b350cac720>
+      View Class: APIRootView
+  [PATTERN] api/hotel_stat/compare/ -> <function View.as_view.<locals>.view at 0x73b350cac860>
+      View Class: HotelComparisonView
+  [RESOLVER] api/ -> [<URLResolver <URLPattern list> (None:None) ''>]...
+Inspecting 1 patterns at prefix 'api/'
+  [RESOLVER]  -> [<URLPattern '^plans/$' [name='subscriptionplan-list']>]...
+Inspecting 24 patterns at prefix 'api/'
+  [PATTERN] api/^plans/$ -> <function SubscriptionPlanViewSet at 0x73b350cace00>
+      View Class: SubscriptionPlanViewSet
+  [PATTERN] api/^plans\.(?P<format>[a-z0-9]+)/?$ -> <function SubscriptionPlanViewSet at 0x73b350cace00>
+      View Class: SubscriptionPlanViewSet
+  [PATTERN] api/^plans/(?P<pk>[^/.]+)/$ -> <function SubscriptionPlanViewSet at 0x73b350cacb80>
+      View Class: SubscriptionPlanViewSet
+  [PATTERN] api/^plans/(?P<pk>[^/.]+)\.(?P<format>[a-z0-9]+)/?$ -> <function SubscriptionPlanViewSet at 0x73b350cacb80>
+      View Class: SubscriptionPlanViewSet
+  [PATTERN] api/^transactions/$ -> <function TransactionViewSet at 0x73b350cad9e0>
+      View Class: TransactionViewSet
+  [PATTERN] api/^transactions\.(?P<format>[a-z0-9]+)/?$ -> <function TransactionViewSet at 0x73b350cad9e0>
+      View Class: TransactionViewSet
+  [PATTERN] api/^transactions/(?P<pk>[^/.]+)/$ -> <function TransactionViewSet at 0x73b350cadb20>
+      View Class: TransactionViewSet
+  [PATTERN] api/^transactions/(?P<pk>[^/.]+)\.(?P<format>[a-z0-9]+)/?$ -> <function TransactionViewSet at 0x73b350cadb20>
+      View Class: TransactionViewSet
+  [PATTERN] api/^subscriptions/$ -> <function HotelSubscriptionViewSet at 0x73b350cadc60>
+      View Class: HotelSubscriptionViewSet
+  [PATTERN] api/^subscriptions\.(?P<format>[a-z0-9]+)/?$ -> <function HotelSubscriptionViewSet at 0x73b350cadc60>
+      View Class: HotelSubscriptionViewSet
+  [PATTERN] api/^subscriptions/create_subscription/$ -> <function HotelSubscriptionViewSet at 0x73b350cadda0>
+      View Class: HotelSubscriptionViewSet
+  [PATTERN] api/^subscriptions/create_subscription\.(?P<format>[a-z0-9]+)/?$ -> <function HotelSubscriptionViewSet at 0x73b350cadda0>
+      View Class: HotelSubscriptionViewSet
+  [PATTERN] api/^subscriptions/extend_subscription/$ -> <function HotelSubscriptionViewSet at 0x73b350cadee0>
+      View Class: HotelSubscriptionViewSet
+  [PATTERN] api/^subscriptions/extend_subscription\.(?P<format>[a-z0-9]+)/?$ -> <function HotelSubscriptionViewSet at 0x73b350cadee0>
+      View Class: HotelSubscriptionViewSet
+  [PATTERN] api/^subscriptions/my_subscription/$ -> <function HotelSubscriptionViewSet at 0x73b350cae020>
+      View Class: HotelSubscriptionViewSet
+  [PATTERN] api/^subscriptions/my_subscription\.(?P<format>[a-z0-9]+)/?$ -> <function HotelSubscriptionViewSet at 0x73b350cae020>
+      View Class: HotelSubscriptionViewSet
+  [PATTERN] api/^subscriptions/process_payment/$ -> <function HotelSubscriptionViewSet at 0x73b350cae160>
+      View Class: HotelSubscriptionViewSet
+  [PATTERN] api/^subscriptions/process_payment\.(?P<format>[a-z0-9]+)/?$ -> <function HotelSubscriptionViewSet at 0x73b350cae160>
+      View Class: HotelSubscriptionViewSet
+  [PATTERN] api/^subscriptions/subscribe_to_plan/$ -> <function HotelSubscriptionViewSet at 0x73b350cae2a0>
+      View Class: HotelSubscriptionViewSet
+  [PATTERN] api/^subscriptions/subscribe_to_plan\.(?P<format>[a-z0-9]+)/?$ -> <function HotelSubscriptionViewSet at 0x73b350cae2a0>
+      View Class: HotelSubscriptionViewSet
+  [PATTERN] api/^subscriptions/(?P<pk>[^/.]+)/$ -> <function HotelSubscriptionViewSet at 0x73b350cae3e0>
+      View Class: HotelSubscriptionViewSet
+  [PATTERN] api/^subscriptions/(?P<pk>[^/.]+)\.(?P<format>[a-z0-9]+)/?$ -> <function HotelSubscriptionViewSet at 0x73b350cae3e0>
+      View Class: HotelSubscriptionViewSet
+  [PATTERN] api/ -> <function View.as_view.<locals>.view at 0x73b350cae520>
+      View Class: APIRootView
+  [PATTERN] api/<drf_format_suffix:format> -> <function View.as_view.<locals>.view at 0x73b350cae520>
+      View Class: APIRootView
+  [RESOLVER] api/ -> [<URLResolver <URLPattern list> (None:None) ''>]...
+Inspecting 1 patterns at prefix 'api/'
+  [RESOLVER]  -> [<URLPattern '^notifications/$' [name='notification-list']>]...
+Inspecting 6 patterns at prefix 'api/'
+  [PATTERN] api/^notifications/$ -> <function NotificationViewSet at 0x73b350cae7a0>
+      View Class: NotificationViewSet
+  [PATTERN] api/^notifications/group-notifications/$ -> <function NotificationViewSet at 0x73b350caf2e0>
+      View Class: NotificationViewSet
+  [PATTERN] api/^notifications/mark-all-read/$ -> <function NotificationViewSet at 0x73b350caf6a0>
+      View Class: NotificationViewSet
+  [PATTERN] api/^notifications/my-notifications/$ -> <function NotificationViewSet at 0x73b350caf7e0>
+      View Class: NotificationViewSet
+  [PATTERN] api/^notifications/(?P<pk>[^/.]+)/$ -> <function NotificationViewSet at 0x73b350caf920>
+      View Class: NotificationViewSet
+  [PATTERN] api/^notifications/(?P<pk>[^/.]+)/mark-read/$ -> <function NotificationViewSet at 0x73b350cafa60>
+      View Class: NotificationViewSet
+  [RESOLVER] api/chat/ -> [<URLPattern 'conversations/' [name='conversation-list']>]...
+Inspecting 17 patterns at prefix 'api/chat/'
+  [PATTERN] api/chat/conversations/ -> <function View.as_view.<locals>.view at 0x73b350cafc40>
+      View Class: ConversationListView
+  [PATTERN] api/chat/conversations/create/ -> <function View.as_view.<locals>.view at 0x73b350b6e200>
+      View Class: CreateConversationView
+  [PATTERN] api/chat/conversations/<int:conversation_id>/ -> <function View.as_view.<locals>.view at 0x73b350b6f4c0>
+      View Class: ConversationDetailView
+  [PATTERN] api/chat/messages/mark-read/ -> <function View.as_view.<locals>.view at 0x73b350b6f600>
+      View Class: MarkMessagesReadView
+  [PATTERN] api/chat/messages/typing/ -> <function send_typing_indicator at 0x73b350b6e160>
+      No cls attribute
+  [PATTERN] api/chat/conversations/close/ -> <function View.as_view.<locals>.view at 0x73b350b6f740>
+      View Class: CloseConversationView
+  [PATTERN] api/chat/guest/conversation-type/ -> <function View.as_view.<locals>.view at 0x73b350b6f880>
+      View Class: GuestConversationTypeView
+  [PATTERN] api/chat/upload-media/ -> <function View.as_view.<locals>.view at 0x73b350b6f9c0>
+      View Class: ChatMediaUploadView
+  [PATTERN] api/chat/upload-template-media/ -> <function View.as_view.<locals>.view at 0x73b350b6fb00>
+      View Class: TemplateMediaUploadView
+  [PATTERN] api/chat/templates/ -> <function View.as_view.<locals>.view at 0x73b350b6fc40>
+      View Class: MessageTemplateListCreateView
+  [PATTERN] api/chat/templates/<int:pk>/ -> <function View.as_view.<locals>.view at 0x73b350b6fd80>
+      View Class: MessageTemplateDetailView
+  [PATTERN] api/chat/templates/types/ -> <function View.as_view.<locals>.view at 0x73b350b6ede0>
+      View Class: template_types_view
+  [PATTERN] api/chat/templates/<int:template_id>/preview/ -> <function View.as_view.<locals>.view at 0x73b350b6f100>
+      View Class: render_template_preview
+  [PATTERN] api/chat/templates/variables/ -> <function View.as_view.<locals>.view at 0x73b350b6f420>
+      View Class: template_variables_view
+  [PATTERN] api/chat/custom-templates/ -> <function View.as_view.<locals>.view at 0x73b350b6fec0>
+      View Class: CustomMessageTemplateListCreateView
+  [PATTERN] api/chat/custom-templates/<int:pk>/ -> <function View.as_view.<locals>.view at 0x73b350b88040>
+      View Class: CustomMessageTemplateDetailView
+  [PATTERN] api/chat/custom-templates/<int:template_id>/preview/ -> <function View.as_view.<locals>.view at 0x73b350b6f100>
+      View Class: render_template_preview
+  [RESOLVER] api/admin_stat/ -> [<URLPattern 'overview/' [name='admin-overview']>]...
+Inspecting 4 patterns at prefix 'api/admin_stat/'
+  [PATTERN] api/admin_stat/overview/ -> <function View.as_view.<locals>.view at 0x73b350b884a0>
+      View Class: AdminOverviewView
+  [PATTERN] api/admin_stat/hotels/ -> <function View.as_view.<locals>.view at 0x73b350b88540>
+      View Class: AdminHotelsStatsView
+  [PATTERN] api/admin_stat/conversations/ -> <function View.as_view.<locals>.view at 0x73b350b88b80>
+      View Class: AdminConversationsStatsView
+  [PATTERN] api/admin_stat/payments/ -> <function View.as_view.<locals>.view at 0x73b350b88cc0>
+      View Class: AdminPaymentsStatsView
+  [PATTERN] ^media/(?P<path>.*)$ -> <function serve at 0x73b353d6a200>
+      No cls attribute

@@ -3,7 +3,7 @@ from django.utils import timezone
 from rest_framework import viewsets, permissions, status, generics, filters
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.decorators import action
-from lobbybee.utils.responses import success_response, error_response, created_response, not_found_response, forbidden_response
+from lobbybee.utils.responses import success_response, error_response, created_response, not_found_response, forbidden_response, paginated_response
 from rest_framework.pagination import PageNumberPagination
 import logging
 from django.conf import settings
@@ -68,7 +68,9 @@ class HotelViewSet(viewsets.ModelViewSet):
         serializer.save()
 
 
-class StandardResultsSetPagination(PageNumberPagination):
+from lobbybee.utils.pagination import StandardizedPagination
+
+class StandardResultsSetPagination(StandardizedPagination):
     page_size = 10
     page_size_query_param = 'page_size'
     max_page_size = 100

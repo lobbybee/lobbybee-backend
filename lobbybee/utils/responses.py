@@ -81,3 +81,30 @@ def server_error_response(message="An unexpected error occurred"):
     Return standardized 500 response.
     """
     return error_response(message=message, status=http_status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+def paginated_response(data, message="Fetched successfully", status=http_status.HTTP_200_OK):
+    """
+    Return standardized paginated response.
+    
+    Expected data format from DRF pagination:
+    {
+        "count": 100,
+        "next": "url",
+        "previous": "url",
+        "results": [...]
+    }
+    
+    Output format:
+    {
+        "success": True,
+        "message": "Fetched successfully",
+        "data": {
+            "count": 100,
+            "next": "url",
+            "previous": "url",
+            "results": [...]
+        }
+    }
+    """
+    return success_response(data=data, message=message, status=status)

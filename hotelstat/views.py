@@ -1,4 +1,5 @@
 from rest_framework import viewsets, permissions, status, views, serializers
+from rest_framework.response import Response
 from rest_framework.decorators import action
 from hotel.models import Hotel, Room, RoomCategory
 from lobbybee.utils.responses import success_response, error_response, forbidden_response
@@ -1505,7 +1506,7 @@ class HotelComparisonView(views.APIView):
                 elif stat_type == 'performance':
                     response_data = stats_viewset.get_performance_stats([hotel], target_date, date_from, date_to)
                 else:
-                    response_data = Response({"error": f"Invalid stat type: {stat_type}"}, status=status.HTTP_400_BAD_REQUEST)
+                    return error_response(f"Invalid stat type: {stat_type}", status=status.HTTP_400_BAD_REQUEST)
                 
                 if hasattr(response_data, 'data'):
                     comparison_data[f"hotel_{hotel.id}"] = response_data.data

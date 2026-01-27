@@ -104,7 +104,7 @@ REST_FRAMEWORK = {
         'rest_framework.filters.OrderingFilter',
         'rest_framework.filters.SearchFilter',
     ],
-    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
+    'DEFAULT_PAGINATION_CLASS': 'lobbybee.utils.pagination.StandardizedPagination',
     'PAGE_SIZE': 10,
     'EXCEPTION_HANDLER': 'lobbybee.utils.exception_handlers.custom_exception_handler',
 }
