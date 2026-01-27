@@ -5,7 +5,7 @@ from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.views import APIView
 
-from lobbybee.utils.responses import success_response
+from lobbybee.utils.responses import success_response, error_response
 
 from hotel.models import Hotel
 from chat.models import Conversation, Message
@@ -62,74 +62,80 @@ class AdminOverviewView(DateFilterMixin, APIView):
     permission_classes = [CanManagePlatform]
     
     def get(self, request):
-        start_datetime, end_datetime = self.get_date_range(request)
-        
-        # Hotel statistics
-        hotel_stats = Hotel.objects.aggregate(
-            total=Count('id'),
-            registered=Count('id', filter=Q(registration_date__lte=end_datetime)),
-            verified=Count('id', filter=Q(is_verified=True)),
-            unverified=Count('id', filter=Q(is_verified=False)),
-            inactive=Count('id', filter=Q(is_active=False)),
-            suspended=Count('id', filter=Q(status='suspended')),
-            rejected=Count('id', filter=Q(status='rejected'))
-        )
-        
-        # Conversation statistics
-        conversation_stats = Conversation.objects.aggregate(
-            total=Count('id'),
-            active=Count('id', filter=Q(status='active')),
-            closed=Count('id', filter=Q(status='closed')),
-            archived=Count('id', filter=Q(status='archived')),
-            fulfilled=Count('id', filter=Q(is_request_fulfilled=True))
-        )
-        
-        # Revenue statistics
-        revenue_stats = Transaction.objects.filter(
-            created_at__range=(start_datetime, end_datetime)
-        ).aggregate(
-            total_revenue=Sum('amount', filter=Q(status='completed')),
-            completed_transactions=Count('id', filter=Q(status='completed')),
-            pending_transactions=Count('id', filter=Q(status='pending')),
-            failed_transactions=Count('id', filter=Q(status='failed'))
-        )
-        
-        # Active subscriptions
-        active_subscriptions = HotelSubscription.objects.filter(
-            is_active=True,
-            end_date__gte=timezone.now()
-        ).count()
-        
-        # Prepare response data
-        response_data = {
-            'period': self.get_period_data(request),
-            'hotels': {
-                'total': hotel_stats['total'],
-                'registered': hotel_stats['registered'],
-                'verified': hotel_stats['verified'],
-                'unverified': hotel_stats['unverified'],
-                'inactive': hotel_stats['inactive'],
-                'suspended': hotel_stats['suspended'],
-                'rejected': hotel_stats['rejected']
-            },
-            'conversations': {
-                'total': conversation_stats['total'],
-                'active': conversation_stats['active'],
-                'closed': conversation_stats['closed'],
-                'archived': conversation_stats['archived'],
-                'fulfilled': conversation_stats['fulfilled']
-            },
-            'revenue': {
-                'total_revenue': revenue_stats['total_revenue'] or 0,
-                'completed_transactions': revenue_stats['completed_transactions'] or 0,
-                'pending_transactions': revenue_stats['pending_transactions'] or 0,
-                'failed_transactions': revenue_stats['failed_transactions'] or 0,
-                'active_subscriptions': active_subscriptions
+        try:
+            start_datetime, end_datetime = self.get_date_range(request)
+            
+            # Hotel statistics
+            hotel_stats = Hotel.objects.aggregate(
+                total=Count('id'),
+                registered=Count('id', filter=Q(registration_date__lte=end_datetime)),
+                verified=Count('id', filter=Q(is_verified=True)),
+                unverified=Count('id', filter=Q(is_verified=False)),
+                inactive=Count('id', filter=Q(is_active=False)),
+                suspended=Count('id', filter=Q(status='suspended')),
+                rejected=Count('id', filter=Q(status='rejected'))
+            )
+            
+            # Conversation statistics
+            conversation_stats = Conversation.objects.aggregate(
+                total=Count('id'),
+                active=Count('id', filter=Q(status='active')),
+                closed=Count('id', filter=Q(status='closed')),
+                archived=Count('id', filter=Q(status='archived')),
+                fulfilled=Count('id', filter=Q(is_request_fulfilled=True))
+            )
+            
+            # Revenue statistics
+            revenue_stats = Transaction.objects.filter(
+                created_at__range=(start_datetime, end_datetime)
+            ).aggregate(
+                total_revenue=Sum('amount', filter=Q(status='completed')),
+                completed_transactions=Count('id', filter=Q(status='completed')),
+                pending_transactions=Count('id', filter=Q(status='pending')),
+                failed_transactions=Count('id', filter=Q(status='failed'))
+            )
+            
+            # Active subscriptions
+            active_subscriptions = HotelSubscription.objects.filter(
+                is_active=True,
+                end_date__gte=timezone.now()
+            ).count()
+            
+            # Prepare response data
+            response_data = {
+                'period': self.get_period_data(request),
+                'hotels': {
+                    'total': hotel_stats['total'],
+                    'registered': hotel_stats['registered'],
+                    'verified': hotel_stats['verified'],
+                    'unverified': hotel_stats['unverified'],
+                    'inactive': hotel_stats['inactive'],
+                    'suspended': hotel_stats['suspended'],
+                    'rejected': hotel_stats['rejected']
+                },
+                'conversations': {
+                    'total': conversation_stats['total'],
+                    'active': conversation_stats['active'],
+                    'closed': conversation_stats['closed'],
+                    'archived': conversation_stats['archived'],
+                    'fulfilled': conversation_stats['fulfilled']
+                },
+                'revenue': {
+                    'total_revenue': revenue_stats['total_revenue'] or 0,
+                    'completed_transactions': revenue_stats['completed_transactions'] or 0,
+                    'pending_transactions': revenue_stats['pending_transactions'] or 0,
+                    'failed_transactions': revenue_stats['failed_transactions'] or 0,
+                    'active_subscriptions': active_subscriptions
+                }
             }
-        }
-        
-        serializer = OverviewSerializer(response_data)
-        return success_response(data=serializer.data)
+            
+            serializer = OverviewSerializer(response_data)
+            return success_response(data=serializer.data)
+        except Exception as e:
+            return error_response(
+                f"Failed to fetch overview stats: {str(e)}",
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 
 class AdminHotelsStatsView(DateFilterMixin, APIView):
@@ -139,49 +145,55 @@ class AdminHotelsStatsView(DateFilterMixin, APIView):
     permission_classes = [CanManagePlatform]
     
     def get(self, request):
-        start_datetime, end_datetime = self.get_date_range(request)
-        
-        # Filter hotels by registration date range
-        hotels = Hotel.objects.filter(
-            registration_date__range=(start_datetime, end_datetime)
-        ).select_related().order_by('-registration_date')
-        
-        # Get summary statistics
-        summary_stats = Hotel.objects.filter(
-            registration_date__range=(start_datetime, end_datetime)
-        ).aggregate(
-            total=Count('id'),
-            registered=Count('id'),
-            verified=Count('id', filter=Q(is_verified=True)),
-            unverified=Count('id', filter=Q(is_verified=False)),
-            inactive=Count('id', filter=Q(is_active=False)),
-            suspended=Count('id', filter=Q(status='suspended')),
-            rejected=Count('id', filter=Q(status='rejected'))
-        )
-        
-        # Prepare detailed hotel data
-        hotel_data = []
-        for hotel in hotels:
-            hotel_data.append({
-                'id': hotel.id,
-                'name': hotel.name,
-                'email': hotel.email,
-                'status': hotel.status,
-                'is_verified': hotel.is_verified,
-                'is_active': hotel.is_active,
-                'registration_date': hotel.registration_date,
-                'city': hotel.city,
-                'country': hotel.country
-            })
-        
-        response_data = {
-            'period': self.get_period_data(request),
-            'summary': summary_stats,
-            'data': hotel_data
-        }
-        
-        serializer = HotelsStatsResponseSerializer(response_data)
-        return success_response(data=serializer.data)
+        try:
+            start_datetime, end_datetime = self.get_date_range(request)
+            
+            # Filter hotels by registration date range
+            hotels = Hotel.objects.filter(
+                registration_date__range=(start_datetime, end_datetime)
+            ).select_related().order_by('-registration_date')
+            
+            # Get summary statistics
+            summary_stats = Hotel.objects.filter(
+                registration_date__range=(start_datetime, end_datetime)
+            ).aggregate(
+                total=Count('id'),
+                registered=Count('id'),
+                verified=Count('id', filter=Q(is_verified=True)),
+                unverified=Count('id', filter=Q(is_verified=False)),
+                inactive=Count('id', filter=Q(is_active=False)),
+                suspended=Count('id', filter=Q(status='suspended')),
+                rejected=Count('id', filter=Q(status='rejected'))
+            )
+            
+            # Prepare detailed hotel data
+            hotel_data = []
+            for hotel in hotels:
+                hotel_data.append({
+                    'id': hotel.id,
+                    'name': hotel.name,
+                    'email': hotel.email,
+                    'status': hotel.status,
+                    'is_verified': hotel.is_verified,
+                    'is_active': hotel.is_active,
+                    'registration_date': hotel.registration_date,
+                    'city': hotel.city,
+                    'country': hotel.country
+                })
+            
+            response_data = {
+                'period': self.get_period_data(request),
+                'summary': summary_stats,
+                'data': hotel_data
+            }
+            
+            serializer = HotelsStatsResponseSerializer(response_data)
+            return success_response(data=serializer.data)
+        except Exception as e:
+            return error_response(
+                f"Failed to fetch hotel stats: {str(e)}",
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 
 class AdminConversationsStatsView(DateFilterMixin, APIView):
@@ -191,49 +203,55 @@ class AdminConversationsStatsView(DateFilterMixin, APIView):
     permission_classes = [CanManagePlatform]
     
     def get(self, request):
-        start_datetime, end_datetime = self.get_date_range(request)
-        
-        # Filter conversations by creation date range
-        conversations = Conversation.objects.filter(
-            created_at__range=(start_datetime, end_datetime)
-        ).select_related('hotel', 'guest').prefetch_related('messages').order_by('-created_at')
-        
-        # Get summary statistics
-        summary_stats = Conversation.objects.filter(
-            created_at__range=(start_datetime, end_datetime)
-        ).aggregate(
-            total=Count('id'),
-            active=Count('id', filter=Q(status='active')),
-            closed=Count('id', filter=Q(status='closed')),
-            archived=Count('id', filter=Q(status='archived')),
-            fulfilled=Count('id', filter=Q(is_request_fulfilled=True))
-        )
-        
-        # Prepare detailed conversation data
-        conversation_data = []
-        for conv in conversations:
-            message_count = conv.messages.count()
+        try:
+            start_datetime, end_datetime = self.get_date_range(request)
             
-            conversation_data.append({
-                'id': conv.id,
-                'hotel_name': conv.hotel.name if conv.hotel else 'N/A',
-                'guest_name': conv.guest.full_name if conv.guest else 'N/A',
-                'status': conv.status,
-                'conversation_type': conv.conversation_type,
-                'created_at': conv.created_at,
-                'last_message_at': conv.last_message_at,
-                'message_count': message_count,
-                'is_fulfilled': conv.is_request_fulfilled
-            })
-        
-        response_data = {
-            'period': self.get_period_data(request),
-            'summary': summary_stats,
-            'data': conversation_data
-        }
-        
-        serializer = ConversationsStatsResponseSerializer(response_data)
-        return success_response(data=serializer.data)
+            # Filter conversations by creation date range
+            conversations = Conversation.objects.filter(
+                created_at__range=(start_datetime, end_datetime)
+            ).select_related('hotel', 'guest').prefetch_related('messages').order_by('-created_at')
+            
+            # Get summary statistics
+            summary_stats = Conversation.objects.filter(
+                created_at__range=(start_datetime, end_datetime)
+            ).aggregate(
+                total=Count('id'),
+                active=Count('id', filter=Q(status='active')),
+                closed=Count('id', filter=Q(status='closed')),
+                archived=Count('id', filter=Q(status='archived')),
+                fulfilled=Count('id', filter=Q(is_request_fulfilled=True))
+            )
+            
+            # Prepare detailed conversation data
+            conversation_data = []
+            for conv in conversations:
+                message_count = conv.messages.count()
+                
+                conversation_data.append({
+                    'id': conv.id,
+                    'hotel_name': conv.hotel.name if conv.hotel else 'N/A',
+                    'guest_name': conv.guest.full_name if conv.guest else 'N/A',
+                    'status': conv.status,
+                    'conversation_type': conv.conversation_type,
+                    'created_at': conv.created_at,
+                    'last_message_at': conv.last_message_at,
+                    'message_count': message_count,
+                    'is_fulfilled': conv.is_request_fulfilled
+                })
+            
+            response_data = {
+                'period': self.get_period_data(request),
+                'summary': summary_stats,
+                'data': conversation_data
+            }
+            
+            serializer = ConversationsStatsResponseSerializer(response_data)
+            return success_response(data=serializer.data)
+        except Exception as e:
+            return error_response(
+                f"Failed to fetch conversation stats: {str(e)}",
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 
 class AdminPaymentsStatsView(DateFilterMixin, APIView):
@@ -243,53 +261,59 @@ class AdminPaymentsStatsView(DateFilterMixin, APIView):
     permission_classes = [CanManagePlatform]
     
     def get(self, request):
-        start_datetime, end_datetime = self.get_date_range(request)
-        
-        # Filter transactions by creation date range
-        transactions = Transaction.objects.filter(
-            created_at__range=(start_datetime, end_datetime)
-        ).select_related('hotel', 'plan').order_by('-created_at')
-        
-        # Get summary statistics
-        revenue_stats = Transaction.objects.filter(
-            created_at__range=(start_datetime, end_datetime)
-        ).aggregate(
-            total_revenue=Sum('amount', filter=Q(status='completed')),
-            completed_transactions=Count('id', filter=Q(status='completed')),
-            pending_transactions=Count('id', filter=Q(status='pending')),
-            failed_transactions=Count('id', filter=Q(status='failed'))
-        )
-        
-        # Get active subscriptions count
-        active_subscriptions = HotelSubscription.objects.filter(
-            is_active=True,
-            end_date__gte=timezone.now()
-        ).count()
-        
-        # Prepare detailed transaction data
-        transaction_data = []
-        for transaction in transactions:
-            transaction_data.append({
-                'id': transaction.id,
-                'hotel_name': transaction.hotel.name,
-                'plan_name': transaction.plan.name,
-                'amount': transaction.amount,
-                'status': transaction.status,
-                'transaction_type': transaction.transaction_type,
-                'created_at': transaction.created_at
-            })
-        
-        response_data = {
-            'period': self.get_period_data(request),
-            'summary': {
-                'total_revenue': revenue_stats['total_revenue'] or 0,
-                'completed_transactions': revenue_stats['completed_transactions'] or 0,
-                'pending_transactions': revenue_stats['pending_transactions'] or 0,
-                'failed_transactions': revenue_stats['failed_transactions'] or 0,
-                'active_subscriptions': active_subscriptions
-            },
-            'data': transaction_data
-        }
-        
-        serializer = PaymentsStatsResponseSerializer(response_data)
-        return success_response(data=serializer.data)
+        try:
+            start_datetime, end_datetime = self.get_date_range(request)
+            
+            # Filter transactions by creation date range
+            transactions = Transaction.objects.filter(
+                created_at__range=(start_datetime, end_datetime)
+            ).select_related('hotel', 'plan').order_by('-created_at')
+            
+            # Get summary statistics
+            revenue_stats = Transaction.objects.filter(
+                created_at__range=(start_datetime, end_datetime)
+            ).aggregate(
+                total_revenue=Sum('amount', filter=Q(status='completed')),
+                completed_transactions=Count('id', filter=Q(status='completed')),
+                pending_transactions=Count('id', filter=Q(status='pending')),
+                failed_transactions=Count('id', filter=Q(status='failed'))
+            )
+            
+            # Get active subscriptions count
+            active_subscriptions = HotelSubscription.objects.filter(
+                is_active=True,
+                end_date__gte=timezone.now()
+            ).count()
+            
+            # Prepare detailed transaction data
+            transaction_data = []
+            for transaction in transactions:
+                transaction_data.append({
+                    'id': transaction.id,
+                    'hotel_name': transaction.hotel.name,
+                    'plan_name': transaction.plan.name,
+                    'amount': transaction.amount,
+                    'status': transaction.status,
+                    'transaction_type': transaction.transaction_type,
+                    'created_at': transaction.created_at
+                })
+            
+            response_data = {
+                'period': self.get_period_data(request),
+                'summary': {
+                    'total_revenue': revenue_stats['total_revenue'] or 0,
+                    'completed_transactions': revenue_stats['completed_transactions'] or 0,
+                    'pending_transactions': revenue_stats['pending_transactions'] or 0,
+                    'failed_transactions': revenue_stats['failed_transactions'] or 0,
+                    'active_subscriptions': active_subscriptions
+                },
+                'data': transaction_data
+            }
+            
+            serializer = PaymentsStatsResponseSerializer(response_data)
+            return success_response(data=serializer.data)
+        except Exception as e:
+            return error_response(
+                f"Failed to fetch payment stats: {str(e)}",
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )

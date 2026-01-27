@@ -23,71 +23,83 @@ class HotelStatsViewSet(viewsets.ViewSet):
     permission_classes = [permissions.IsAuthenticated, IsHotelStaffOrAdmin]
 
     def list(self, request):
-        """Get list of available hotels user can access stats for"""
-        user = request.user
-        accessible_hotels = self.get_accessible_hotels(user)
-        
-        hotels_data = []
-        for hotel in accessible_hotels:
-            hotels_data.append({
-                'id': str(hotel.id),
-                'name': hotel.name,
-                'city': hotel.city,
-                'status': hotel.status,
-            })
-        
-        return success_response(data=hotels_data)
-
-    def retrieve(self, request, pk=None):
-        """Get statistics for a specific hotel"""
-        user = request.user
-        hotel_id = pk
-        stat_type = request.query_params.get('stat_type', 'overview')
-        
-        # Parse date parameters
-        date_from = request.query_params.get('date_from')
-        date_to = request.query_params.get('date_to')
-        date_str = request.query_params.get('date')
-        
         try:
-            if date_str:
-                target_date = datetime.strptime(date_str, '%Y-%m-%d').date()
-            else:
-                target_date = timezone.now().date()
-                
-            if date_from:
-                date_from = datetime.strptime(date_from, '%Y-%m-%d').date()
-            if date_to:
-                date_to = datetime.strptime(date_to, '%Y-%m-%d').date()
-        except ValueError:
+            """Get list of available hotels user can access stats for"""
+            user = request.user
+            accessible_hotels = self.get_accessible_hotels(user)
+            
+            hotels_data = []
+            for hotel in accessible_hotels:
+                hotels_data.append({
+                    'id': str(hotel.id),
+                    'name': hotel.name,
+                    'city': hotel.city,
+                    'status': hotel.status,
+                })
+            
+            return success_response(data=hotels_data)
+        except Exception as e:
             return error_response(
-                "Invalid date format. Use YYYY-MM-DD.", 
-                status=status.HTTP_400_BAD_REQUEST
+                f"Failed to list hotels stats: {str(e)}",
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
-        # Determine which hotel(s) the user can access
-        accessible_hotels = self.get_accessible_hotels(user, hotel_id)
-        
-        if not accessible_hotels:
-            return forbidden_response("Access denied or no hotel associated.")
+    def retrieve(self, request, pk=None):
+        try:
+            """Get statistics for a specific hotel"""
+            user = request.user
+            hotel_id = pk
+            stat_type = request.query_params.get('stat_type', 'overview')
+            
+            # Parse date parameters
+            date_from = request.query_params.get('date_from')
+            date_to = request.query_params.get('date_to')
+            date_str = request.query_params.get('date')
+            
+            try:
+                if date_str:
+                    target_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+                else:
+                    target_date = timezone.now().date()
+                    
+                if date_from:
+                    date_from = datetime.strptime(date_from, '%Y-%m-%d').date()
+                if date_to:
+                    date_to = datetime.strptime(date_to, '%Y-%m-%d').date()
+            except ValueError:
+                return error_response(
+                    "Invalid date format. Use YYYY-MM-DD.", 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
 
-        # Route to appropriate statistics method
-        if stat_type == 'overview':
-            return self.get_overview_stats(accessible_hotels, target_date, date_from, date_to)
-        elif stat_type == 'occupancy':
-            return self.get_occupancy_stats(accessible_hotels, target_date, date_from, date_to)
-        elif stat_type == 'guests':
-            return self.get_guest_stats(accessible_hotels, target_date, date_from, date_to)
-        elif stat_type == 'rooms':
-            return self.get_room_stats(accessible_hotels, target_date, date_from, date_to)
-        elif stat_type == 'staff':
-            return self.get_staff_stats(accessible_hotels, target_date, user)
-        elif stat_type == 'performance':
-            return self.get_performance_stats(accessible_hotels, target_date, date_from, date_to)
-        else:
+            # Determine which hotel(s) the user can access
+            accessible_hotels = self.get_accessible_hotels(user, hotel_id)
+            
+            if not accessible_hotels:
+                return forbidden_response("Access denied or no hotel associated.")
+
+            # Route to appropriate statistics method
+            if stat_type == 'overview':
+                return self.get_overview_stats(accessible_hotels, target_date, date_from, date_to)
+            elif stat_type == 'occupancy':
+                return self.get_occupancy_stats(accessible_hotels, target_date, date_from, date_to)
+            elif stat_type == 'guests':
+                return self.get_guest_stats(accessible_hotels, target_date, date_from, date_to)
+            elif stat_type == 'rooms':
+                return self.get_room_stats(accessible_hotels, target_date, date_from, date_to)
+            elif stat_type == 'staff':
+                return self.get_staff_stats(accessible_hotels, target_date, user)
+            elif stat_type == 'performance':
+                return self.get_performance_stats(accessible_hotels, target_date, date_from, date_to)
+            else:
+                return error_response(
+                    f"Invalid stat type: {stat_type}", 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+        except Exception as e:
             return error_response(
-                f"Invalid stat type: {stat_type}", 
-                status=status.HTTP_400_BAD_REQUEST
+                f"Failed to retrieve hotel stats: {str(e)}",
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
     def get_accessible_hotels(self, user, hotel_id=None):
@@ -502,26 +514,32 @@ class HotelUserStatsViewSet(viewsets.ViewSet):
         return None
 
     def list(self, request):
-        """Get overview statistics for user's hotel"""
-        user = request.user
-        hotel = self.get_hotel_for_user(user)
-        
-        if not hotel:
-            if user.is_superuser:
-                return error_response(
-                    "Superusers should use /api/hotel_stat/admin/hotels/ endpoints with hotel_id parameter.", 
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            return forbidden_response("No hotel associated with user.")
-        
-        # Parse date parameters
-        target_date, date_from, date_to = self._parse_date_parameters(request)
-        if isinstance(target_date, Response):
-            return target_date  # Return error response
-        
-        # Import the main stats class to use its methods
-        stats_viewset = HotelStatsViewSet()
-        return stats_viewset.get_overview_stats([hotel], target_date, date_from, date_to)
+        try:
+            """Get overview statistics for user's hotel"""
+            user = request.user
+            hotel = self.get_hotel_for_user(user)
+            
+            if not hotel:
+                if user.is_superuser:
+                    return error_response(
+                        "Superusers should use /api/hotel_stat/admin/hotels/ endpoints with hotel_id parameter.", 
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                return forbidden_response("No hotel associated with user.")
+            
+            # Parse date parameters
+            target_date, date_from, date_to = self._parse_date_parameters(request)
+            if isinstance(target_date, Response):
+                return target_date  # Return error response
+            
+            # Import the main stats class to use its methods
+            stats_viewset = HotelStatsViewSet()
+            return stats_viewset.get_overview_stats([hotel], target_date, date_from, date_to)
+        except Exception as e:
+            return error_response(
+                f"Failed to fetch user hotel stats: {str(e)}",
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
     @action(detail=False, methods=['get'], url_path='occupancy')
     def occupancy(self, request):
@@ -550,750 +568,786 @@ class HotelUserStatsViewSet(viewsets.ViewSet):
 
     @action(detail=False, methods=['get'], url_path='guest-history')
     def guest_history(self, request):
-        """Get guest history with stays and filters"""
-        user = request.user
-        hotel = self.get_hotel_for_user(user)
-        
-        if not hotel:
-            if user.is_superuser:
+        try:
+            """Get guest history with stays and filters"""
+            user = request.user
+            hotel = self.get_hotel_for_user(user)
+            
+            if not hotel:
+                if user.is_superuser:
+                    return error_response(
+                        "Superusers should use /api/hotel_stat/admin/hotels/ endpoints with hotel_id parameter for guest history.", 
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                return forbidden_response("No hotel associated with user.")
+            
+            # Parse filters
+            start_date = request.query_params.get('start_date')
+            end_date = request.query_params.get('end_date')
+            guest_whatsapp = request.query_params.get('guest_whatsapp')
+            
+            try:
+                if start_date:
+                    start_date = datetime.strptime(start_date, '%Y-%m-%d').date()
+                if end_date:
+                    end_date = datetime.strptime(end_date, '%Y-%m-%d').date()
+            except ValueError:
                 return error_response(
-                    "Superusers should use /api/hotel_stat/admin/hotels/ endpoints with hotel_id parameter for guest history.", 
+                    "Invalid date format. Use YYYY-MM-DD.", 
                     status=status.HTTP_400_BAD_REQUEST
                 )
-            return forbidden_response("No hotel associated with user.")
-        
-        # Parse filters
-        start_date = request.query_params.get('start_date')
-        end_date = request.query_params.get('end_date')
-        guest_whatsapp = request.query_params.get('guest_whatsapp')
-        
-        try:
-            if start_date:
-                start_date = datetime.strptime(start_date, '%Y-%m-%d').date()
-            if end_date:
-                end_date = datetime.strptime(end_date, '%Y-%m-%d').date()
-        except ValueError:
-            return error_response(
-                "Invalid date format. Use YYYY-MM-DD.", 
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        # Get guests who have stayed at this hotel
-        guests = Guest.objects.filter(
-            stays__hotel=hotel
-        ).distinct()
-        
-        # Apply date filters - include guests who were present during the period
-        if start_date or end_date:
-            filtered_stays = Stay.objects.filter(hotel=hotel)
             
-            # Find stays that overlap with the date range
-            if start_date:
-                filtered_stays = filtered_stays.filter(check_out_date__gte=start_date)
-            if end_date:
-                filtered_stays = filtered_stays.filter(check_in_date__lte=end_date)
+            # Get guests who have stayed at this hotel
+            guests = Guest.objects.filter(
+                stays__hotel=hotel
+            ).distinct()
+            
+            # Apply date filters - include guests who were present during the period
+            if start_date or end_date:
+                filtered_stays = Stay.objects.filter(hotel=hotel)
                 
-            guests = guests.filter(stays__in=filtered_stays).distinct()
-        
-        # Filter by specific guest WhatsApp number if provided
-        if guest_whatsapp:
-            guests = guests.filter(whatsapp_number=guest_whatsapp)
-        
-        # Prepare response data
-        guest_data = []
-        for guest in guests:
-            # Get all stays for this guest, then optionally filter by overlapping dates for display
-            guest_stays = Stay.objects.filter(guest=guest, hotel=hotel).order_by('-check_in_date')
-            
-            # Apply date filters for display purposes - include overlapping stays
-            if start_date or end_date:
+                # Find stays that overlap with the date range
                 if start_date:
-                    guest_stays = guest_stays.filter(check_out_date__gte=start_date)
+                    filtered_stays = filtered_stays.filter(check_out_date__gte=start_date)
                 if end_date:
-                    guest_stays = guest_stays.filter(check_in_date__lte=end_date)
+                    filtered_stays = filtered_stays.filter(check_in_date__lte=end_date)
+                    
+                guests = guests.filter(stays__in=filtered_stays).distinct()
             
-            stays_data = []
-            for stay in guest_stays:
-                stay_data = {
-                    'id': stay.id,
-                    'check_in_date': stay.check_in_date,
-                    'check_out_date': stay.check_out_date,
-                    'actual_check_in': stay.actual_check_in,
-                    'actual_check_out': stay.actual_check_out,
-                    'status': stay.status,
-                    'room_number': stay.room.room_number if stay.room else None,
-                    'room_floor': stay.room.floor if stay.room else None,
-                    'room_category': stay.room.category.name if stay.room and stay.room.category else None,
-                    'total_amount': float(stay.total_amount),
-                    'number_of_guests': stay.number_of_guests,
-                    'guest_names': stay.guest_names,
-                    'register_number': stay.register_number,
-                }
-                stays_data.append(stay_data)
-            
-            guest_info = {
-                'id': guest.id,
-                'full_name': guest.full_name,
-                'whatsapp_number': guest.whatsapp_number,
-                'email': guest.email,
-                'nationality': guest.nationality,
-                'preferred_language': guest.preferred_language,
-                'loyalty_points': guest.loyalty_points,
-                'total_stays': guest_stays.count(),
-                'stays': stays_data,
-            }
-            
-            guest_data.append(guest_info)
-        
-        # Summary statistics - count all guests and their total stays
-        all_guests_count = Guest.objects.filter(stays__hotel=hotel).distinct().count()
-        all_stays_count = Stay.objects.filter(hotel=hotel).count()
-        
-        summary = {
-            'total_guests': all_guests_count,
-            'total_stays': all_stays_count,
-            'filtered_guests_shown': guests.count(),
-            'filtered_stays_shown': sum(len(guest['stays']) for guest in guest_data),
-            'date_range': {
-                'start_date': start_date.isoformat() if start_date else None,
-                'end_date': end_date.isoformat() if end_date else None,
-            }
-        }
-        
-        return success_response(data={
-            'summary': summary,
-            'guests': guest_data
-        })
-
-    @action(detail=False, methods=['get'], url_path='room-history')
-    def room_history(self, request):
-        """Get room history with stay records and filters"""
-        user = request.user
-        hotel = self.get_hotel_for_user(user)
-        
-        if not hotel:
-            if user.is_superuser:
-                return error_response(
-                    "Superusers should use /api/hotel_stat/admin/hotels/ endpoints with hotel_id parameter for room history.", 
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            return forbidden_response("No hotel associated with user.")
-        
-        # Parse filters
-        start_date = request.query_params.get('start_date')
-        end_date = request.query_params.get('end_date')
-        room_id = request.query_params.get('room_id')
-        guest_whatsapp = request.query_params.get('guest_whatsapp')
-        
-        try:
-            if start_date:
-                start_date = datetime.strptime(start_date, '%Y-%m-%d').date()
-            if end_date:
-                end_date = datetime.strptime(end_date, '%Y-%m-%d').date()
-        except ValueError:
-            return error_response(
-                "Invalid date format. Use YYYY-MM-DD.", 
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        # Get rooms for this hotel
-        rooms_queryset = Room.objects.filter(hotel=hotel)
-        
-        # Filter by specific room ID if provided
-        if room_id:
-            try:
-                rooms_queryset = rooms_queryset.filter(id=int(room_id))
-            except ValueError:
-                return error_response(
-                    "Invalid room_id format.", 
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-        
-        # Prepare response data
-        room_data = []
-        for room in rooms_queryset:
-            # Get all stays for this room, then optionally filter by overlapping dates for display
-            room_stays = Stay.objects.filter(room=room)
-            
-            # Apply date filters for display purposes - include overlapping stays
-            if start_date or end_date:
-                if start_date:
-                    room_stays = room_stays.filter(check_out_date__gte=start_date)
-                if end_date:
-                    room_stays = room_stays.filter(check_in_date__lte=end_date)
-            
-            # Apply guest WhatsApp filter if provided
+            # Filter by specific guest WhatsApp number if provided
             if guest_whatsapp:
-                room_stays = room_stays.filter(guest__whatsapp_number=guest_whatsapp)
+                guests = guests.filter(whatsapp_number=guest_whatsapp)
             
-            room_stays = room_stays.order_by('-check_in_date')
-            
-            stays_data = []
-            for stay in room_stays:
-                stay_data = {
-                    'id': stay.id,
-                    'guest_name': stay.guest.full_name,
-                    'guest_whatsapp': stay.guest.whatsapp_number,
-                    'check_in_date': stay.check_in_date,
-                    'check_out_date': stay.check_out_date,
-                    'actual_check_in': stay.actual_check_in,
-                    'actual_check_out': stay.actual_check_out,
-                    'status': stay.status,
-                    'total_amount': float(stay.total_amount),
-                    'number_of_guests': stay.number_of_guests,
-                    'guest_names': stay.guest_names,
-                    'register_number': stay.register_number,
-                }
-                stays_data.append(stay_data)
-            
-            room_info = {
-                'id': room.id,
-                'room_number': room.room_number,
-                'floor': room.floor,
-                'category': room.category.name if room.category else None,
-                'base_price': float(room.category.base_price) if room.category else None,
-                'status': room.status,
-                'total_stays': room_stays.count(),
-                'stays': stays_data,
-            }
-            
-            room_data.append(room_info)
-        
-        # Summary statistics
-        summary = {
-            'total_rooms': rooms_queryset.count(),
-            'total_stays': sum(room['total_stays'] for room in room_data),
-            'date_range': {
-                'start_date': start_date.isoformat() if start_date else None,
-                'end_date': end_date.isoformat() if end_date else None,
-            }
-        }
-        
-        return success_response(data={
-            'summary': summary,
-            'rooms': room_data
-        })
-
-    @action(detail=False, methods=['get'], url_path='conversation-history')
-    def conversation_history(self, request):
-        """Get conversation history with message counts and filters"""
-        user = request.user
-        hotel = self.get_hotel_for_user(user)
-        
-        if not hotel:
-            if user.is_superuser:
-                return error_response(
-                    "Superusers should use /api/hotel_stat/admin/hotels/ endpoints with hotel_id parameter for conversation history.", 
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            return forbidden_response("No hotel associated with user.")
-        
-        # Parse filters
-        start_date = request.query_params.get('start_date')
-        end_date = request.query_params.get('end_date')
-        
-        try:
-            if start_date:
-                start_date = datetime.strptime(start_date, '%Y-%m-%d').date()
-            if end_date:
-                end_date = datetime.strptime(end_date, '%Y-%m-%d').date()
-        except ValueError:
-            return error_response(
-                "Invalid date format. Use YYYY-MM-DD.", 
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        # Get conversations for this hotel
-        conversations_queryset = Conversation.objects.filter(hotel=hotel)
-        
-        # Apply date filters
-        if start_date:
-            conversations_queryset = conversations_queryset.filter(created_at__gte=start_date)
-        if end_date:
-            conversations_queryset = conversations_queryset.filter(created_at__lte=end_date)
-        
-        # Get message counts for each conversation
-        conversations_data = []
-        total_messages = 0
-        
-        for conversation in conversations_queryset.order_by('-created_at'):
-            message_count = Message.objects.filter(conversation=conversation).count()
-            total_messages += message_count
-            
-            # Get guest information
-            guest_info = {
-                'id': conversation.guest.id,
-                'full_name': conversation.guest.full_name,
-                'whatsapp_number': conversation.guest.whatsapp_number,
-            }
-            
-            # Get room info from active stay if available
-            active_stay = conversation.guest.stays.filter(
-                status='active',
-                hotel=hotel
-            ).first()
-            if active_stay and active_stay.room:
-                guest_info['room_number'] = active_stay.room.room_number
-                guest_info['floor'] = active_stay.room.floor
-            
-            conversation_data = {
-                'id': conversation.id,
-                'guest': guest_info,
-                'department': conversation.department,
-                'conversation_type': conversation.conversation_type,
-                'status': conversation.status,
-                'message_count': message_count,
-                'created_at': conversation.created_at,
-                'last_message_at': conversation.last_message_at,
-                'last_message_preview': conversation.last_message_preview,
-                'is_fulfilled': conversation.is_request_fulfilled,
-                'fulfillment_status': conversation.get_fulfillment_status_display(),
-            }
-            
-            conversations_data.append(conversation_data)
-        
-        # Summary statistics
-        summary = {
-            'total_conversations': conversations_queryset.count(),
-            'total_messages': total_messages,
-            'average_messages_per_conversation': round(
-                total_messages / conversations_queryset.count() if conversations_queryset.count() > 0 else 0, 2
-            ),
-            'date_range': {
-                'start_date': start_date.isoformat() if start_date else None,
-                'end_date': end_date.isoformat() if end_date else None,
-            }
-        }
-        
-        # Department breakdown
-        dept_breakdown = conversations_queryset.values('department').annotate(
-            count=Count('id'),
-            total_messages=Count('messages')
-        ).order_by('-count')
-        
-        summary['department_breakdown'] = list(dept_breakdown)
-        
-        # Conversation type breakdown
-        type_breakdown = conversations_queryset.values('conversation_type').annotate(
-            count=Count('id')
-        ).order_by('-count')
-        
-        summary['type_breakdown'] = list(type_breakdown)
-        
-        return success_response(data={
-            'summary': summary,
-            'conversations': conversations_data
-        })
-
-    @action(detail=False, methods=['get'], url_path='feedback-analytics')
-    def feedback_analytics(self, request):
-        """Get comprehensive feedback analytics with ratings and filters"""
-        user = request.user
-        hotel = self.get_hotel_for_user(user)
-        
-        if not hotel:
-            if user.is_superuser:
-                return error_response(
-                    "Superusers should use /api/hotel_stat/admin/hotels/ endpoints with hotel_id parameter for feedback analytics.", 
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            return forbidden_response("No hotel associated with user.")
-        
-        # Parse filters
-        start_date = request.query_params.get('start_date')
-        end_date = request.query_params.get('end_date')
-        room_id = request.query_params.get('room_id')
-        guest_whatsapp = request.query_params.get('guest_whatsapp')
-        
-        try:
-            if start_date:
-                start_date = datetime.strptime(start_date, '%Y-%m-%d').date()
-            if end_date:
-                end_date = datetime.strptime(end_date, '%Y-%m-%d').date()
-        except ValueError:
-            return error_response(
-                "Invalid date format. Use YYYY-MM-DD.", 
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        # Get feedback for this hotel
-        feedback_queryset = Feedback.objects.filter(stay__hotel=hotel)
-        
-        # Apply date filters
-        if start_date:
-            feedback_queryset = feedback_queryset.filter(created_at__gte=start_date)
-        if end_date:
-            feedback_queryset = feedback_queryset.filter(created_at__lte=end_date)
-        
-        # Apply room filter
-        if room_id:
-            try:
-                feedback_queryset = feedback_queryset.filter(stay__room_id=int(room_id))
-            except ValueError:
-                return error_response(
-                    "Invalid room_id format.", 
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-        
-        # Apply guest WhatsApp filter
-        if guest_whatsapp:
-            feedback_queryset = feedback_queryset.filter(guest__whatsapp_number=guest_whatsapp)
-        
-        # Order by most recent
-        feedback_queryset = feedback_queryset.order_by('-created_at')
-        
-        # Prepare feedback data
-        feedback_data = []
-        ratings_list = []
-        
-        for feedback in feedback_queryset:
-            # Get stay information
-            stay = feedback.stay
-            guest = feedback.guest
-            
-            # Get room information
-            room_info = None
-            if stay.room:
-                room_info = {
-                    'id': stay.room.id,
-                    'room_number': stay.room.room_number,
-                    'floor': stay.room.floor,
-                    'category': stay.room.category.name if stay.room.category else None,
-                }
-            
-            feedback_detail = {
-                'id': feedback.id,
-                'rating': feedback.rating,
-                'note': feedback.note,
-                'created_at': feedback.created_at,
-                'stay': {
-                    'id': stay.id,
-                    'check_in_date': stay.check_in_date,
-                    'check_out_date': stay.check_out_date,
-                    'actual_check_in': stay.actual_check_in,
-                    'actual_check_out': stay.actual_check_out,
-                    'status': stay.status,
-                    'total_amount': float(stay.total_amount),
-                    'room': room_info,
-                    'register_number': stay.register_number,
-                },
-                'guest': {
+            # Prepare response data
+            guest_data = []
+            for guest in guests:
+                # Get all stays for this guest, then optionally filter by overlapping dates for display
+                guest_stays = Stay.objects.filter(guest=guest, hotel=hotel).order_by('-check_in_date')
+                
+                # Apply date filters for display purposes - include overlapping stays
+                if start_date or end_date:
+                    if start_date:
+                        guest_stays = guest_stays.filter(check_out_date__gte=start_date)
+                    if end_date:
+                        guest_stays = guest_stays.filter(check_in_date__lte=end_date)
+                
+                stays_data = []
+                for stay in guest_stays:
+                    stay_data = {
+                        'id': stay.id,
+                        'check_in_date': stay.check_in_date,
+                        'check_out_date': stay.check_out_date,
+                        'actual_check_in': stay.actual_check_in,
+                        'actual_check_out': stay.actual_check_out,
+                        'status': stay.status,
+                        'room_number': stay.room.room_number if stay.room else None,
+                        'room_floor': stay.room.floor if stay.room else None,
+                        'room_category': stay.room.category.name if stay.room and stay.room.category else None,
+                        'total_amount': float(stay.total_amount),
+                        'number_of_guests': stay.number_of_guests,
+                        'guest_names': stay.guest_names,
+                        'register_number': stay.register_number,
+                    }
+                    stays_data.append(stay_data)
+                
+                guest_info = {
                     'id': guest.id,
                     'full_name': guest.full_name,
                     'whatsapp_number': guest.whatsapp_number,
                     'email': guest.email,
                     'nationality': guest.nationality,
+                    'preferred_language': guest.preferred_language,
                     'loyalty_points': guest.loyalty_points,
+                    'total_stays': guest_stays.count(),
+                    'stays': stays_data,
+                }
+                
+                guest_data.append(guest_info)
+            
+            # Summary statistics - count all guests and their total stays
+            all_guests_count = Guest.objects.filter(stays__hotel=hotel).distinct().count()
+            all_stays_count = Stay.objects.filter(hotel=hotel).count()
+            
+            summary = {
+                'total_guests': all_guests_count,
+                'total_stays': all_stays_count,
+                'filtered_guests_shown': guests.count(),
+                'filtered_stays_shown': sum(len(guest['stays']) for guest in guest_data),
+                'date_range': {
+                    'start_date': start_date.isoformat() if start_date else None,
+                    'end_date': end_date.isoformat() if end_date else None,
                 }
             }
             
-            feedback_data.append(feedback_detail)
-            ratings_list.append(feedback.rating)
-        
-        # Calculate statistics
-        total_feedback = len(ratings_list)
-        
-        # Rating distribution
-        rating_distribution = {}
-        for rating in range(1, 6):  # Ratings 1-5
-            count = ratings_list.count(rating)
-            rating_distribution[str(rating)] = count
-        
-        # Calculate averages
-        if total_feedback > 0:
-            avg_rating = sum(ratings_list) / total_feedback
-            percentage_5_star = (rating_distribution.get('5', 0) / total_feedback) * 100
-            percentage_4_plus_star = ((rating_distribution.get('4', 0) + rating_distribution.get('5', 0)) / total_feedback) * 100
-        else:
-            avg_rating = 0
-            percentage_5_star = 0
-            percentage_4_plus_star = 0
-        
-        # Room-specific statistics
-        room_breakdown = feedback_queryset.values('stay__room__room_number', 'stay__room__id').annotate(
-            count=Count('id'),
-            avg_rating=Avg('rating')
-        ).order_by('-count')
-        
-        # Monthly rating trends
-        monthly_trends = {}
-        for feedback in feedback_queryset:
-            month_key = feedback.created_at.strftime('%Y-%m')
-            if month_key not in monthly_trends:
-                monthly_trends[month_key] = {'ratings': [], 'count': 0}
-            monthly_trends[month_key]['ratings'].append(feedback.rating)
-            monthly_trends[month_key]['count'] += 1
-        
-        monthly_avg_ratings = []
-        for month in sorted(monthly_trends.keys()):
-            month_data = monthly_trends[month]
-            avg_month_rating = sum(month_data['ratings']) / len(month_data['ratings'])
-            monthly_avg_ratings.append({
-                'month': month,
-                'average_rating': round(avg_month_rating, 2),
-                'total_feedback': month_data['count']
+            return success_response(data={
+                'summary': summary,
+                'guests': guest_data
             })
-        
-        # Guest nationality breakdown (if available)
-        nationality_breakdown = feedback_queryset.values('guest__nationality').annotate(
-            count=Count('id'),
-            avg_rating=Avg('rating')
-        ).order_by('-count')
-        
-        # Summary statistics
-        summary = {
-            'total_feedback': total_feedback,
-            'average_rating': round(avg_rating, 2),
-            'percentage_5_star': round(percentage_5_star, 2),
-            'percentage_4_plus_star': round(percentage_4_plus_star, 2),
-            'rating_distribution': rating_distribution,
-            'date_range': {
-                'start_date': start_date.isoformat() if start_date else None,
-                'end_date': end_date.isoformat() if end_date else None,
-            },
-            'room_breakdown': list(room_breakdown),
-            'monthly_trends': monthly_avg_ratings,
-            'nationality_breakdown': list(nationality_breakdown),
-        }
-        
-        return success_response(data={
-            'summary': summary,
-            'feedbacks': feedback_data
-        })
+        except Exception as e:
+            return error_response(
+                f"Failed to retrieve guest history: {str(e)}",
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    @action(detail=False, methods=['get'], url_path='room-history')
+    def room_history(self, request):
+        try:
+            """Get room history with stay records and filters"""
+            user = request.user
+            hotel = self.get_hotel_for_user(user)
+            
+            if not hotel:
+                if user.is_superuser:
+                    return error_response(
+                        "Superusers should use /api/hotel_stat/admin/hotels/ endpoints with hotel_id parameter for room history.", 
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                return forbidden_response("No hotel associated with user.")
+            
+            # Parse filters
+            start_date = request.query_params.get('start_date')
+            end_date = request.query_params.get('end_date')
+            room_id = request.query_params.get('room_id')
+            guest_whatsapp = request.query_params.get('guest_whatsapp')
+            
+            try:
+                if start_date:
+                    start_date = datetime.strptime(start_date, '%Y-%m-%d').date()
+                if end_date:
+                    end_date = datetime.strptime(end_date, '%Y-%m-%d').date()
+            except ValueError:
+                return error_response(
+                    "Invalid date format. Use YYYY-MM-DD.", 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Get rooms for this hotel
+            rooms_queryset = Room.objects.filter(hotel=hotel)
+            
+            # Filter by specific room ID if provided
+            if room_id:
+                try:
+                    rooms_queryset = rooms_queryset.filter(id=int(room_id))
+                except ValueError:
+                    return error_response(
+                        "Invalid room_id format.", 
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+            
+            # Prepare response data
+            room_data = []
+            for room in rooms_queryset:
+                # Get all stays for this room, then optionally filter by overlapping dates for display
+                room_stays = Stay.objects.filter(room=room)
+                
+                # Apply date filters for display purposes - include overlapping stays
+                if start_date or end_date:
+                    if start_date:
+                        room_stays = room_stays.filter(check_out_date__gte=start_date)
+                    if end_date:
+                        room_stays = room_stays.filter(check_in_date__lte=end_date)
+                
+                # Apply guest WhatsApp filter if provided
+                if guest_whatsapp:
+                    room_stays = room_stays.filter(guest__whatsapp_number=guest_whatsapp)
+                
+                room_stays = room_stays.order_by('-check_in_date')
+                
+                stays_data = []
+                for stay in room_stays:
+                    stay_data = {
+                        'id': stay.id,
+                        'guest_name': stay.guest.full_name,
+                        'guest_whatsapp': stay.guest.whatsapp_number,
+                        'check_in_date': stay.check_in_date,
+                        'check_out_date': stay.check_out_date,
+                        'actual_check_in': stay.actual_check_in,
+                        'actual_check_out': stay.actual_check_out,
+                        'status': stay.status,
+                        'total_amount': float(stay.total_amount),
+                        'number_of_guests': stay.number_of_guests,
+                        'guest_names': stay.guest_names,
+                        'register_number': stay.register_number,
+                    }
+                    stays_data.append(stay_data)
+                
+                room_info = {
+                    'id': room.id,
+                    'room_number': room.room_number,
+                    'floor': room.floor,
+                    'category': room.category.name if room.category else None,
+                    'base_price': float(room.category.base_price) if room.category else None,
+                    'status': room.status,
+                    'total_stays': room_stays.count(),
+                    'stays': stays_data,
+                }
+                
+                room_data.append(room_info)
+            
+            # Summary statistics
+            summary = {
+                'total_rooms': rooms_queryset.count(),
+                'total_stays': sum(room['total_stays'] for room in room_data),
+                'date_range': {
+                    'start_date': start_date.isoformat() if start_date else None,
+                    'end_date': end_date.isoformat() if end_date else None,
+                }
+            }
+            
+            return success_response(data={
+                'summary': summary,
+                'rooms': room_data
+            })
+        except Exception as e:
+            return error_response(
+                f"Failed to retrieve room history: {str(e)}",
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    @action(detail=False, methods=['get'], url_path='conversation-history')
+    def conversation_history(self, request):
+        try:
+            """Get conversation history with message counts and filters"""
+            user = request.user
+            hotel = self.get_hotel_for_user(user)
+            
+            if not hotel:
+                if user.is_superuser:
+                    return error_response(
+                        "Superusers should use /api/hotel_stat/admin/hotels/ endpoints with hotel_id parameter for conversation history.", 
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                return forbidden_response("No hotel associated with user.")
+            
+            # Parse filters
+            start_date = request.query_params.get('start_date')
+            end_date = request.query_params.get('end_date')
+            
+            try:
+                if start_date:
+                    start_date = datetime.strptime(start_date, '%Y-%m-%d').date()
+                if end_date:
+                    end_date = datetime.strptime(end_date, '%Y-%m-%d').date()
+            except ValueError:
+                return error_response(
+                    "Invalid date format. Use YYYY-MM-DD.", 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Get conversations for this hotel
+            conversations_queryset = Conversation.objects.filter(hotel=hotel)
+            
+            # Apply date filters
+            if start_date:
+                conversations_queryset = conversations_queryset.filter(created_at__gte=start_date)
+            if end_date:
+                conversations_queryset = conversations_queryset.filter(created_at__lte=end_date)
+            
+            # Get message counts for each conversation
+            conversations_data = []
+            total_messages = 0
+            
+            for conversation in conversations_queryset.order_by('-created_at'):
+                message_count = Message.objects.filter(conversation=conversation).count()
+                total_messages += message_count
+                
+                # Get guest information
+                guest_info = {
+                    'id': conversation.guest.id,
+                    'full_name': conversation.guest.full_name,
+                    'whatsapp_number': conversation.guest.whatsapp_number,
+                }
+                
+                # Get room info from active stay if available
+                active_stay = conversation.guest.stays.filter(
+                    status='active',
+                    hotel=hotel
+                ).first()
+                if active_stay and active_stay.room:
+                    guest_info['room_number'] = active_stay.room.room_number
+                    guest_info['floor'] = active_stay.room.floor
+                
+                conversation_data = {
+                    'id': conversation.id,
+                    'guest': guest_info,
+                    'department': conversation.department,
+                    'conversation_type': conversation.conversation_type,
+                    'status': conversation.status,
+                    'message_count': message_count,
+                    'created_at': conversation.created_at,
+                    'last_message_at': conversation.last_message_at,
+                    'last_message_preview': conversation.last_message_preview,
+                    'is_fulfilled': conversation.is_request_fulfilled,
+                    'fulfillment_status': conversation.get_fulfillment_status_display(),
+                }
+                
+                conversations_data.append(conversation_data)
+            
+            # Summary statistics
+            summary = {
+                'total_conversations': conversations_queryset.count(),
+                'total_messages': total_messages,
+                'average_messages_per_conversation': round(
+                    total_messages / conversations_queryset.count() if conversations_queryset.count() > 0 else 0, 2
+                ),
+                'date_range': {
+                    'start_date': start_date.isoformat() if start_date else None,
+                    'end_date': end_date.isoformat() if end_date else None,
+                }
+            }
+            
+            # Department breakdown
+            dept_breakdown = conversations_queryset.values('department').annotate(
+                count=Count('id'),
+                total_messages=Count('messages')
+            ).order_by('-count')
+            
+            summary['department_breakdown'] = list(dept_breakdown)
+            
+            # Conversation type breakdown
+            type_breakdown = conversations_queryset.values('conversation_type').annotate(
+                count=Count('id')
+            ).order_by('-count')
+            
+            summary['type_breakdown'] = list(type_breakdown)
+            
+            return success_response(data={
+                'summary': summary,
+                'conversations': conversations_data
+            })
+        except Exception as e:
+            return error_response(
+                f"Failed to retrieve conversation history: {str(e)}",
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    @action(detail=False, methods=['get'], url_path='feedback-analytics')
+    def feedback_analytics(self, request):
+        try:
+            """Get comprehensive feedback analytics with ratings and filters"""
+            user = request.user
+            hotel = self.get_hotel_for_user(user)
+            
+            if not hotel:
+                if user.is_superuser:
+                    return error_response(
+                        "Superusers should use /api/hotel_stat/admin/hotels/ endpoints with hotel_id parameter for feedback analytics.", 
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                return forbidden_response("No hotel associated with user.")
+            
+            # Parse filters
+            start_date = request.query_params.get('start_date')
+            end_date = request.query_params.get('end_date')
+            room_id = request.query_params.get('room_id')
+            guest_whatsapp = request.query_params.get('guest_whatsapp')
+            
+            try:
+                if start_date:
+                    start_date = datetime.strptime(start_date, '%Y-%m-%d').date()
+                if end_date:
+                    end_date = datetime.strptime(end_date, '%Y-%m-%d').date()
+            except ValueError:
+                return error_response(
+                    "Invalid date format. Use YYYY-MM-DD.", 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Get feedback for this hotel
+            feedback_queryset = Feedback.objects.filter(stay__hotel=hotel)
+            
+            # Apply date filters
+            if start_date:
+                feedback_queryset = feedback_queryset.filter(created_at__gte=start_date)
+            if end_date:
+                feedback_queryset = feedback_queryset.filter(created_at__lte=end_date)
+            
+            # Apply room filter
+            if room_id:
+                try:
+                    feedback_queryset = feedback_queryset.filter(stay__room_id=int(room_id))
+                except ValueError:
+                    return error_response(
+                        "Invalid room_id format.", 
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+            
+            # Apply guest WhatsApp filter
+            if guest_whatsapp:
+                feedback_queryset = feedback_queryset.filter(guest__whatsapp_number=guest_whatsapp)
+            
+            # Order by most recent
+            feedback_queryset = feedback_queryset.order_by('-created_at')
+            
+            # Prepare feedback data
+            feedback_data = []
+            ratings_list = []
+            
+            for feedback in feedback_queryset:
+                # Get stay information
+                stay = feedback.stay
+                guest = feedback.guest
+                
+                # Get room information
+                room_info = None
+                if stay.room:
+                    room_info = {
+                        'id': stay.room.id,
+                        'room_number': stay.room.room_number,
+                        'floor': stay.room.floor,
+                        'category': stay.room.category.name if stay.room.category else None,
+                    }
+                
+                feedback_detail = {
+                    'id': feedback.id,
+                    'rating': feedback.rating,
+                    'note': feedback.note,
+                    'created_at': feedback.created_at,
+                    'stay': {
+                        'id': stay.id,
+                        'check_in_date': stay.check_in_date,
+                        'check_out_date': stay.check_out_date,
+                        'actual_check_in': stay.actual_check_in,
+                        'actual_check_out': stay.actual_check_out,
+                        'status': stay.status,
+                        'total_amount': float(stay.total_amount),
+                        'room': room_info,
+                        'register_number': stay.register_number,
+                    },
+                    'guest': {
+                        'id': guest.id,
+                        'full_name': guest.full_name,
+                        'whatsapp_number': guest.whatsapp_number,
+                        'email': guest.email,
+                        'nationality': guest.nationality,
+                        'loyalty_points': guest.loyalty_points,
+                    }
+                }
+                
+                feedback_data.append(feedback_detail)
+                ratings_list.append(feedback.rating)
+            
+            # Calculate statistics
+            total_feedback = len(ratings_list)
+            
+            # Rating distribution
+            rating_distribution = {}
+            for rating in range(1, 6):  # Ratings 1-5
+                count = ratings_list.count(rating)
+                rating_distribution[str(rating)] = count
+            
+            # Calculate averages
+            if total_feedback > 0:
+                avg_rating = sum(ratings_list) / total_feedback
+                percentage_5_star = (rating_distribution.get('5', 0) / total_feedback) * 100
+                percentage_4_plus_star = ((rating_distribution.get('4', 0) + rating_distribution.get('5', 0)) / total_feedback) * 100
+            else:
+                avg_rating = 0
+                percentage_5_star = 0
+                percentage_4_plus_star = 0
+            
+            # Room-specific statistics
+            room_breakdown = feedback_queryset.values('stay__room__room_number', 'stay__room__id').annotate(
+                count=Count('id'),
+                avg_rating=Avg('rating')
+            ).order_by('-count')
+            
+            # Monthly rating trends
+            monthly_trends = {}
+            for feedback in feedback_queryset:
+                month_key = feedback.created_at.strftime('%Y-%m')
+                if month_key not in monthly_trends:
+                    monthly_trends[month_key] = {'ratings': [], 'count': 0}
+                monthly_trends[month_key]['ratings'].append(feedback.rating)
+                monthly_trends[month_key]['count'] += 1
+            
+            monthly_avg_ratings = []
+            for month in sorted(monthly_trends.keys()):
+                month_data = monthly_trends[month]
+                avg_month_rating = sum(month_data['ratings']) / len(month_data['ratings'])
+                monthly_avg_ratings.append({
+                    'month': month,
+                    'average_rating': round(avg_month_rating, 2),
+                    'total_feedback': month_data['count']
+                })
+            
+            # Guest nationality breakdown (if available)
+            nationality_breakdown = feedback_queryset.values('guest__nationality').annotate(
+                count=Count('id'),
+                avg_rating=Avg('rating')
+            ).order_by('-count')
+            
+            # Summary statistics
+            summary = {
+                'total_feedback': total_feedback,
+                'average_rating': round(avg_rating, 2),
+                'percentage_5_star': round(percentage_5_star, 2),
+                'percentage_4_plus_star': round(percentage_4_plus_star, 2),
+                'rating_distribution': rating_distribution,
+                'date_range': {
+                    'start_date': start_date.isoformat() if start_date else None,
+                    'end_date': end_date.isoformat() if end_date else None,
+                },
+                'room_breakdown': list(room_breakdown),
+                'monthly_trends': monthly_avg_ratings,
+                'nationality_breakdown': list(nationality_breakdown),
+            }
+            
+            return success_response(data={
+                'summary': summary,
+                'feedbacks': feedback_data
+            })
+        except Exception as e:
+            return error_response(
+                f"Failed to retrieve feedback analytics: {str(e)}",
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
     @action(detail=False, methods=['get'], url_path='overview')
     def overview(self, request):
-        """Get key hotel metrics: Total Guests, Total Rooms, Occupancy Rate, Total Revenue"""
-        user = request.user
-        hotel = self.get_hotel_for_user(user)
-        
-        if not hotel:
-            if user.is_superuser:
+        try:
+            """Get key hotel metrics: Total Guests, Total Rooms, Occupancy Rate, Total Revenue"""
+            user = request.user
+            hotel = self.get_hotel_for_user(user)
+            
+            if not hotel:
+                if user.is_superuser:
+                    return error_response(
+                        "Superusers should use /api/hotel_stat/admin/hotels/ endpoints with hotel_id parameter for overview.", 
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                return forbidden_response("No hotel associated with user.")
+            
+            # Parse date parameters for revenue calculation
+            start_date = request.query_params.get('start_date')
+            end_date = request.query_params.get('end_date')
+            target_date_str = request.query_params.get('date')
+            
+            try:
+                if target_date_str:
+                    target_date = datetime.strptime(target_date_str, '%Y-%m-%d').date()
+                else:
+                    target_date = timezone.now().date()
+                    
+                if start_date:
+                    start_date = datetime.strptime(start_date, '%Y-%m-%d').date()
+                if end_date:
+                    end_date = datetime.strptime(end_date, '%Y-%m-%d').date()
+            except ValueError:
                 return error_response(
-                    "Superusers should use /api/hotel_stat/admin/hotels/ endpoints with hotel_id parameter for overview.", 
+                    "Invalid date format. Use YYYY-MM-DD.", 
                     status=status.HTTP_400_BAD_REQUEST
                 )
-            return forbidden_response("No hotel associated with user.")
-        
-        # Parse date parameters for revenue calculation
-        start_date = request.query_params.get('start_date')
-        end_date = request.query_params.get('end_date')
-        target_date_str = request.query_params.get('date')
-        
-        try:
-            if target_date_str:
-                target_date = datetime.strptime(target_date_str, '%Y-%m-%d').date()
+            
+            # 1. Total Rooms
+            total_rooms = Room.objects.filter(hotel=hotel).count()
+            
+            # 2. Total Guests (unique guests who have stayed at the hotel)
+            total_guests = Guest.objects.filter(
+                stays__hotel=hotel
+            ).distinct().count()
+            
+            # 3. Current Occupancy Rate
+            occupied_rooms = Room.objects.filter(hotel=hotel, status='occupied').count()
+            occupancy_rate = (occupied_rooms / total_rooms * 100) if total_rooms > 0 else 0
+            
+            # 4. Current Guests (checked in today)
+            current_stays = Stay.objects.filter(
+                hotel=hotel,
+                status='active',
+                check_in_date__lte=target_date,
+                check_out_date__gte=target_date
+            )
+            current_guests_count = current_stays.count()
+            
+            # 5. Total Revenue
+            if start_date and end_date:
+                # Revenue for date range
+                completed_stays = Stay.objects.filter(
+                    hotel=hotel,
+                    status='completed',
+                    check_out_date__gte=start_date,
+                    check_out_date__lte=end_date
+                )
+                revenue_period = f"{start_date} to {end_date}"
             else:
-                target_date = timezone.now().date()
-                
-            if start_date:
-                start_date = datetime.strptime(start_date, '%Y-%m-%d').date()
-            if end_date:
-                end_date = datetime.strptime(end_date, '%Y-%m-%d').date()
-        except ValueError:
-            return error_response(
-                "Invalid date format. Use YYYY-MM-DD.", 
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        # 1. Total Rooms
-        total_rooms = Room.objects.filter(hotel=hotel).count()
-        
-        # 2. Total Guests (unique guests who have stayed at the hotel)
-        total_guests = Guest.objects.filter(
-            stays__hotel=hotel
-        ).distinct().count()
-        
-        # 3. Current Occupancy Rate
-        occupied_rooms = Room.objects.filter(hotel=hotel, status='occupied').count()
-        occupancy_rate = (occupied_rooms / total_rooms * 100) if total_rooms > 0 else 0
-        
-        # 4. Current Guests (checked in today)
-        current_stays = Stay.objects.filter(
-            hotel=hotel,
-            status='active',
-            check_in_date__lte=target_date,
-            check_out_date__gte=target_date
-        )
-        current_guests_count = current_stays.count()
-        
-        # 5. Total Revenue
-        if start_date and end_date:
-            # Revenue for date range
-            completed_stays = Stay.objects.filter(
-                hotel=hotel,
-                status='completed',
-                check_out_date__gte=start_date,
-                check_out_date__lte=end_date
-            )
-            revenue_period = f"{start_date} to {end_date}"
-        else:
-            # Revenue for current month
-            month_start = target_date.replace(day=1)
-            completed_stays = Stay.objects.filter(
-                hotel=hotel,
-                status='completed',
-                check_out_date__gte=month_start,
-                check_out_date__lte=target_date
-            )
-            revenue_period = f"Month of {target_date.strftime('%B %Y')}"
-        
-        # Also include confirmed bookings revenue
-        confirmed_bookings = Booking.objects.filter(
-            hotel=hotel,
-            status='confirmed'
-        )
-        
-        if start_date and end_date:
-            confirmed_bookings = confirmed_bookings.filter(
-                check_in_date__gte=start_date,
-                check_in_date__lte=end_date
-            )
-        
-        total_revenue = (completed_stays.aggregate(
-            total=Sum('total_amount')
-        )['total'] or 0) + (confirmed_bookings.aggregate(
-            total=Sum('total_amount')
-        )['total'] or 0)
-        
-        # 6. Additional useful metrics
-        # Expected check-ins today
-        expected_checkins_today = Booking.objects.filter(
-            hotel=hotel,
-            check_in_date=target_date,
-            status='confirmed'
-        ).count()
-        
-        # Expected check-outs today
-        expected_checkouts_today = Stay.objects.filter(
-            hotel=hotel,
-            status='active',
-            check_out_date=target_date
-        ).count()
-        
-        # Available rooms for check-in
-        available_rooms = Room.objects.filter(hotel=hotel, status='available').count()
-        
-        # Rooms under maintenance
-        maintenance_rooms = Room.objects.filter(hotel=hotel, status='maintenance').count()
-        
-        # Average daily rate (ADR) for the period
-        if start_date and end_date:
-            days_in_period = (end_date - start_date).days + 1
-            occupied_room_nights = completed_stays.aggregate(
-                total_nights=Sum(
-                    ExpressionWrapper(
-                        F('actual_check_out') - F('actual_check_in'),
-                        output_field=DurationField()
-                    )
+                # Revenue for current month
+                month_start = target_date.replace(day=1)
+                completed_stays = Stay.objects.filter(
+                    hotel=hotel,
+                    status='completed',
+                    check_out_date__gte=month_start,
+                    check_out_date__lte=target_date
                 )
-            )['total_nights'] or timedelta(0)
-            # Convert timedelta to total seconds, then to days for ADR calculation
-            occupied_nights_days = occupied_room_nights.total_seconds() / (24 * 3600)
-            adr = total_revenue / occupied_nights_days if occupied_nights_days > 0 else 0
-        else:
-            # ADR for current month
-            month_start = target_date.replace(day=1)
-            days_in_month = (target_date - month_start).days + 1
-            occupied_room_nights = completed_stays.aggregate(
-                total_nights=Sum(
-                    ExpressionWrapper(
-                        F('actual_check_out') - F('actual_check_in'),
-                        output_field=DurationField()
-                    )
+                revenue_period = f"Month of {target_date.strftime('%B %Y')}"
+            
+            # Also include confirmed bookings revenue
+            confirmed_bookings = Booking.objects.filter(
+                hotel=hotel,
+                status='confirmed'
+            )
+            
+            if start_date and end_date:
+                confirmed_bookings = confirmed_bookings.filter(
+                    check_in_date__gte=start_date,
+                    check_in_date__lte=end_date
                 )
-            )['total_nights'] or timedelta(0)
-            # Convert timedelta to total seconds, then to days for ADR calculation
-            occupied_nights_days = occupied_room_nights.total_seconds() / (24 * 3600)
-            adr = total_revenue / occupied_nights_days if occupied_nights_days > 0 else 0
-        
-        # Hotel basic details
-        hotel_details = {
-            'name': hotel.name,
-            'address': hotel.address,
-            'phone': hotel.phone,
-        }
-        
-        # Prepare response
-        overview_data = {
-            'hotel_details': hotel_details,
-            'metrics': {
-                'total_rooms': total_rooms,
-                'total_guests': total_guests,
-                'current_guests': current_guests_count,
-                'occupancy_rate': round(occupancy_rate, 2),
-                'total_revenue': float(total_revenue),
-                'average_daily_rate': round(float(adr), 2),
-            },
-            'today_overview': {
-                'date': target_date.isoformat(),
-                'expected_checkins': expected_checkins_today,
-                'expected_checkouts': expected_checkouts_today,
-                'available_rooms': available_rooms,
-                'rooms_under_maintenance': maintenance_rooms,
-            },
-            'revenue_summary': {
-                'period': revenue_period,
-                'total_revenue': float(total_revenue),
-                'completed_stays_revenue': float(completed_stays.aggregate(
-                    total=Sum('total_amount')
-                )['total'] or 0),
-                'confirmed_bookings_revenue': float(confirmed_bookings.aggregate(
-                    total=Sum('total_amount')
-                )['total'] or 0),
-            },
-            'room_status_breakdown': {
-                'occupied': occupied_rooms,
-                'available': available_rooms,
-                'cleaning': Room.objects.filter(hotel=hotel, status='cleaning').count(),
-                'maintenance': maintenance_rooms,
-                'out_of_order': Room.objects.filter(hotel=hotel, status='out_of_order').count(),
-            },
-            'date_filters_applied': {
-                'date': target_date.isoformat(),
-                'start_date': start_date.isoformat() if start_date else None,
-                'end_date': end_date.isoformat() if end_date else None,
+            
+            total_revenue = (completed_stays.aggregate(
+                total=Sum('total_amount')
+            )['total'] or 0) + (confirmed_bookings.aggregate(
+                total=Sum('total_amount')
+            )['total'] or 0)
+            
+            # 6. Additional useful metrics
+            # Expected check-ins today
+            expected_checkins_today = Booking.objects.filter(
+                hotel=hotel,
+                check_in_date=target_date,
+                status='confirmed'
+            ).count()
+            
+            # Expected check-outs today
+            expected_checkouts_today = Stay.objects.filter(
+                hotel=hotel,
+                status='active',
+                check_out_date=target_date
+            ).count()
+            
+            # Available rooms for check-in
+            available_rooms = Room.objects.filter(hotel=hotel, status='available').count()
+            
+            # Rooms under maintenance
+            maintenance_rooms = Room.objects.filter(hotel=hotel, status='maintenance').count()
+            
+            # Average daily rate (ADR) for the period
+            if start_date and end_date:
+                days_in_period = (end_date - start_date).days + 1
+                occupied_room_nights = completed_stays.aggregate(
+                    total_nights=Sum(
+                        ExpressionWrapper(
+                            F('actual_check_out') - F('actual_check_in'),
+                            output_field=DurationField()
+                        )
+                    )
+                )['total_nights'] or timedelta(0)
+                # Convert timedelta to total seconds, then to days for ADR calculation
+                occupied_nights_days = occupied_room_nights.total_seconds() / (24 * 3600)
+                adr = total_revenue / occupied_nights_days if occupied_nights_days > 0 else 0
+            else:
+                # ADR for current month
+                month_start = target_date.replace(day=1)
+                days_in_month = (target_date - month_start).days + 1
+                occupied_room_nights = completed_stays.aggregate(
+                    total_nights=Sum(
+                        ExpressionWrapper(
+                            F('actual_check_out') - F('actual_check_in'),
+                            output_field=DurationField()
+                        )
+                    )
+                )['total_nights'] or timedelta(0)
+                # Convert timedelta to total seconds, then to days for ADR calculation
+                occupied_nights_days = occupied_room_nights.total_seconds() / (24 * 3600)
+                adr = total_revenue / occupied_nights_days if occupied_nights_days > 0 else 0
+            
+            # Hotel basic details
+            hotel_details = {
+                'name': hotel.name,
+                'address': hotel.address,
+                'phone': hotel.phone,
             }
-        }
-        
-        return success_response(data=overview_data)
+            
+            # Prepare response
+            overview_data = {
+                'hotel_details': hotel_details,
+                'metrics': {
+                    'total_rooms': total_rooms,
+                    'total_guests': total_guests,
+                    'current_guests': current_guests_count,
+                    'occupancy_rate': round(occupancy_rate, 2),
+                    'total_revenue': float(total_revenue),
+                    'average_daily_rate': round(float(adr), 2),
+                },
+                'today_overview': {
+                    'date': target_date.isoformat(),
+                    'expected_checkins': expected_checkins_today,
+                    'expected_checkouts': expected_checkouts_today,
+                    'available_rooms': available_rooms,
+                    'rooms_under_maintenance': maintenance_rooms,
+                },
+                'revenue_summary': {
+                    'period': revenue_period,
+                    'total_revenue': float(total_revenue),
+                    'completed_stays_revenue': float(completed_stays.aggregate(
+                        total=Sum('total_amount')
+                    )['total'] or 0),
+                    'confirmed_bookings_revenue': float(confirmed_bookings.aggregate(
+                        total=Sum('total_amount')
+                    )['total'] or 0),
+                },
+                'room_status_breakdown': {
+                    'occupied': occupied_rooms,
+                    'available': available_rooms,
+                    'cleaning': Room.objects.filter(hotel=hotel, status='cleaning').count(),
+                    'maintenance': maintenance_rooms,
+                    'out_of_order': Room.objects.filter(hotel=hotel, status='out_of_order').count(),
+                },
+                'date_filters_applied': {
+                    'date': target_date.isoformat(),
+                    'start_date': start_date.isoformat() if start_date else None,
+                    'end_date': end_date.isoformat() if end_date else None,
+                }
+            }
+            
+            return success_response(data=overview_data)
+        except Exception as e:
+            return error_response(
+                f"Failed to retrieve overview stats: {str(e)}",
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
     def _get_stat_type(self, request, stat_type):
-        """Helper method to handle different stat types"""
-        user = request.user
-        hotel = self.get_hotel_for_user(user)
-        
-        if not hotel:
-            if user.is_superuser:
+        try:
+            """Helper method to handle different stat types"""
+            user = request.user
+            hotel = self.get_hotel_for_user(user)
+            
+            if not hotel:
+                if user.is_superuser:
+                    return error_response(
+                        f"Superusers should use /api/hotel_stat/admin/hotels/ endpoints with hotel_id parameter for {stat_type} stats.", 
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                return forbidden_response("No hotel associated with user.")
+            
+            # Parse date parameters
+            target_date, date_from, date_to = self._parse_date_parameters(request)
+            if isinstance(target_date, Response):
+                return target_date  # Return error response
+            
+            # Import the main stats class to use its methods
+            stats_viewset = HotelStatsViewSet()
+            
+            # Route to appropriate statistics method
+            if stat_type == 'occupancy':
+                return stats_viewset.get_occupancy_stats([hotel], target_date, date_from, date_to)
+            elif stat_type == 'guests':
+                return stats_viewset.get_guest_stats([hotel], target_date, date_from, date_to)
+            elif stat_type == 'rooms':
+                return stats_viewset.get_room_stats([hotel], target_date, date_from, date_to)
+            elif stat_type == 'staff':
+                return stats_viewset.get_staff_stats([hotel], target_date, user)
+            elif stat_type == 'performance':
+                return stats_viewset.get_performance_stats([hotel], target_date, date_from, date_to)
+            else:
                 return error_response(
-                    f"Superusers should use /api/hotel_stat/admin/hotels/ endpoints with hotel_id parameter for {stat_type} stats.", 
+                    f"Invalid stat type: {stat_type}", 
                     status=status.HTTP_400_BAD_REQUEST
                 )
-            return forbidden_response("No hotel associated with user.")
-        
-        # Parse date parameters
-        target_date, date_from, date_to = self._parse_date_parameters(request)
-        if isinstance(target_date, Response):
-            return target_date  # Return error response
-        
-        # Import the main stats class to use its methods
-        stats_viewset = HotelStatsViewSet()
-        
-        # Route to appropriate statistics method
-        if stat_type == 'occupancy':
-            return stats_viewset.get_occupancy_stats([hotel], target_date, date_from, date_to)
-        elif stat_type == 'guests':
-            return stats_viewset.get_guest_stats([hotel], target_date, date_from, date_to)
-        elif stat_type == 'rooms':
-            return stats_viewset.get_room_stats([hotel], target_date, date_from, date_to)
-        elif stat_type == 'staff':
-            return stats_viewset.get_staff_stats([hotel], target_date, user)
-        elif stat_type == 'performance':
-            return stats_viewset.get_performance_stats([hotel], target_date, date_from, date_to)
-        else:
+        except Exception as e:
             return error_response(
-                f"Invalid stat type: {stat_type}", 
-                status=status.HTTP_400_BAD_REQUEST
+                f"Failed to get {stat_type} stats: {str(e)}",
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
     def _parse_date_parameters(self, request):
@@ -1342,82 +1396,94 @@ class PlatformStatsViewSet(HotelStatsViewSet):
         return Hotel.objects.all()
 
     def list(self, request):
-        """Get platform-wide overview statistics"""
-        user = request.user
-        
-        if not user.is_superuser:
-            return forbidden_response("Access denied. Superuser access required.")
-        
-        # Parse date parameters
-        date_from = request.query_params.get('date_from')
-        date_to = request.query_params.get('date_to')
-        date_str = request.query_params.get('date')
-        
         try:
-            if date_str:
-                target_date = datetime.strptime(date_str, '%Y-%m-%d').date()
-            else:
-                target_date = timezone.now().date()
-                
-            if date_from:
-                date_from = datetime.strptime(date_from, '%Y-%m-%d').date()
-            if date_to:
-                date_to = datetime.strptime(date_to, '%Y-%m-%d').date()
-        except ValueError:
+            """Get platform-wide overview statistics"""
+            user = request.user
+            
+            if not user.is_superuser:
+                return forbidden_response("Access denied. Superuser access required.")
+            
+            # Parse date parameters
+            date_from = request.query_params.get('date_from')
+            date_to = request.query_params.get('date_to')
+            date_str = request.query_params.get('date')
+            
+            try:
+                if date_str:
+                    target_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+                else:
+                    target_date = timezone.now().date()
+                    
+                if date_from:
+                    date_from = datetime.strptime(date_from, '%Y-%m-%d').date()
+                if date_to:
+                    date_to = datetime.strptime(date_to, '%Y-%m-%d').date()
+            except ValueError:
+                return error_response(
+                    "Invalid date format. Use YYYY-MM-DD.", 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            hotels = self.get_accessible_hotels(user)
+            return self.get_overview_stats(hotels, target_date, date_from, date_to)
+        except Exception as e:
             return error_response(
-                "Invalid date format. Use YYYY-MM-DD.", 
-                status=status.HTTP_400_BAD_REQUEST
+                f"Failed to retrieve platform overview: {str(e)}",
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
-        
-        hotels = self.get_accessible_hotels(user)
-        return self.get_overview_stats(hotels, target_date, date_from, date_to)
 
     @action(detail=False, methods=['get'], url_path='(?P<stat_type>[^/.]+)')
     def detailed_stats(self, request, stat_type=None):
-        """Get platform-wide detailed statistics"""
-        user = request.user
-        
-        if not user.is_superuser:
-            return forbidden_response("Access denied. Superuser access required.")
-        
-        # Parse date parameters
-        date_from = request.query_params.get('date_from')
-        date_to = request.query_params.get('date_to')
-        date_str = request.query_params.get('date')
-        
         try:
-            if date_str:
-                target_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+            """Get platform-wide detailed statistics"""
+            user = request.user
+            
+            if not user.is_superuser:
+                return forbidden_response("Access denied. Superuser access required.")
+            
+            # Parse date parameters
+            date_from = request.query_params.get('date_from')
+            date_to = request.query_params.get('date_to')
+            date_str = request.query_params.get('date')
+            
+            try:
+                if date_str:
+                    target_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+                else:
+                    target_date = timezone.now().date()
+                    
+                if date_from:
+                    date_from = datetime.strptime(date_from, '%Y-%m-%d').date()
+                if date_to:
+                    date_to = datetime.strptime(date_to, '%Y-%m-%d').date()
+            except ValueError:
+                return error_response(
+                    "Invalid date format. Use YYYY-MM-DD.", 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            hotels = self.get_accessible_hotels(user)
+            
+            # Route to appropriate statistics method
+            if stat_type == 'occupancy':
+                return self.get_occupancy_stats(hotels, target_date, date_from, date_to)
+            elif stat_type == 'guests':
+                return self.get_guest_stats(hotels, target_date, date_from, date_to)
+            elif stat_type == 'rooms':
+                return self.get_room_stats(hotels, target_date, date_from, date_to)
+            elif stat_type == 'staff':
+                return self.get_staff_stats(hotels, target_date, user)
+            elif stat_type == 'performance':
+                return self.get_performance_stats(hotels, target_date, date_from, date_to)
             else:
-                target_date = timezone.now().date()
-                
-            if date_from:
-                date_from = datetime.strptime(date_from, '%Y-%m-%d').date()
-            if date_to:
-                date_to = datetime.strptime(date_to, '%Y-%m-%d').date()
-        except ValueError:
+                return error_response(
+                    f"Invalid stat type: {stat_type}", 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+        except Exception as e:
             return error_response(
-                "Invalid date format. Use YYYY-MM-DD.", 
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        hotels = self.get_accessible_hotels(user)
-        
-        # Route to appropriate statistics method
-        if stat_type == 'occupancy':
-            return self.get_occupancy_stats(hotels, target_date, date_from, date_to)
-        elif stat_type == 'guests':
-            return self.get_guest_stats(hotels, target_date, date_from, date_to)
-        elif stat_type == 'rooms':
-            return self.get_room_stats(hotels, target_date, date_from, date_to)
-        elif stat_type == 'staff':
-            return self.get_staff_stats(hotels, target_date, user)
-        elif stat_type == 'performance':
-            return self.get_performance_stats(hotels, target_date, date_from, date_to)
-        else:
-            return error_response(
-                f"Invalid stat type: {stat_type}", 
-                status=status.HTTP_400_BAD_REQUEST
+                f"Failed to retrieve platform {stat_type} stats: {str(e)}",
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
 
@@ -1428,71 +1494,73 @@ class HotelComparisonView(views.APIView):
     permission_classes = [permissions.IsAuthenticated, IsHotelManagerOrAdmin]
 
     def get(self, request):
-        """Compare statistics between multiple hotels"""
-        user = request.user
-        hotel_ids = request.query_params.getlist('hotels')
-        stat_type = request.query_params.get('stat_type', 'overview')
-        
-        # Only hotel admins, managers, and superusers can compare multiple hotels
-        if not (user.is_superuser or user.user_type in ['hotel_admin', 'manager']):
-            return forbidden_response(
-                "Access denied. Only hotel admins, managers, and superusers can compare hotels."
-            )
-        
-        if not hotel_ids:
-            return error_response(
-                "At least one hotel ID is required.", 
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        hotels = Hotel.objects.filter(id__in=hotel_ids)
-        if hotels.count() != len(hotel_ids):
-            return error_response(
-                "One or more hotel IDs are invalid.", 
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        # Parse date parameters
-        date_from = request.query_params.get('date_from')
-        date_to = request.query_params.get('date_to')
-        date_str = request.query_params.get('date')
-        
         try:
-            if date_str:
-                target_date = datetime.strptime(date_str, '%Y-%m-%d').date()
-            else:
-                target_date = timezone.now().date()
+            """Compare statistics between multiple hotels"""
+            user = request.user
+            hotel_ids = request.query_params.getlist('hotels')
+            stat_type = request.query_params.get('stat_type', 'overview')
+            
+            # Only hotel admins, managers, and superusers can compare multiple hotels
+            if not (user.is_superuser or user.user_type in ['hotel_admin', 'manager']):
+                return forbidden_response(
+                    "Access denied. Only hotel admins, managers, and superusers can compare hotels."
+                )
+            
+            if not hotel_ids:
+                return error_response(
+                    "At least one hotel ID is required.", 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            hotels = Hotel.objects.filter(id__in=hotel_ids)
+            if hotels.count() != len(hotel_ids):
+                return error_response(
+                    "One or more hotel IDs are invalid.", 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Parse date parameters
+            date_from = request.query_params.get('date_from')
+            date_to = request.query_params.get('date_to')
+            date_str = request.query_params.get('date')
+            
+            try:
+                if date_str:
+                    target_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+                else:
+                    target_date = timezone.now().date()
+                    
+                if date_from:
+                    date_from = datetime.strptime(date_from, '%Y-%m-%d').date()
+                if date_to:
+                    date_to = datetime.strptime(date_to, '%Y-%m-%d').date()
+            except ValueError:
+                return error_response(
+                    "Invalid date format. Use YYYY-MM-DD.", 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Use the main stats viewset to get individual hotel data
+            stats_viewset = HotelStatsViewSet()
+            
+            # Get stats for each hotel
+            comparison_data = {}
+            for hotel in hotels:
+                # Create a mock request object
+                class MockRequest:
+                    def __init__(self, query_params):
+                        self.query_params = query_params
+                        self.user = user  # Add user to mock request for checks
                 
-            if date_from:
-                date_from = datetime.strptime(date_from, '%Y-%m-%d').date()
-            if date_to:
-                date_to = datetime.strptime(date_to, '%Y-%m-%d').date()
-        except ValueError:
-            return error_response(
-                "Invalid date format. Use YYYY-MM-DD.", 
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        # Use the main stats viewset to get individual hotel data
-        stats_viewset = HotelStatsViewSet()
-        
-        # Get stats for each hotel
-        comparison_data = {}
-        for hotel in hotels:
-            # Create a mock request object
-            class MockRequest:
-                def __init__(self, query_params):
-                    self.query_params = query_params
-            
-            mock_query_params = request.query_params.copy()
-            mock_query_params['stat_type'] = stat_type
-            
-            # Get the hotel statistics
-            response = stats_viewset.retrieve(MockRequest(mock_query_params), pk=str(hotel.id))
-            if hasattr(response, 'status_code') and response.status_code == 200:
-                comparison_data[f"hotel_{hotel.id}"] = response.data
-            else:
-                # Fallback: directly call the appropriate stats method
+                mock_query_params = request.query_params.copy()
+                mock_query_params['stat_type'] = stat_type
+                
+                # Get the hotel statistics
+                # Note: We need to handle potential recursion or method calls carefully.
+                # Since we are calling retrieve, which calls get_accessible_hotels, we need to ensure permissions work.
+                # However, for comparison view, we've already checked permissions at the top level.
+                
+                # Direct method call approach (cleaner than mocking request for retrieve)
                 if stat_type == 'overview':
                     response_data = stats_viewset.get_overview_stats([hotel], target_date, date_from, date_to)
                 elif stat_type == 'occupancy':
@@ -1510,5 +1578,13 @@ class HotelComparisonView(views.APIView):
                 
                 if hasattr(response_data, 'data'):
                     comparison_data[f"hotel_{hotel.id}"] = response_data.data
-        
-        return success_response(data=comparison_data)
+                else:
+                    # If response_data is not a DRF Response (e.g. error response dict from helper)
+                     comparison_data[f"hotel_{hotel.id}"] = response_data
+            
+            return success_response(data=comparison_data)
+        except Exception as e:
+            return error_response(
+                f"Failed to perform hotel comparison: {str(e)}",
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )

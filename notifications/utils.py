@@ -65,56 +65,26 @@ def send_notification_to_platform_users(title, message, link=None, link_label=No
     return create_platform_user_notification(title, message, link, link_label)
 
 
+from django.db.models import Q
+
 def get_user_notifications(user, include_group_notifications=True):
     """
     Get all notifications for a user, including group notifications they belong to
-    Compatible with both PostgreSQL and SQLite
+    Using Q objects for full compatibility with filters and updates.
     """
-    from django.db import connection
-    
-    # Start with personal notifications
-    query = Notification.objects.filter(user=user)
+    # Personal notifications
+    q_filter = Q(user=user)
     
     if include_group_notifications:
-        # Build conditions for group notifications
-        conditions = []
+        # Hotel staff notifications
+        if user.user_type in ['hotel_admin', 'manager', 'receptionist'] and hasattr(user, 'hotel') and user.hotel:
+            q_filter |= Q(group_type='hotel_staff', hotel=user.hotel)
         
-        # Get hotel staff notifications if user is hotel staff
-        if user.user_type in ['hotel_admin', 'manager', 'receptionist'] and user.hotel:
-            conditions.append(
-                Notification.objects.filter(
-                    group_type='hotel_staff',
-                    hotel=user.hotel
-                )
-            )
-        
-        # Get platform user notifications if user is platform user
+        # Platform user notifications
         if user.user_type in ['platform_admin', 'platform_staff']:
-            conditions.append(
-                Notification.objects.filter(
-                    group_type='platform_user'
-                )
-            )
-        
-        # Combine queries based on database type
-        if conditions:
-            if connection.vendor == 'postgresql':
-                # PostgreSQL supports UNION with ORDER BY
-                for condition in conditions:
-                    query = query.union(condition)
-            else:
-                # For SQLite and others, use the ID collection approach
-                notification_ids = list(query.values_list('id', flat=True))
-                for condition in conditions:
-                    notification_ids.extend(condition.values_list('id', flat=True))
-                
-                # Remove duplicates and fetch
-                unique_ids = list(set(notification_ids))
-                if unique_ids:
-                    return Notification.objects.filter(id__in=unique_ids).order_by('-created_at')
-                return Notification.objects.none()
-    
-    return query.order_by('-created_at')
+            q_filter |= Q(group_type='platform_user')
+            
+    return Notification.objects.filter(q_filter).order_by('-created_at')
 
 
 # Backward compatibility
