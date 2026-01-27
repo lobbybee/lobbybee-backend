@@ -90,38 +90,41 @@ class UsernameSuggestionView(views.APIView):
     permission_classes = [AllowAny]
 
     def get(self, request, *args, **kwargs):
-        hotel_name = request.query_params.get('hotel_name', '')
-        if not hotel_name:
-            return error_response('hotel_name query parameter is required.', status=status.HTTP_400_BAD_REQUEST)
+        try:
+            hotel_name = request.query_params.get('hotel_name', '')
+            if not hotel_name:
+                return error_response('hotel_name query parameter is required.', status=status.HTTP_400_BAD_REQUEST)
 
-        # Generate base usernames
-        base_name = re.sub(r'[^a-zA-Z0-9]', '', hotel_name).lower()
-        suggestions = [
-            f"{base_name}",
-            f"{base_name}admin",
-            f"{base_name}_admin",
-        ]
+            # Generate base usernames
+            base_name = re.sub(r'[^a-zA-Z0-9]', '', hotel_name).lower()
+            suggestions = [
+                f"{base_name}",
+                f"{base_name}admin",
+                f"{base_name}_admin",
+            ]
 
-        # Generate additional suggestions with random numbers
-        while len(suggestions) < 5:
-            random_suffix = get_random_string(length=3, allowed_chars='1234567890')
-            new_suggestion = f"{base_name}{random_suffix}"
-            if new_suggestion not in suggestions:
-                suggestions.append(new_suggestion)
+            # Generate additional suggestions with random numbers
+            while len(suggestions) < 5:
+                random_suffix = get_random_string(length=3, allowed_chars='1234567890')
+                new_suggestion = f"{base_name}{random_suffix}"
+                if new_suggestion not in suggestions:
+                    suggestions.append(new_suggestion)
 
-        # Check for uniqueness and add more if needed
-        final_suggestions = []
-        for username in suggestions:
-            if not User.objects.filter(username=username).exists():
-                final_suggestions.append(username)
+            # Check for uniqueness and add more if needed
+            final_suggestions = []
+            for username in suggestions:
+                if not User.objects.filter(username=username).exists():
+                    final_suggestions.append(username)
 
-        while len(final_suggestions) < 5:
-            random_suffix = get_random_string(length=4, allowed_chars='1234567890')
-            new_suggestion = f"{base_name}{random_suffix}"
-            if new_suggestion not in final_suggestions and not User.objects.filter(username=new_suggestion).exists():
-                final_suggestions.append(new_suggestion)
+            while len(final_suggestions) < 5:
+                random_suffix = get_random_string(length=4, allowed_chars='1234567890')
+                new_suggestion = f"{base_name}{random_suffix}"
+                if new_suggestion not in final_suggestions and not User.objects.filter(username=new_suggestion).exists():
+                    final_suggestions.append(new_suggestion)
 
-        return success_response(data={'suggestions': final_suggestions[:5]})
+            return success_response(data={'suggestions': final_suggestions[:5]})
+        except Exception as e:
+            return error_response(f"Failed to generate username suggestions: {str(e)}", status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class HotelRegistrationView(generics.CreateAPIView):
@@ -221,42 +224,45 @@ class HotelStaffRegistrationView(generics.CreateAPIView):
     def create(self, request, *args, **kwargs):
         data = request.data
         
-        # Check if incoming data is a list for bulk creation
-        if isinstance(data, list):
-            serializer = self.get_serializer(data=data, many=True)
-            serializer.is_valid(raise_exception=True)
-            
-            # Create all staff members with hotel, created_by, and is_verified=True
-            created_staff = []
-            for item in serializer.validated_data:
-                user = serializer.Meta.model.objects.create_user(
-                    username=item['username'],
-                    email=item['email'],
-                    password=item['password'],
-                    user_type=item['user_type'],
-                    phone_number=item.get('phone_number', ''),
-                    department=item.get('department'),
-                    hotel=request.user.hotel,
-                    created_by=request.user,
-                    is_verified=True,
-                    is_active_hotel_user=True
+        try:
+            # Check if incoming data is a list for bulk creation
+            if isinstance(data, list):
+                serializer = self.get_serializer(data=data, many=True)
+                serializer.is_valid(raise_exception=True)
+                
+                # Create all staff members with hotel, created_by, and is_verified=True
+                created_staff = []
+                for item in serializer.validated_data:
+                    user = serializer.Meta.model.objects.create_user(
+                        username=item['username'],
+                        email=item['email'],
+                        password=item['password'],
+                        user_type=item['user_type'],
+                        phone_number=item.get('phone_number', ''),
+                        department=item.get('department'),
+                        hotel=request.user.hotel,
+                        created_by=request.user,
+                        is_verified=True,
+                        is_active_hotel_user=True
+                    )
+                    created_staff.append(user)
+                
+                return created_response(
+                    message=f'{len(created_staff)} staff users created successfully'
                 )
-                created_staff.append(user)
             
-            return created_response(
-                message=f'{len(created_staff)} staff users created successfully'
-            )
-        
-        # Single staff creation (old format)
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
+            # Single staff creation (old format)
+            serializer = self.get_serializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
 
-        user = serializer.save(
-            hotel=request.user.hotel,
-            created_by=request.user,
-            is_verified=True  # No email verification needed for staff
-        )
-        return created_response(message='Staff user created successfully')
+            user = serializer.save(
+                hotel=request.user.hotel,
+                created_by=request.user,
+                is_verified=True  # No email verification needed for staff
+            )
+            return created_response(message='Staff user created successfully')
+        except Exception as e:
+            return error_response(f"Failed to create hotel staff: {str(e)}", status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 class VerifyOTPView(views.APIView):
     permission_classes = [AllowAny]
@@ -437,30 +443,33 @@ class UserViewSet(viewsets.ModelViewSet):
         
         # Check if incoming data is a list for bulk creation
         if isinstance(data, list):
-            serializer = self.get_serializer(data=data, many=True)
-            serializer.is_valid(raise_exception=True)
-            
-            # Create all users with hotel, created_by, and is_verified=True
-            created_users = []
-            for item in serializer.validated_data:
-                user = User.objects.create_user(
-                    username=item['username'],
-                    email=item['email'],
-                    password=item['password'],
-                    user_type=item['user_type'],
-                    phone_number=item.get('phone_number', ''),
-                    department=item.get('department'),
-                    hotel=request.user.hotel,
-                    created_by=request.user,
-                    is_verified=True,
-                    is_active_hotel_user=item.get('is_active_hotel_user', True)
-                )
-                created_users.append(user)
-            
-            # Serialize the created users for the response
-            response_serializer = self.get_serializer(created_users, many=True)
-            headers = self.get_success_headers(response_serializer.data)
-            return created_response(data=response_serializer.data)
+            try:
+                serializer = self.get_serializer(data=data, many=True)
+                serializer.is_valid(raise_exception=True)
+                
+                # Create all users with hotel, created_by, and is_verified=True
+                created_users = []
+                for item in serializer.validated_data:
+                    user = User.objects.create_user(
+                        username=item['username'],
+                        email=item['email'],
+                        password=item['password'],
+                        user_type=item['user_type'],
+                        phone_number=item.get('phone_number', ''),
+                        department=item.get('department'),
+                        hotel=request.user.hotel,
+                        created_by=request.user,
+                        is_verified=True,
+                        is_active_hotel_user=item.get('is_active_hotel_user', True)
+                    )
+                    created_users.append(user)
+                
+                # Serialize the created users for the response
+                response_serializer = self.get_serializer(created_users, many=True)
+                headers = self.get_success_headers(response_serializer.data)
+                return created_response(data=response_serializer.data)
+            except Exception as e:
+                return error_response(f"Failed to bulk create users: {str(e)}", status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         
         # Default behavior for single user creation
         return super().create(request, *args, **kwargs)

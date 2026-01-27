@@ -92,40 +92,66 @@ class AdminHotelViewSet(viewsets.ModelViewSet):
         return HotelSerializer
 
     @action(detail=True, methods=['post'], url_path='verify')
+    @action(detail=True, methods=['post'], url_path='verify')
     def verify(self, request, pk=None):
-        hotel = self.get_object()
-        notes = request.data.get('notes', '')
-        
-        hotel.is_verified = True
-        hotel.status = 'verified'
-        if notes:
-            hotel.verification_notes = notes
-        hotel.verified_at = timezone.now()
-        hotel.save(update_fields=['is_verified', 'status', 'verification_notes', 'verified_at'])
-        
-        return success_response(message='hotel verified')
+        try:
+            hotel = self.get_object()
+        except Exception:
+            return not_found_response("Hotel not found")
+
+        try:
+            notes = request.data.get('notes', '')
+            
+            hotel.is_verified = True
+            hotel.status = 'verified'
+            if notes:
+                hotel.verification_notes = notes
+            hotel.verified_at = timezone.now()
+            hotel.save(update_fields=['is_verified', 'status', 'verification_notes', 'verified_at'])
+            
+            return success_response(message='hotel verified')
+        except Exception as e:
+            return error_response(f"Failed to verify hotel: {str(e)}", status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     @action(detail=True, methods=['post'], url_path='toggle-active')
+    @action(detail=True, methods=['post'], url_path='toggle-active')
     def toggle_active(self, request, pk=None):
-        hotel = self.get_object()
-        hotel.is_active = not hotel.is_active
-        hotel.save(update_fields=['is_active'])
-        status_text = 'activated' if hotel.is_active else 'deactivated'
-        return success_response(message=f'hotel {status_text}')
+        try:
+            hotel = self.get_object()
+        except Exception:
+            return not_found_response("Hotel not found")
+
+        try:
+            hotel.is_active = not hotel.is_active
+            hotel.save(update_fields=['is_active'])
+            status_text = 'activated' if hotel.is_active else 'deactivated'
+            return success_response(message=f'hotel {status_text}')
+        except Exception as e:
+            return error_response(f"Failed to toggle hotel status: {str(e)}", status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     @action(detail=True, methods=['post'], url_path='reject')
+    @action(detail=True, methods=['post'], url_path='reject')
     def reject(self, request, pk=None):
-        hotel = self.get_object()
-        notes = request.data.get('notes')
-        if not notes:
-            raise ValidationError({"notes": "Rejection notes are required."})
-        
-        hotel.status = 'rejected'
-        hotel.is_verified = False
-        hotel.verification_notes = notes
-        hotel.save(update_fields=['status', 'is_verified', 'verification_notes'])
-        
-        return success_response(message='hotel rejected')
+        try:
+            hotel = self.get_object()
+        except Exception:
+            return not_found_response("Hotel not found")
+
+        try:
+            notes = request.data.get('notes')
+            if not notes:
+                raise ValidationError({"notes": "Rejection notes are required."})
+            
+            hotel.status = 'rejected'
+            hotel.is_verified = False
+            hotel.verification_notes = notes
+            hotel.save(update_fields=['status', 'is_verified', 'verification_notes'])
+            
+            return success_response(message='hotel rejected')
+        except ValidationError as e:
+            return error_response(e.detail, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            return error_response(f"Failed to reject hotel: {str(e)}", status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class UpdateProfileView(generics.UpdateAPIView):
@@ -498,6 +524,7 @@ class PaymentQRCodeViewSet(viewsets.ModelViewSet):
         serializer.save(hotel=self.request.user.hotel)
 
     @action(detail=True, methods=['post'], url_path='toggle-active')
+    @action(detail=True, methods=['post'], url_path='toggle-active')
     def toggle_active(self, request, pk=None):
         """
         Toggle the active status of a QR code.
@@ -509,13 +536,20 @@ class PaymentQRCodeViewSet(viewsets.ModelViewSet):
                 "You do not have permission to perform this action."
             )
         
-        qr_code = self.get_object()
-        qr_code.active = not qr_code.active
-        qr_code.save(update_fields=['active'])
-        status_text = 'activated' if qr_code.active else 'deactivated'
-        return success_response(
-            message=f"QR code {status_text}"
-        )
+        try:
+            qr_code = self.get_object()
+        except Exception:
+            return not_found_response("QR code not found")
+
+        try:
+            qr_code.active = not qr_code.active
+            qr_code.save(update_fields=['active'])
+            status_text = 'activated' if qr_code.active else 'deactivated'
+            return success_response(
+                message=f"QR code {status_text}"
+            )
+        except Exception as e:
+            return error_response(f"Failed to toggle QR code: {str(e)}", status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     @action(detail=False, methods=['post'], url_path='send-to-whatsapp')
     def send_to_whatsapp(self, request):
@@ -600,6 +634,7 @@ class WiFiCredentialViewSet(viewsets.ModelViewSet):
         serializer.save(hotel=self.request.user.hotel)
 
     @action(detail=True, methods=['post'], url_path='toggle-active')
+    @action(detail=True, methods=['post'], url_path='toggle-active')
     def toggle_active(self, request, pk=None):
         """
         Toggle the active status of WiFi credentials.
@@ -611,13 +646,20 @@ class WiFiCredentialViewSet(viewsets.ModelViewSet):
                 "You do not have permission to perform this action."
             )
         
-        wifi_credential = self.get_object()
-        wifi_credential.is_active = not wifi_credential.is_active
-        wifi_credential.save(update_fields=['is_active'])
-        status_text = 'activated' if wifi_credential.is_active else 'deactivated'
-        return success_response(
-            message=f"WiFi credentials {status_text}"
-        )
+        try:
+            wifi_credential = self.get_object()
+        except Exception:
+            return not_found_response("WiFi credential not found")
+
+        try:
+            wifi_credential.is_active = not wifi_credential.is_active
+            wifi_credential.save(update_fields=['is_active'])
+            status_text = 'activated' if wifi_credential.is_active else 'deactivated'
+            return success_response(
+                message=f"WiFi credentials {status_text}"
+            )
+        except Exception as e:
+            return error_response(f"Failed to toggle WiFi credential: {str(e)}", status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     @action(detail=False, methods=['get'], url_path='by-room/(?P<room_id>[^/.]+)')
     def get_by_room(self, request, room_id=None):

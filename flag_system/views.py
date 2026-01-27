@@ -109,35 +109,43 @@ class GuestFlagViewSet(viewsets.ModelViewSet):
         return success_response(data=serializer.data)
     
     @action(detail=True, methods=['post'], url_path='reset')
+    @action(detail=True, methods=['post'], url_path='reset')
     def reset(self, request, pk=None):
         """Reset (deactivate) a flag"""
-        flag = self.get_object()
-        
-        if not flag.is_active:
-            return error_response(
-                'Flag is already reset',
-                status=status.HTTP_400_BAD_REQUEST
+        try:
+            try:
+                flag = self.get_object()
+            except Exception:
+                return not_found_response("Flag not found")
+            
+            if not flag.is_active:
+                return error_response(
+                    'Flag is already reset',
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            serializer = ResetFlagSerializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            
+            reset_flag = reset_guest_flag(
+                flag_id=flag.id,
+                reset_reason=serializer.validated_data['reset_reason'],
+                user=request.user
             )
-        
-        serializer = ResetFlagSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        
-        reset_flag = reset_guest_flag(
-            flag_id=flag.id,
-            reset_reason=serializer.validated_data['reset_reason'],
-            user=request.user
-        )
-        
-        if not reset_flag:
-            return not_found_response('Flag not found or already reset')
-        
-        response_serializer = GuestFlagResponseSerializer(
-            reset_flag,
-            context={'request': request}
-        )
-        
-        return success_response(data=response_serializer.data)
+            
+            if not reset_flag:
+                return not_found_response('Flag not found or already reset')
+            
+            response_serializer = GuestFlagResponseSerializer(
+                reset_flag,
+                context={'request': request}
+            )
+            
+            return success_response(data=response_serializer.data)
+        except Exception as e:
+            return error_response(f"Failed to reset flag: {str(e)}", status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
+    @action(detail=False, methods=['get'], url_path='check/(?P<guest_id>\d+)')
     @action(detail=False, methods=['get'], url_path='check/(?P<guest_id>\d+)')
     def check_guest(self, request, guest_id=None):
         """
@@ -150,16 +158,19 @@ class GuestFlagViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
-        flag_summary = get_flag_summary_for_guest(guest_id)
-        
-        # For hotel staff checking, don't include internal_reason
-        if request.user.user_type in ['hotel_admin', 'manager', 'receptionist']:
-            # Remove internal_reason from flags for hotel staff
-            for flag_data in flag_summary['flags']:
-                flag_data.pop('internal_reason', None)
-        
-        serializer = GuestFlagSummarySerializer(flag_summary)
-        return success_response(data=serializer.data)
+        try:
+            flag_summary = get_flag_summary_for_guest(guest_id)
+            
+            # For hotel staff checking, don't include internal_reason
+            if request.user.user_type in ['hotel_admin', 'manager', 'receptionist']:
+                # Remove internal_reason from flags for hotel staff
+                for flag_data in flag_summary['flags']:
+                    flag_data.pop('internal_reason', None)
+            
+            serializer = GuestFlagSummarySerializer(flag_summary)
+            return success_response(data=serializer.data)
+        except Exception as e:
+            return error_response(f"Failed to check guest flags: {str(e)}", status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @api_view(['GET'])
@@ -169,68 +180,71 @@ def search_guests(request):
     Search guests by name, ID, or phone number with fuzzy matching.
     Available for platform admins and hotel staff.
     """
-    query = request.query_params.get('q', '').strip()
+    try:
+        query = request.query_params.get('q', '').strip()
 
-    if not query:
-        return error_response(
-            'Search query parameter "q" is required',
-            status=status.HTTP_400_BAD_REQUEST
-        )
+        if not query:
+            return error_response(
+                'Search query parameter "q" is required',
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
-    # Check if user has permission (platform admin/staff or hotel staff)
-    if not (request.user.user_type in ['platform_admin', 'platform_staff'] or
-            (request.user.user_type in ['hotel_admin', 'manager', 'receptionist'] and request.user.hotel)):
-        return forbidden_response('Permission denied')
+        # Check if user has permission (platform admin/staff or hotel staff)
+        if not (request.user.user_type in ['platform_admin', 'platform_staff'] or
+                (request.user.user_type in ['hotel_admin', 'manager', 'receptionist'] and request.user.hotel)):
+            return forbidden_response('Permission denied')
 
-    # Limit results to prevent overwhelming responses
-    limit = min(int(request.query_params.get('limit', 20)), 50)
+        # Limit results to prevent overwhelming responses
+        limit = min(int(request.query_params.get('limit', 20)), 50)
 
-    # Build fuzzy search query
-    guests = Guest.objects.filter(
-        Q(full_name__icontains=query) |
-        Q(whatsapp_number__icontains=query) |
-        Q(email__icontains=query) |
-        Q(register_number__icontains=query)
-    ).distinct()[:limit]
+        # Build fuzzy search query
+        guests = Guest.objects.filter(
+            Q(full_name__icontains=query) |
+            Q(whatsapp_number__icontains=query) |
+            Q(email__icontains=query) |
+            Q(register_number__icontains=query)
+        ).distinct()[:limit]
 
-    # Prepare response data
-    results = []
-    for guest in guests:
-        # Get guest's recent stays (last 5)
-        recent_stays = guest.stays.all().order_by('-created_at')[:5]
-        stays_info = []
+        # Prepare response data
+        results = []
+        for guest in guests:
+            # Get guest's recent stays (last 5)
+            recent_stays = guest.stays.all().order_by('-created_at')[:5]
+            stays_info = []
 
-        for stay in recent_stays:
-            stays_info.append({
-                'id': stay.id,
-                'hotel_name': stay.hotel.name,
-                'check_in_date': stay.check_in_date,
-                'check_out_date': stay.check_out_date,
-                'status': stay.status,
-                'internal_rating': stay.internal_rating
+            for stay in recent_stays:
+                stays_info.append({
+                    'id': stay.id,
+                    'hotel_name': stay.hotel.name,
+                    'check_in_date': stay.check_in_date,
+                    'check_out_date': stay.check_out_date,
+                    'status': stay.status,
+                    'internal_rating': stay.internal_rating
+                })
+
+            # Check if guest has any active flags
+            active_flags_count = guest.flags.filter(is_active=True).count()
+
+            results.append({
+                'id': guest.id,
+                'full_name': guest.full_name,
+                'whatsapp_number': guest.whatsapp_number,
+                'email': guest.email,
+                'register_number': guest.register_number,
+                'date_of_birth': guest.date_of_birth,
+                'nationality': guest.nationality,
+                'status': guest.status,
+                'loyalty_points': guest.loyalty_points,
+                'first_contact_date': guest.first_contact_date,
+                'last_activity': guest.last_activity,
+                'recent_stays': stays_info,
+                'active_flags_count': active_flags_count
             })
 
-        # Check if guest has any active flags
-        active_flags_count = guest.flags.filter(is_active=True).count()
-
-        results.append({
-            'id': guest.id,
-            'full_name': guest.full_name,
-            'whatsapp_number': guest.whatsapp_number,
-            'email': guest.email,
-            'register_number': guest.register_number,
-            'date_of_birth': guest.date_of_birth,
-            'nationality': guest.nationality,
-            'status': guest.status,
-            'loyalty_points': guest.loyalty_points,
-            'first_contact_date': guest.first_contact_date,
-            'last_activity': guest.last_activity,
-            'recent_stays': stays_info,
-            'active_flags_count': active_flags_count
+        return success_response(data={
+            'query': query,
+            'count': len(results),
+            'results': results
         })
-
-    return success_response(data={
-        'query': query,
-        'count': len(results),
-        'results': results
-    })
+    except Exception as e:
+        return error_response(f"Failed to search guests: {str(e)}", status=status.HTTP_500_INTERNAL_SERVER_ERROR)

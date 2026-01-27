@@ -1,7 +1,7 @@
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
-from lobbybee.utils.responses import success_response
+from lobbybee.utils.responses import success_response, error_response, not_found_response
 from django_filters.rest_framework import DjangoFilterBackend
 from .models import Notification
 from .serializers import NotificationSerializer, NotificationCreateSerializer
@@ -71,15 +71,25 @@ class NotificationViewSet(viewsets.ModelViewSet):
         Custom action to mark a notification as read.
         For group notifications, marks as read for all users.
         """
-        notification = self.get_object()
+        try:
+            notification = self.get_object()
+        except Exception:
+            # Fallback if get_object fails unexpectedly
+            return not_found_response("Notification not found")
 
-        # Mark both individual and group notifications as read
-        if not notification.is_read:
-            notification.is_read = True
-            notification.save(update_fields=['is_read'])
+        try:
+            # Mark both individual and group notifications as read
+            if not notification.is_read:
+                notification.is_read = True
+                notification.save(update_fields=['is_read'])
 
-        serializer = self.get_serializer(notification)
-        return success_response(data=serializer.data)
+            serializer = self.get_serializer(notification)
+            return success_response(data=serializer.data)
+        except Exception as e:
+            return error_response(
+                f"Failed to mark notification as read: {str(e)}",
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
     @action(detail=False, methods=['post'], url_path='mark-all-read')
     def mark_all_read(self, request):
@@ -87,11 +97,17 @@ class NotificationViewSet(viewsets.ModelViewSet):
         Custom action to mark all notifications for the current user as read.
         Marks both individual and group notifications as read.
         """
-        # Get all unread notifications for the user (including group notifications)
-        notifications = self.get_queryset().filter(is_read=False)
-        notifications.update(is_read=True)
+        try:
+            # Get all unread notifications for the user (including group notifications)
+            notifications = self.get_queryset().filter(is_read=False)
+            notifications.update(is_read=True)
 
-        return success_response(message='All notifications marked as read')
+            return success_response(message='All notifications marked as read')
+        except Exception as e:
+            return error_response(
+                f"Failed to mark all notifications as read: {str(e)}",
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
     @action(detail=False, methods=['get'], url_path='my-notifications')
     def my_notifications(self, request):

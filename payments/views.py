@@ -100,184 +100,200 @@ class HotelSubscriptionViewSet(viewsets.ModelViewSet):
     def my_subscription(self, request):
         """Get the current subscription for the authenticated hotel user"""
         try:
-            subscription = HotelSubscription.objects.get(hotel=request.user.hotel)
+            try:
+                subscription = HotelSubscription.objects.get(hotel=request.user.hotel)
+            except HotelSubscription.DoesNotExist:
+                return not_found_response('No active subscription found')
+                
             serializer = HotelSubscriptionDetailSerializer(subscription)
             return success_response(data=serializer.data)
-        except HotelSubscription.DoesNotExist:
-            return not_found_response('No active subscription found')
+        except Exception as e:
+            return error_response(f"Failed to get subscription: {str(e)}", status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
     @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated, CanManagePlatform])
     def create_subscription(self, request):
         """Create a new subscription for a hotel (platform admin only)"""
-        hotel_id = request.data.get('hotel')
-        plan_id = request.data.get('plan')
-        
-        if not hotel_id or not plan_id:
-            return error_response('Hotel and plan are required', status=status.HTTP_400_BAD_REQUEST)
-        
         try:
-            hotel = Hotel.objects.get(id=hotel_id)
-            plan = SubscriptionPlan.objects.get(id=plan_id)
-        except (Hotel.DoesNotExist, SubscriptionPlan.DoesNotExist):
-            return not_found_response('Hotel or plan not found')
-        
-        # Check if hotel already has a subscription
-        if hasattr(hotel, 'subscription'):
-            return error_response('Hotel already has a subscription', status=status.HTTP_400_BAD_REQUEST)
-        
-        # Create subscription
-        start_date = timezone.now()
-        end_date = start_date + timedelta(days=plan.duration_days)
-        
-        subscription = HotelSubscription.objects.create(
-            hotel=hotel,
-            plan=plan,
-            start_date=start_date,
-            end_date=end_date,
-            is_active=True
-        )
-        
-        # Create transaction record
-        Transaction.objects.create(
-            hotel=hotel,
-            plan=plan,
-            amount=plan.price,
-            transaction_type='subscription',
-            status='completed',
-            notes=f'Subscription created for {plan.name}'
-        )
-        
-        serializer = HotelSubscriptionSerializer(subscription)
-        return created_response(data=serializer.data)
+            hotel_id = request.data.get('hotel')
+            plan_id = request.data.get('plan')
+            
+            if not hotel_id or not plan_id:
+                return error_response('Hotel and plan are required', status=status.HTTP_400_BAD_REQUEST)
+            
+            try:
+                hotel = Hotel.objects.get(id=hotel_id)
+                plan = SubscriptionPlan.objects.get(id=plan_id)
+            except (Hotel.DoesNotExist, SubscriptionPlan.DoesNotExist):
+                return not_found_response('Hotel or plan not found')
+            
+            # Check if hotel already has a subscription
+            if hasattr(hotel, 'subscription'):
+                return error_response('Hotel already has a subscription', status=status.HTTP_400_BAD_REQUEST)
+            
+            # Create subscription
+            start_date = timezone.now()
+            end_date = start_date + timedelta(days=plan.duration_days)
+            
+            subscription = HotelSubscription.objects.create(
+                hotel=hotel,
+                plan=plan,
+                start_date=start_date,
+                end_date=end_date,
+                is_active=True
+            )
+            
+            # Create transaction record
+            Transaction.objects.create(
+                hotel=hotel,
+                plan=plan,
+                amount=plan.price,
+                transaction_type='subscription',
+                status='completed',
+                notes=f'Subscription created for {plan.name}'
+            )
+            
+            serializer = HotelSubscriptionSerializer(subscription)
+            return created_response(data=serializer.data)
+        except Exception as e:
+            return error_response(f"Failed to create subscription: {str(e)}", status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
     @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated, CanManagePlatform])
     def extend_subscription(self, request):
         """Extend an existing subscription for a hotel (platform admin only)"""
-        hotel_id = request.data.get('hotel')
-        days = request.data.get('days', 30)  # Default to 30 days
-        
-        if not hotel_id:
-            return error_response('Hotel is required', status=status.HTTP_400_BAD_REQUEST)
-        
         try:
-            subscription = HotelSubscription.objects.get(hotel_id=hotel_id)
-        except HotelSubscription.DoesNotExist:
-            return not_found_response('Subscription not found')
-        
-        # Extend the subscription
-        subscription.end_date += timedelta(days=days)
-        subscription.save()
-        
-        # Create transaction record
-        Transaction.objects.create(
-            hotel=subscription.hotel,
-            plan=subscription.plan,
-            amount=0,  # No charge for extension
-            transaction_type='manual',
-            status='completed',
-            notes=f'Subscription extended by {days} days'
-        )
-        
-        serializer = HotelSubscriptionSerializer(subscription)
-        return success_response(data=serializer.data)
+            hotel_id = request.data.get('hotel')
+            days = request.data.get('days', 30)  # Default to 30 days
+            
+            if not hotel_id:
+                return error_response('Hotel is required', status=status.HTTP_400_BAD_REQUEST)
+            
+            try:
+                subscription = HotelSubscription.objects.get(hotel_id=hotel_id)
+            except HotelSubscription.DoesNotExist:
+                return not_found_response('Subscription not found')
+            
+            # Extend the subscription
+            subscription.end_date += timedelta(days=days)
+            subscription.save()
+            
+            # Create transaction record
+            Transaction.objects.create(
+                hotel=subscription.hotel,
+                plan=subscription.plan,
+                amount=0,  # No charge for extension
+                transaction_type='manual',
+                status='completed',
+                notes=f'Subscription extended by {days} days'
+            )
+            
+            serializer = HotelSubscriptionSerializer(subscription)
+            return success_response(data=serializer.data)
+        except Exception as e:
+            return error_response(f"Failed to extend subscription: {str(e)}", status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
     @action(detail=False, methods=['post'])
     def subscribe_to_plan(self, request):
         """Allow hotel admin to subscribe to a plan"""
-        serializer = SubscribeToPlanSerializer(data=request.data)
-        if not serializer.is_valid():
-            return error_response(errors=serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-        
-        plan_id = serializer.validated_data['plan']
-        
         try:
-            plan = SubscriptionPlan.objects.get(id=plan_id)
-        except SubscriptionPlan.DoesNotExist:
-            return not_found_response('Plan not found')
-        
-        # Check if hotel already has a subscription
-        if hasattr(request.user, 'hotel') and hasattr(request.user.hotel, 'subscription'):
-            return error_response('Hotel already has a subscription', status=status.HTTP_400_BAD_REQUEST)
-        
-        # Create subscription
-        hotel = request.user.hotel
-        start_date = timezone.now()
-        end_date = start_date + timedelta(days=plan.duration_days)
-        
-        subscription = HotelSubscription.objects.create(
-            hotel=hotel,
-            plan=plan,
-            start_date=start_date,
-            end_date=end_date,
-            is_active=False  # Not active until payment is processed
-        )
-        
-        # Create transaction record
-        transaction = Transaction.objects.create(
-            hotel=hotel,
-            plan=plan,
-            amount=plan.price,
-            transaction_type='subscription',
-            status='pending',  # Pending until payment is processed
-            notes=f'Subscription initiated for {plan.name}'
-        )
-        
-        serializer = HotelSubscriptionSerializer(subscription)
-        return created_response(data={
-            'subscription': serializer.data,
-            'transaction_id': transaction.id,
-            'amount': transaction.amount
-        })
+            serializer = SubscribeToPlanSerializer(data=request.data)
+            if not serializer.is_valid():
+                return error_response(errors=serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            
+            plan_id = serializer.validated_data['plan']
+            
+            try:
+                plan = SubscriptionPlan.objects.get(id=plan_id)
+            except SubscriptionPlan.DoesNotExist:
+                return not_found_response('Plan not found')
+            
+            # Check if hotel already has a subscription
+            if hasattr(request.user, 'hotel') and hasattr(request.user.hotel, 'subscription'):
+                return error_response('Hotel already has a subscription', status=status.HTTP_400_BAD_REQUEST)
+            
+            # Create subscription
+            hotel = request.user.hotel
+            start_date = timezone.now()
+            end_date = start_date + timedelta(days=plan.duration_days)
+            
+            subscription = HotelSubscription.objects.create(
+                hotel=hotel,
+                plan=plan,
+                start_date=start_date,
+                end_date=end_date,
+                is_active=False  # Not active until payment is processed
+            )
+            
+            # Create transaction record
+            transaction = Transaction.objects.create(
+                hotel=hotel,
+                plan=plan,
+                amount=plan.price,
+                transaction_type='subscription',
+                status='pending',  # Pending until payment is processed
+                notes=f'Subscription initiated for {plan.name}'
+            )
+            
+            serializer = HotelSubscriptionSerializer(subscription)
+            return created_response(data={
+                'subscription': serializer.data,
+                'transaction_id': transaction.id,
+                'amount': transaction.amount
+            })
+        except Exception as e:
+            return error_response(f"Failed to subscribe to plan: {str(e)}", status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
     @action(detail=False, methods=['post'])
     def process_payment(self, request):
         """Process payment for a subscription"""
-        serializer = ProcessPaymentSerializer(data=request.data)
-        if not serializer.is_valid():
-            return error_response(errors=serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-        
-        transaction_id = serializer.validated_data['transaction_id']
-        payment_details = serializer.validated_data.get('payment_details', {})
-        
         try:
-            transaction = Transaction.objects.get(id=transaction_id, hotel=request.user.hotel)
-        except Transaction.DoesNotExist:
-            return not_found_response('Transaction not found or not authorized')
-        
-        # Here you would integrate with a payment gateway
-        # For now, we'll simulate a successful payment
-        payment_successful = True  # This would be determined by the payment gateway response
-        
-        if payment_successful:
-            # Update transaction status
-            transaction.status = 'completed'
-            transaction.transaction_id = payment_details.get('gateway_transaction_id', '')
-            transaction.notes = f"Payment processed successfully. {transaction.notes}"
-            transaction.save()
+            serializer = ProcessPaymentSerializer(data=request.data)
+            if not serializer.is_valid():
+                return error_response(errors=serializer.errors, status=status.HTTP_400_BAD_REQUEST)
             
-            # Activate the subscription since payment was successful
-            subscription = HotelSubscription.objects.get(hotel=request.user.hotel)
-            subscription.is_active = True
-            subscription.save()
+            transaction_id = serializer.validated_data['transaction_id']
+            payment_details = serializer.validated_data.get('payment_details', {})
             
-            return success_response(
-                message='Payment processed successfully',
-                data={
-                    'transaction_id': transaction.id,
-                    'status': transaction.status
-                }
-            )
-        else:
-            # Update transaction status to failed
-            transaction.status = 'failed'
-            transaction.notes = f"Payment failed. {transaction.notes}"
-            transaction.save()
+            try:
+                transaction = Transaction.objects.get(id=transaction_id, hotel=request.user.hotel)
+            except Transaction.DoesNotExist:
+                return not_found_response('Transaction not found or not authorized')
             
-            return error_response(
-                message='Payment failed',
-                data={
-                    'transaction_id': transaction.id,
-                    'status': transaction.status
-                },
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            # Here you would integrate with a payment gateway
+            # For now, we'll simulate a successful payment
+            payment_successful = True  # This would be determined by the payment gateway response
+            
+            if payment_successful:
+                # Update transaction status
+                transaction.status = 'completed'
+                transaction.transaction_id = payment_details.get('gateway_transaction_id', '')
+                transaction.notes = f"Payment processed successfully. {transaction.notes}"
+                transaction.save()
+                
+                # Activate the subscription since payment was successful
+                subscription = HotelSubscription.objects.get(hotel=request.user.hotel)
+                subscription.is_active = True
+                subscription.save()
+                
+                return success_response(
+                    message='Payment processed successfully',
+                    data={
+                        'transaction_id': transaction.id,
+                        'status': transaction.status
+                    }
+                )
+            else:
+                # Update transaction status to failed
+                transaction.status = 'failed'
+                transaction.notes = f"Payment failed. {transaction.notes}"
+                transaction.save()
+                
+                return error_response(
+                    message='Payment failed',
+                    data={
+                        'transaction_id': transaction.id,
+                        'status': transaction.status
+                    },
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+        except Exception as e:
+            return error_response(f"Failed to process payment: {str(e)}", status=status.HTTP_500_INTERNAL_SERVER_ERROR)

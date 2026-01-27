@@ -130,26 +130,32 @@ class GuestManagementViewSet(viewsets.GenericViewSet):
         Query parameters:
         - search: Search term to filter guests by name or phone number
         """
-        queryset = self.get_queryset()
-        search_term = request.query_params.get('search', None)
+        try:
+            queryset = self.get_queryset()
+            search_term = request.query_params.get('search', None)
 
-        if search_term:
-            queryset = queryset.filter(
-                Q(full_name__icontains=search_term) |
-                Q(whatsapp_number__icontains=search_term)
-            )
+            if search_term:
+                queryset = queryset.filter(
+                    Q(full_name__icontains=search_term) |
+                    Q(whatsapp_number__icontains=search_term)
+                )
 
-        serializer = GuestResponseSerializer(queryset, many=True)
-        return success_response(data=serializer.data)
+            serializer = GuestResponseSerializer(queryset, many=True)
+            return success_response(data=serializer.data)
+        except Exception as e:
+            return error_response(f"Failed to list guests: {str(e)}", status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     @action(detail=False, methods=['get'], url_path='bookings')
     def list_bookings(self, request):
         """
         List all bookings for the hotel
         """
-        bookings = Booking.objects.filter(hotel=request.user.hotel)
-        serializer = BookingListSerializer(bookings, many=True)
-        return success_response(data=serializer.data)
+        try:
+            bookings = Booking.objects.filter(hotel=request.user.hotel)
+            serializer = BookingListSerializer(bookings, many=True)
+            return success_response(data=serializer.data)
+        except Exception as e:
+            return error_response(f"Failed to list bookings: {str(e)}", status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class StayManagementViewSet(viewsets.GenericViewSet):
@@ -248,7 +254,10 @@ class StayManagementViewSet(viewsets.GenericViewSet):
         Verify and activate a stay. Updates register number and marks as checked in.
         Can optionally update room assignment and checkout date.
         """
-        stay = self.get_object()
+        try:
+            stay = self.get_object()
+        except Exception:
+            return not_found_response("Stay not found")
 
         if stay.status != 'pending':
             return error_response(
@@ -516,11 +525,14 @@ class StayManagementViewSet(viewsets.GenericViewSet):
         Automatically initiates feedback flow
         Accepts optional internal_rating and internal_note for staff use
         """
+        try:
+            stay = self.get_object()
+        except Exception:
+            return not_found_response("Stay not found")
+
         # Set to True for debugging WhatsApp messages without changing status
         # Set to False for normal operation
         debug = False
-
-        stay = self.get_object()
 
         # Validate optional checkout data
         from .serializers import CheckoutSerializer
@@ -683,7 +695,10 @@ Please take a moment to rate your overall experience from 1 to 5 stars. We truly
         Extend an active guest's stay by updating the checkout date.
         Only works for stays with 'active' status.
         """
-        stay = self.get_object()
+        try:
+            stay = self.get_object()
+        except Exception:
+            return not_found_response("Stay not found")
 
         if stay.status != 'active':
             return error_response(
@@ -737,7 +752,10 @@ Please take a moment to rate your overall experience from 1 to 5 stars. We truly
         Reject a pending checkin request.
         Cleans up all pending data and notifies the guest via WhatsApp.
         """
-        stay = self.get_object()
+        try:
+            stay = self.get_object()
+        except Exception:
+            return not_found_response("Stay not found")
 
         if stay.status not in ['pending']:
             return error_response(
