@@ -23,6 +23,7 @@ from .base import (
     notify_new_conversation_to_department,
     notify_conversation_update_to_department,
     normalize_phone_number,
+    StandardResultsSetPagination,
 )
 from ..utils.whatsapp_flow_utils import (
     is_conversation_expired,
@@ -81,10 +82,14 @@ class ConversationListView(APIView):
             .order_by("-last_message_at")
         )
 
+        # Apply pagination
+        paginator = StandardResultsSetPagination()
+        paginated_conversations = paginator.paginate_queryset(conversations, request)
+
         serializer = ConversationSerializer(
-            conversations, many=True, context={"request": request}
+            paginated_conversations, many=True, context={"request": request}
         )
-        return Response(serializer.data)
+        return paginator.get_paginated_response(serializer.data)
 
 
 class ConversationDetailView(APIView):
@@ -208,7 +213,6 @@ class CreateConversationView(APIView):
                 if existing_conversation:
                     return Response(
                         {
-                            "success": False,
                             "error": "Conversation already exists",
                             "conversation_id": existing_conversation.id,
                         },
@@ -236,7 +240,7 @@ class CreateConversationView(APIView):
 
                 return Response(
                     {
-                        "success": True,
+                        "message": "Conversation created successfully",
                         "conversation_id": conversation.id,
                         "guest_name": guest.full_name,
                         "department": department_type,
@@ -320,7 +324,7 @@ class CloseConversationView(APIView):
 
                 return Response(
                     {
-                        "success": True,
+                        "message": "Conversation closed successfully",
                         "conversation_id": conversation.id,
                         "status": "closed",
                     }
@@ -406,7 +410,6 @@ class GuestConversationTypeView(APIView):
             # Return existing webhook attempt data
             existing_data = webhook_attempt.response_data or {}
             return Response({
-                'success': True,
                 'duplicate_message': True,
                 'original_attempt_id': webhook_attempt.id,
                 **existing_data

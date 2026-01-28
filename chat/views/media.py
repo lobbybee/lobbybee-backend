@@ -139,7 +139,7 @@ class ChatMediaUploadView(APIView):
                     
                     # Prepare response data with file info only (no message)
                     response_data = {
-                        'success': True,
+                        'message': 'File uploaded successfully',
                         'file_url': uploaded_file_url,
                         'filename': unique_filename,
                         'file_type': message_type,
@@ -299,7 +299,7 @@ class TemplateMediaUploadView(APIView):
                 
                 # Prepare response data
                 response_data = {
-                    'success': True,
+                    'message': 'Template media uploaded successfully',
                     'file_url': file_url,
                     'filename': filename,
                     'file_type': file_type,

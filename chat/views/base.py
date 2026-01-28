@@ -37,3 +37,10 @@ logger = logging.getLogger(__name__)
 def create_response(data, status_code=status.HTTP_200_OK):
     """Create a standardized response"""
     return response.Response(data, status=status_code)
+
+from rest_framework.pagination import PageNumberPagination
+
+class StandardResultsSetPagination(PageNumberPagination):
+    page_size = 10
+    page_size_query_param = 'page_size'
+    max_page_size = 100

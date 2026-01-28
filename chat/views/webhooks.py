@@ -357,7 +357,7 @@ def process_guest_webhook(request_data, request_headers=None, media_id=None):
             # Continue anyway - message was created successfully
 
         response_data = {
-            'success': True,
+            'message': 'Webhook processed successfully',
             'message_id': message.id,
             'conversation_id': conversation.id,
             'department': department_type,

@@ -13,6 +13,7 @@ from ..models import MessageTemplate, CustomMessageTemplate
 from ..serializers import MessageTemplateSerializer, CustomMessageTemplateSerializer
 from user.permissions import IsSuperUserOrPlatformStaff, IsHotelAdmin
 from ..utils.template_util import get_template_variables
+from .base import StandardResultsSetPagination
 
 
 class MessageTemplateListCreateView(ListCreateAPIView):
@@ -22,6 +23,7 @@ class MessageTemplateListCreateView(ListCreateAPIView):
     Hotel users can only see templates that are customizable.
     """
     serializer_class = MessageTemplateSerializer
+    pagination_class = StandardResultsSetPagination
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
@@ -73,6 +75,7 @@ class CustomMessageTemplateListCreateView(ListCreateAPIView):
     Only hotel admins can create/update custom templates for their hotel.
     """
     serializer_class = CustomMessageTemplateSerializer
+    pagination_class = StandardResultsSetPagination
     permission_classes = [IsAuthenticated, IsHotelAdmin]
 
     def get_queryset(self):

@@ -116,7 +116,7 @@ class MarkMessagesReadView(APIView):
                     logger.error(f"MarkMessagesReadView: Failed to broadcast read status: {ws_error}")
 
                 return Response({
-                    'success': True,
+                    'message': 'Messages marked as read successfully',
                     'conversation_id': conversation_id,
                     'messages_marked_read': count,
                     'message_ids': message_ids if message_ids else None
