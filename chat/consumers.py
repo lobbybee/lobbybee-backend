@@ -13,6 +13,17 @@ User = get_user_model()
 logger = logging.getLogger(__name__)
 
 
+def normalize_department_name(department):
+    """
+    Normalize department name for use in channel group names.
+    Converts to lowercase and replaces spaces with underscores.
+    Example: "Room Service" -> "room_service"
+    """
+    if not department:
+        return department
+    return department.lower().replace(' ', '_')
+
+
 class ChatConsumer(AsyncWebsocketConsumer):
     """
     WebSocket consumer for department-based chat system
@@ -52,7 +63,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
         logger.info(f"User departments: {self.departments}")
 
         # Create list of department group names
-        self.department_group_names = [f"department_{dept.lower()}" for dept in self.departments]
+        self.department_group_names = [f"department_{normalize_department_name(dept)}" for dept in self.departments]
         logger.info(f"Department group names: {self.department_group_names}")
 
         # Add user to all department groups
@@ -69,7 +80,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
 
         # Send connection confirmation to all departments
         for department_name in self.departments:
-            group_name = f"department_{department_name.lower()}"
+            group_name = f"department_{normalize_department_name(department_name)}"
             await self.channel_layer.group_send(
                 group_name,
                 {
@@ -180,7 +191,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
             await self.send_whatsapp_message(conversation, content, 'text')
 
         # Broadcast to relevant department group based on conversation department
-        conversation_department = conversation.department.lower()
+        conversation_department = normalize_department_name(conversation.department)
         relevant_group = f"department_{conversation_department}"
         
         await self.channel_layer.group_send(
@@ -279,7 +290,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
             await self.send_whatsapp_media_with_link(conversation, message_content, file_type, file_url, filename)
 
         # Broadcast to relevant department group based on conversation department
-        conversation_department = conversation.department.lower()
+        conversation_department = normalize_department_name(conversation.department)
         relevant_group = f"department_{conversation_department}"
             
         await self.channel_layer.group_send(
@@ -360,7 +371,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
         conversation = await self.get_conversation(conversation_id)
         if conversation and await self.validate_conversation_access(conversation):
             # Send to the specific department group for this conversation
-            conversation_department = conversation.department.lower()
+            conversation_department = normalize_department_name(conversation.department)
             relevant_group = f"department_{conversation_department}"
             
             await self.channel_layer.group_send(
@@ -546,7 +557,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
                     logger.error(f"Error sending fulfillment feedback for conversation {conversation_id}: {e}")
 
             # Notify all relevant department members about the conversation update
-            conversation_department = conversation.department.lower()
+            conversation_department = normalize_department_name(conversation.department)
             relevant_group = f"department_{conversation_department}"
             
             await self.channel_layer.group_send(
@@ -679,7 +690,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
         """Validate user can access this conversation"""
         return (
             conversation.hotel == self.user.hotel and
-            conversation.department.lower() in [dept.lower() for dept in self.departments]
+            normalize_department_name(conversation.department) in [normalize_department_name(dept) for dept in self.departments]
         )
 
     @database_sync_to_async
@@ -763,7 +774,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
                     status='active'
                 ).first().room.room_number if message.conversation.guest.stays.filter(status='active').exists() else None
             },
-            'department_name': message.conversation.department.lower()
+            'department_name': normalize_department_name(message.conversation.department)
         }
 
     @database_sync_to_async
@@ -959,7 +970,7 @@ async def notify_new_conversation_to_department(conversation):
     conversation_data = {
         'id': conversation.id,
         'guest_name': conversation.guest.full_name,
-        'department': conversation.department.lower(),
+        'department': normalize_department_name(conversation.department),
         'conversation_type': conversation.conversation_type,
         'status': conversation.status,
         'created_at': conversation.created_at.isoformat(),
@@ -968,7 +979,7 @@ async def notify_new_conversation_to_department(conversation):
     }
     
     # Send to relevant department group
-    relevant_group = f"department_{conversation.department.lower()}"
+    relevant_group = f"department_{normalize_department_name(conversation.department)}"
     
     await channel_layer.group_send(
         relevant_group,
@@ -994,7 +1005,7 @@ async def notify_conversation_update_to_department(conversation, update_type='up
     conversation_data = {
         'id': conversation.id,
         'guest_name': conversation.guest.full_name,
-        'department': conversation.department.lower(),
+        'department': normalize_department_name(conversation.department),
         'conversation_type': conversation.conversation_type,
         'status': conversation.status,
         'updated_at': conversation.updated_at.isoformat(),
@@ -1003,7 +1014,7 @@ async def notify_conversation_update_to_department(conversation, update_type='up
     }
     
     # Send to relevant department group
-    relevant_group = f"department_{conversation.department.lower()}"
+    relevant_group = f"department_{normalize_department_name(conversation.department)}"
     
     await channel_layer.group_send(
         relevant_group,

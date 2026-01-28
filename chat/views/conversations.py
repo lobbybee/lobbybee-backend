@@ -923,8 +923,9 @@ class GuestConversationTypeView(APIView):
             # Broadcast the "guest reopened conversation" message to staff via WebSocket
             try:
                 from .base import async_to_sync, get_channel_layer
+                from chat.consumers import normalize_department_name
                 channel_layer = get_channel_layer()
-                department_group_name = f"department_{conversation.department.lower()}"
+                department_group_name = f"department_{normalize_department_name(conversation.department)}"
 
                 # Get guest stay info
                 from guest.models import Stay

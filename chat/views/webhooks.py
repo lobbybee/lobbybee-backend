@@ -8,7 +8,7 @@ from .base import (
     download_whatsapp_media, GuestMessageSerializer, FlowMessageSerializer, Conversation,
     Message, Guest, Stay, logger, create_response, ContentFile
 )
-from ..consumers import notify_new_conversation_to_department
+from ..consumers import notify_new_conversation_to_department, normalize_department_name
 from ..utils.whatsapp_payload_utils import convert_flow_response_to_whatsapp_payload
 from ..utils.webhook_deduplication import (
     check_and_create_webhook_attempt,
@@ -208,7 +208,7 @@ def process_guest_webhook(request_data, request_headers=None, media_id=None):
                             # Broadcast the service message to staff first
                             try:
                                 channel_layer = get_channel_layer()
-                                department_group_name = f"department_{conversation.department.lower()}"
+                                department_group_name = f"department_{normalize_department_name(conversation.department)}"
 
                                 service_message_data = {
                                     'id': return_message.id,
@@ -269,7 +269,7 @@ def process_guest_webhook(request_data, request_headers=None, media_id=None):
                         conversation_data = {
                             'id': conversation.id,
                             'guest_name': conversation.guest.full_name,
-                            'department': conversation.department.lower(),
+                            'department': normalize_department_name(conversation.department),
                             'conversation_type': conversation.conversation_type,
                             'status': conversation.status,
                             'created_at': conversation.created_at.isoformat(),
@@ -277,7 +277,7 @@ def process_guest_webhook(request_data, request_headers=None, media_id=None):
                             'last_message_at': conversation.last_message_at.isoformat() if conversation.last_message_at else None
                         }
 
-                        relevant_group = f"department_{conversation.department.lower()}"
+                        relevant_group = f"department_{normalize_department_name(conversation.department)}"
 
                         async_to_sync(channel_layer.group_send)(
                             relevant_group,
@@ -320,7 +320,7 @@ def process_guest_webhook(request_data, request_headers=None, media_id=None):
         try:
             logger.info(f"process_guest_webhook: Broadcasting message to department group: {department_type}")
             channel_layer = get_channel_layer()
-            department_group_name = f"department_{department_type.lower()}"
+            department_group_name = f"department_{normalize_department_name(department_type)}"
 
             message_data = {
                 'id': message.id,

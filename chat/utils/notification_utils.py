@@ -4,6 +4,7 @@ Utilities for sending real-time WebSocket notifications for various events
 import logging
 from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
+from chat.consumers import normalize_department_name
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +50,7 @@ async def notify_new_checkin_to_reception(conversation, booking, stay, guest):
     departments_to_notify = ['reception', 'management']
 
     for dept in departments_to_notify:
-        group_name = f"department_{dept.lower()}"
+        group_name = f"department_{normalize_department_name(dept)}"
         await channel_layer.group_send(
             group_name,
             {
