@@ -5,7 +5,7 @@ from django.core.mail import send_mail
 from django.conf import settings
 from django.utils.crypto import get_random_string
 from django.utils import timezone
-from django.db import transaction
+from django.db import transaction, models
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 from .models import User, OTP
@@ -125,6 +125,34 @@ class UsernameSuggestionView(views.APIView):
             return success_response(data={'suggestions': final_suggestions[:5]})
         except Exception as e:
             return error_response(f"Failed to generate username suggestions: {str(e)}", status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class CheckUserExistsView(views.APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        try:
+            email = request.query_params.get('email', '')
+            username = request.query_params.get('username', '')
+            
+            if not email and not username:
+                return error_response('Either email or username query parameter is required.', status=status.HTTP_400_BAD_REQUEST)
+
+            result = {}
+            
+            # Check email if provided
+            if email:
+                email_exists = User.objects.filter(email=email).exists()
+                result['email_exists'] = email_exists
+            
+            # Check username if provided
+            if username:
+                username_exists = User.objects.filter(username=username).exists()
+                result['username_exists'] = username_exists
+
+            return success_response(data=result)
+        except Exception as e:
+            return error_response(f"Failed to check user existence: {str(e)}", status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class HotelRegistrationView(generics.CreateAPIView):
