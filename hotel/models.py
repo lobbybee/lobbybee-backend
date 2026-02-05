@@ -111,25 +111,31 @@ class RoomCategory(models.Model):
 
 class RoomManager(models.Manager):
     def bulk_create_rooms(self, hotel, category, floor, start_number_str, end_number_str):
-        # Extract prefix and numeric part from start_number
-        # This regex supports formats like 'F-100', 'H101', '101', etc.
-        match_start = re.match(r'([a-zA-Z]+-?)*(\d+)', start_number_str)
+        # Extract prefix, numeric part, and suffix from start_number
+        # This regex supports formats like 'F-100', 'H101', '101', 'STD-100-Room', etc.
+        # Pattern: (prefix)(digits)(suffix) where suffix is optional
+        match_start = re.match(r'^([a-zA-Z0-9-]*)(\d+)([a-zA-Z0-9-]*)$', start_number_str)
         if not match_start:
-            raise ValidationError("Invalid start room number format. Expected format like 'F-100', 'H101' or '101'.")
+            raise ValidationError("Invalid start room number format. Expected format like 'F-100', 'H101', '101', or 'STD-100-Room'.")
 
         prefix = match_start.group(1) or ''
         start_num = int(match_start.group(2))
+        suffix = match_start.group(3) or ''
 
-        # Extract prefix and numeric part from end_number
-        match_end = re.match(r'([a-zA-Z]+-?)*(\d+)', end_number_str)
+        # Extract prefix, numeric part, and suffix from end_number
+        match_end = re.match(r'^([a-zA-Z0-9-]*)(\d+)([a-zA-Z0-9-]*)$', end_number_str)
         if not match_end:
-            raise ValidationError("Invalid end room number format. Expected format like 'F-110', 'H104' or '104'.")
+            raise ValidationError("Invalid end room number format. Expected format like 'F-110', 'H104', '104', or 'STD-110-Room'.")
 
         end_prefix = match_end.group(1) or ''
         end_num = int(match_end.group(2))
+        end_suffix = match_end.group(3) or ''
 
         if prefix != end_prefix:
             raise ValidationError("Start and end room number prefixes do not match.")
+
+        if suffix != end_suffix:
+            raise ValidationError("Start and end room number suffixes do not match.")
 
         if start_num > end_num:
             raise ValidationError("Start room number cannot be greater than the end room number.")
@@ -138,7 +144,7 @@ class RoomManager(models.Manager):
         existing_room_numbers = set(self.filter(hotel=hotel).values_list('room_number', flat=True))
 
         for i in range(start_num, end_num + 1):
-            room_number = f"{prefix}{i}"
+            room_number = f"{prefix}{i}{suffix}"
             if room_number in existing_room_numbers:
                 continue  # Skip if room already exists
 
@@ -172,7 +178,7 @@ class Room(models.Model):
     ]
 
     hotel = models.ForeignKey(Hotel, on_delete=models.CASCADE, related_name='rooms')
-    room_number = models.CharField(max_length=10)
+    room_number = models.CharField(max_length=25)
     category = models.ForeignKey(RoomCategory, on_delete=models.CASCADE, related_name='rooms')
     floor = models.IntegerField()
     status = models.CharField(max_length=20, choices=ROOM_STATUS, default='available')

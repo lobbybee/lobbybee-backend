@@ -124,8 +124,8 @@ class RoomStatusUpdateSerializer(serializers.ModelSerializer):
 class BulkCreateRoomSerializer(serializers.Serializer):
     category = serializers.IntegerField()
     floor = serializers.IntegerField()
-    start_number = serializers.CharField(max_length=10)
-    end_number = serializers.CharField(max_length=10)
+    start_number = serializers.CharField(max_length=25)
+    end_number = serializers.CharField(max_length=25)
 
     def validate_category(self, value):
         request = self.context.get('request')

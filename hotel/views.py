@@ -455,7 +455,7 @@ class RoomViewSet(viewsets.ModelViewSet):
             if isinstance(error_detail, dict):
                 # Format field errors nicely
                 errors = {field: msgs if isinstance(msgs, list) else [str(msgs)] for field, msgs in error_detail.items()}
-                return error_response(errors=errors, status=status.HTTP_400_BAD_REQUEST)
+                return error_response("Validation failed", errors=errors, status=status.HTTP_400_BAD_REQUEST)
             return error_response(str(error_detail), status=status.HTTP_400_BAD_REQUEST)
         except DjangoValidationError as e:
             # Handle Django ValidationError (from model's bulk_create_rooms)
