@@ -8,6 +8,7 @@ from django.utils import timezone
 from django.db import transaction, models
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
+from rest_framework.exceptions import PermissionDenied
 from .models import User, OTP
 from .serializers import UserSerializer
 from hotel.permissions import IsHotelAdmin, CanCreateReceptionist
@@ -62,6 +63,15 @@ class PlatformUserViewSet(viewsets.ModelViewSet):
             serializer.save(is_staff=True, is_verified=True, created_by=request_user)
         else:
             raise serializers.ValidationError("You do not have permission to create this type of user.")
+
+    def destroy(self, request, *args, **kwargs):
+        """
+        Override destroy to prevent users from deleting themselves.
+        """
+        obj = self.get_object()
+        if obj.id == request.user.id:
+            raise PermissionDenied("You cannot delete your own account.")
+        return super().destroy(request, *args, **kwargs)
 
 class LogoutView(views.APIView):
     permission_classes = (IsAuthenticated,)
@@ -525,3 +535,12 @@ class UserViewSet(viewsets.ModelViewSet):
         else:
             permission_classes = [IsAuthenticated]
         return [permission() for permission in permission_classes]
+
+    def destroy(self, request, *args, **kwargs):
+        """
+        Override destroy to prevent users from deleting themselves.
+        """
+        obj = self.get_object()
+        if obj.id == request.user.id:
+            raise PermissionDenied("You cannot delete your own account.")
+        return super().destroy(request, *args, **kwargs)

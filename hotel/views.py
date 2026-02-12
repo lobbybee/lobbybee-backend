@@ -67,6 +67,15 @@ class HotelViewSet(viewsets.ModelViewSet):
             raise PermissionDenied("You do not have permission to create a hotel.")
         serializer.save()
 
+    def destroy(self, request, *args, **kwargs):
+        """
+        Override destroy to prevent users from deleting their own hotel.
+        """
+        obj = self.get_object()
+        if hasattr(request.user, "hotel") and request.user.hotel and obj.id == request.user.hotel.pk:
+            raise PermissionDenied("You cannot delete your own hotel.")
+        return super().destroy(request, *args, **kwargs)
+
 
 from lobbybee.utils.pagination import StandardizedPagination
 
