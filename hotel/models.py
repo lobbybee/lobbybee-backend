@@ -111,34 +111,59 @@ class RoomCategory(models.Model):
 
 class RoomManager(models.Manager):
     def bulk_create_rooms(self, hotel, category, floor, start_number_str, end_number_str):
-        # Extract prefix, numeric part, and suffix from start_number
-        # This regex supports formats like 'F-100', 'H101', '101', 'STD-100-Room', etc.
-        # Pattern: (prefix)(digits)(suffix) where suffix is optional
-        match_start = re.match(r'^([a-zA-Z0-9-]*)(\d+)([a-zA-Z0-9-]*)$', start_number_str)
-        if not match_start:
-            raise ValidationError("Invalid start room number format. Expected format like 'F-100', 'H101', '101', or 'STD-100-Room'.")
+        def extract_numbers(s):
+            matches = []
+            for m in re.finditer(r'\d+', s):
+                matches.append((m.start(), m.end(), int(m.group())))
+            return matches
 
-        prefix = match_start.group(1) or ''
-        start_num = int(match_start.group(2))
-        suffix = match_start.group(3) or ''
+        nums_start = extract_numbers(start_number_str)
+        nums_end = extract_numbers(end_number_str)
 
-        # Extract prefix, numeric part, and suffix from end_number
-        match_end = re.match(r'^([a-zA-Z0-9-]*)(\d+)([a-zA-Z0-9-]*)$', end_number_str)
-        if not match_end:
-            raise ValidationError("Invalid end room number format. Expected format like 'F-110', 'H104', '104', or 'STD-110-Room'.")
+        if len(nums_start) != len(nums_end):
+            raise ValidationError("Start and end room numbers have different number formats (count of digit groups differs).")
 
-        end_prefix = match_end.group(1) or ''
-        end_num = int(match_end.group(2))
-        end_suffix = match_end.group(3) or ''
+        diff_index = -1
+        # Identify which number group is changing
+        for i in range(len(nums_start)):
+            if nums_start[i][2] != nums_end[i][2]:
+                if diff_index != -1:
+                    raise ValidationError("Ambiguous room range: Multiple numeric parts are changing between start and end.")
+                diff_index = i
+        
+        # If no numbers changed, checking if they are identical
+        if diff_index == -1:
+            if start_number_str != end_number_str:
+                 # Numbers are same, but strings differ implies prefix/suffix mismatch
+                 raise ValidationError("Start and end room numbers differ but no numeric part changes.")
+            
+            # Single room case (start == end)
+            if not nums_start:
+                 raise ValidationError("Room number must contain at least one digit.")
+            # Default to the last number group if creating a single room
+            diff_index = len(nums_start) - 1
 
-        if prefix != end_prefix:
-            raise ValidationError("Start and end room number prefixes do not match.")
-
-        if suffix != end_suffix:
-            raise ValidationError("Start and end room number suffixes do not match.")
+        start_num = nums_start[diff_index][2]
+        end_num = nums_end[diff_index][2]
 
         if start_num > end_num:
             raise ValidationError("Start room number cannot be greater than the end room number.")
+            
+        # Verify prefix and suffix consistency
+        s_idx_start, s_idx_end, _ = nums_start[diff_index]
+        e_idx_start, e_idx_end, _ = nums_end[diff_index]
+        
+        prefix = start_number_str[:s_idx_start]
+        suffix = start_number_str[s_idx_end:]
+        
+        end_prefix = end_number_str[:e_idx_start]
+        end_suffix = end_number_str[e_idx_end:]
+
+        if prefix != end_prefix:
+            raise ValidationError(f"Start and end room number prefixes do not match ('{prefix}' vs '{end_prefix}').")
+
+        if suffix != end_suffix:
+            raise ValidationError(f"Start and end room number suffixes do not match ('{suffix}' vs '{end_suffix}').")
 
         rooms_to_create = []
         existing_room_numbers = set(self.filter(hotel=hotel).values_list('room_number', flat=True))

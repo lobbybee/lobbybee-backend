@@ -1,0 +1,55 @@
+meta {
+  name: CreateRoom
+  type: http
+  seq: 7
+}
+
+post {
+  url: http://localhost:8000/api/bulk-create/
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0b2tlbl90eXBlIjoiYWNjZXNzIiwiZXhwIjoxNzcxMTU5MjE3LCJpYXQiOjE3NzEwNzI4MTcsImp0aSI6ImExMjJlYmVkMDUxNTQwZTA4MGJjZmM3ODllYjMyYWUyIiwidXNlcl9pZCI6IjIifQ.v00fkkmbDk-_31S0pC37ixl_EcP2228buDh4fgGHOqE
+}
+
+body:json {
+  [
+    {
+      "category": 22,
+      "floor": 1,
+      "start_number": "BAS-101",
+      "end_number": "BAS-110"
+    },
+    {
+      "category": 23,
+      "floor": 2,
+      "start_number": "REG-201-A",
+      "end_number": "REG-215-A"
+    },
+    {
+      "category": 23,
+      "floor": 3,
+      "start_number": "REG-301-B",
+      "end_number": "REG-310-B"
+    },
+    {
+      "category": 22,
+      "floor": 4,
+      "start_number": "401",
+      "end_number": "410"
+    },
+    {
+      "category": 22,
+      "floor": 5,
+      "start_number": "SUI-501",
+      "end_number": "SUI-505"
+    }
+  ]
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}
