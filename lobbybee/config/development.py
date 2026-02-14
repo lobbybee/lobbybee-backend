@@ -30,7 +30,7 @@ STORAGES = {
         "BACKEND": "lobbybee.utils.storage_backends.MediaStorage",
     },
     "staticfiles": {
-        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+        "BACKEND": "whitenoise.storage.CompressedStaticFilesStorage",
     },
 }
 
