@@ -30,7 +30,7 @@ STORAGES = {
         "BACKEND": "lobbybee.utils.storage_backends.MediaStorage",
     },
     "staticfiles": {
-        "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
+        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
     },
 }
 

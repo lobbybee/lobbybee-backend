@@ -33,6 +33,7 @@ daphne = "^4.2.1"
 pydub = "^0.25.1"
 faker = "^38.2.0"
 google-generativeai = "^0.8.5"
+whitenoise = "^6.11.0"
 
 
 [tool.poetry.group.dev.dependencies]
