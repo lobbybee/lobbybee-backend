@@ -60,12 +60,12 @@ else:
             "BACKEND": "lobbybee.utils.storage_backends.MediaStorage",
         },
         "staticfiles": {
-            "BACKEND": "lobbybee.utils.storage_backends.StaticStorage",
+            "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
         },
     }
 
     # URLs for static and media files
-    STATIC_URL = f'https://{AWS_S3_CUSTOM_DOMAIN}/static/'
+    STATIC_URL = '/static/'
     MEDIA_URL = f'https://{AWS_S3_CUSTOM_DOMAIN}/media/'
 
 # Celery Configuration for production
