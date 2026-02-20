@@ -5,43 +5,43 @@ meta {
 }
 
 post {
-  url: http://localhost:8000/api/bulk-create/
+  url: https://backend.lobbybee.com/api/rooms/bulk-create/
   body: json
   auth: bearer
 }
 
 auth:bearer {
-  token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0b2tlbl90eXBlIjoiYWNjZXNzIiwiZXhwIjoxNzcxMTU5MjE3LCJpYXQiOjE3NzEwNzI4MTcsImp0aSI6ImExMjJlYmVkMDUxNTQwZTA4MGJjZmM3ODllYjMyYWUyIiwidXNlcl9pZCI6IjIifQ.v00fkkmbDk-_31S0pC37ixl_EcP2228buDh4fgGHOqE
+  token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0b2tlbl90eXBlIjoiYWNjZXNzIiwiZXhwIjoxNzcxMTY4NTczLCJpYXQiOjE3NzEwODIxNzMsImp0aSI6ImY1ZjQ0NjljMTE0YjQ3Yzc5MTcxMDcwZTg0ZDk1NmZjIiwidXNlcl9pZCI6IjIifQ.rmW4ofxqFVtgA2b6wQw9iow0txcDUbfaSHxlOCEv0QA
 }
 
 body:json {
   [
     {
-      "category": 22,
+      "category": 16,
       "floor": 1,
       "start_number": "BAS-101",
       "end_number": "BAS-110"
     },
     {
-      "category": 23,
-      "floor": 2,
+      "category": 35,
+      "floor": 3,
       "start_number": "REG-201-A",
       "end_number": "REG-215-A"
     },
     {
-      "category": 23,
-      "floor": 3,
+      "category": 35,
+      "floor": 4,
       "start_number": "REG-301-B",
       "end_number": "REG-310-B"
     },
     {
-      "category": 22,
-      "floor": 4,
+      "category": 16,
+      "floor": 5,
       "start_number": "401",
       "end_number": "410"
     },
     {
-      "category": 22,
+      "category": 16,
       "floor": 5,
       "start_number": "SUI-501",
       "end_number": "SUI-505"
