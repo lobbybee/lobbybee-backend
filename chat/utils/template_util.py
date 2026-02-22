@@ -5,10 +5,23 @@ Handles template processing, variable resolution, and fallback templates.
 
 from typing import Dict, List, Optional, Any
 from django.db.models import Model
-from datetime import datetime
+from datetime import datetime, time
 import logging
 
 logger = logging.getLogger(__name__)
+
+
+def _format_human_datetime_label(value):
+    """
+    Format datetime/time values for guest-facing templates.
+    Expected style: '26 Monday 12 PM'
+    """
+    if isinstance(value, datetime):
+        hour_label = value.strftime('%I %p').lstrip('0')
+        return f"{value.day} {value.strftime('%A')} {hour_label}"
+    if isinstance(value, time):
+        return value.strftime('%I %p').lstrip('0')
+    return value
 
 from ..models import MessageTemplate, CustomMessageTemplate
 from guest.models import Guest, Booking
@@ -537,6 +550,14 @@ def _extract_model_fields(model_instance: Model, model_name: str) -> Dict[str, A
                         fields[var_name] = None
                 else:
                     logger.debug(f"Field {field_name} is not callable, value: {value}")
+                    # Render booking check-in/out fields as human-readable labels
+                    # for template usage (e.g. '26 Monday 12 PM').
+                    if (
+                        model_name == 'Booking'
+                        and field_name in ['check_in_date', 'check_out_date']
+                    ):
+                        fields[var_name] = _format_human_datetime_label(value)
+                        continue
                     fields[var_name] = value
             else:
                 logger.debug(f"Field {field_name} not found in {model_name} model instance")

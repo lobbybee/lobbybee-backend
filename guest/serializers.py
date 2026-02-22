@@ -88,6 +88,11 @@ class VerifyCheckinSerializer(serializers.Serializer):
         default=False,
         help_text="Enable dinner reminders for this stay"
     )
+    is_test = serializers.BooleanField(
+        required=False,
+        default=False,
+        help_text="If true, schedules checkout extension reminder in 2 minutes for testing"
+    )
     # Document verification fields
     verified_document_ids = serializers.ListField(
         child=serializers.IntegerField(),

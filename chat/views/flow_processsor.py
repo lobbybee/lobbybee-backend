@@ -3,6 +3,7 @@
 import re
 import logging
 from tempfile import template
+from django.utils import timezone
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +49,13 @@ def handle_incoming_whatsapp_message(whatsapp_number, flow_data):
 
     # Check if this is a command message
     command_type, extracted_data = detect_command(message_text)
+
+    # Handle stay extension response buttons first
+    from ..flows.checkout_extension_flow import process_checkout_extension_response
+    extension_result = process_checkout_extension_response(guest, message_text)
+    if extension_result is not None:
+        whatsapp_payload = adapt_checkin_response_to_whatsapp(extension_result, whatsapp_number)
+        return whatsapp_payload, 200
 
     if command_type == 'checkin':
         hotel_id = extracted_data.get('hotel_id')
@@ -156,9 +164,41 @@ def handle_start_menu_command(guest, button_id):
         }
     
     elif button_id == 'start_history':
+        from guest.models import Stay
+
+        if not guest:
+            return {
+                "type": "text",
+                "text": "No stay history found for this number."
+            }
+
+        stays = (
+            Stay.objects
+            .filter(guest=guest, check_out_date__lt=timezone.now())
+            .select_related('hotel', 'room')
+            .order_by('-check_out_date')[:5]
+        )
+
+        if not stays:
+            return {
+                "type": "text",
+                "text": "🏨 Stay History\n\nNo past stays found yet."
+            }
+
+        lines = ["🏨 Stay History (Last 5)\n"]
+        for idx, stay in enumerate(stays, start=1):
+            room_label = stay.room.number if stay.room else "N/A"
+            lines.append(
+                f"{idx}. {stay.hotel.name}\n"
+                f"   Check-in: {stay.check_in_date.strftime('%d %b %Y')}\n"
+                f"   Check-out: {stay.check_out_date.strftime('%d %b %Y')}\n"
+                f"   Room: {room_label}\n"
+                f"   Status: {stay.get_status_display()}"
+            )
+
         return {
             "type": "text",
-            "text": "🏨 Stay History\n\nHere you can:\n\n✅ View all your past bookings\n✅ Check your stay details\n\nTo access your complete booking history or get assistance with past stays, please contact our team.\n\n📬 Email: hello@lobbybee.com\n📱 Phone: +917736600773\n\nWe're happy to help with any inquiries about your previous stays!"
+            "text": "\n\n".join(lines)
         }
     
     else:

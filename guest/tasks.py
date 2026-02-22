@@ -3,12 +3,12 @@ from django.utils import timezone
 import logging
 from datetime import datetime, timedelta, time
 from .models import Stay
-from chat.utils.whatsapp_utils import send_whatsapp_text_message
+from chat.utils.whatsapp_utils import send_whatsapp_text_message, send_whatsapp_button_message
 
 logger = logging.getLogger(__name__)
 
 @shared_task
-def send_extend_checkin_reminder(stay_id):
+def send_extend_checkin_reminder(stay_id, is_test=False):
     """
     Send extension check-in reminder message to guest
     
@@ -23,20 +23,52 @@ def send_extend_checkin_reminder(stay_id):
         if stay.status != 'active':
             logger.info(f"Stay {stay_id} is no longer active (status: {stay.status}), skipping message")
             return {'status': 'skipped', 'reason': 'stay_not_active'}
+
+        # Guard against stale reminders after checkout extension:
+        # only enforce the 4-hour window in normal mode (not test mode).
+        if not stay.check_out_date:
+            return {'status': 'skipped', 'reason': 'missing_checkout_date'}
+        now = timezone.now()
+        time_to_checkout = stay.check_out_date - now
+        if time_to_checkout <= timedelta(seconds=0):
+            return {'status': 'skipped', 'reason': 'checkout_passed'}
+        if (not is_test) and time_to_checkout > timedelta(hours=4, minutes=15):
+            return {'status': 'skipped', 'reason': 'stale_reminder_before_window'}
         
         # Get guest's WhatsApp number
         if not stay.guest.whatsapp_number:
             logger.warning(f"Guest {stay.guest.id} has no WhatsApp number")
             return {'status': 'error', 'reason': 'no_whatsapp_number'}
         
-        # Prepare extension check-in message
-        message = "would you like to extend checkin?"
-        
-        # Send WhatsApp message using existing utility
-        send_whatsapp_text_message(
-            recipient_number=stay.guest.whatsapp_number,
-            message_text=message
+        checkout_time_text = stay.check_out_date.strftime('%H:%M') if stay.check_out_date else ''
+        message = (
+            f"Your checkout time is {checkout_time_text}. "
+            "Would you like to extend your stay?"
         )
+
+        buttons = [
+            {
+                "type": "reply",
+                "reply": {"id": f"stay_extend_yes_{stay.id}", "title": "Yes, Extend"}
+            },
+            {
+                "type": "reply",
+                "reply": {"id": f"stay_extend_no_{stay.id}", "title": "No, Thanks"}
+            }
+        ]
+
+        # Send WhatsApp interactive button message
+        response = send_whatsapp_button_message(
+            recipient_number=stay.guest.whatsapp_number,
+            message_text=message,
+            buttons=buttons
+        )
+        if not response:
+            logger.error(
+                f"Failed to send extension reminder button message for stay {stay_id} "
+                f"(guest {stay.guest.whatsapp_number})"
+            )
+            return {'status': 'error', 'reason': 'whatsapp_send_failed', 'stay_id': stay_id}
         
         logger.info(f"Sent extension check-in reminder to guest {stay.guest.full_name} ({stay.guest.whatsapp_number})")
         
@@ -44,7 +76,8 @@ def send_extend_checkin_reminder(stay_id):
             'status': 'success',
             'message_type': 'extend_checkin',
             'guest_id': stay.guest.id,
-            'stay_id': stay_id
+            'stay_id': stay_id,
+            'is_test': bool(is_test)
         }
         
     except Stay.DoesNotExist:
@@ -55,7 +88,7 @@ def send_extend_checkin_reminder(stay_id):
         return {'status': 'error', 'reason': str(e)}
 
 @shared_task
-def schedule_checkin_reminder(stay_id):
+def schedule_checkin_reminder(stay_id, is_test=False):
     """
     Schedule extension check-in reminder for a new check-in
     
@@ -65,26 +98,40 @@ def schedule_checkin_reminder(stay_id):
     try:
         # Get the stay to check hours_24 flag
         stay = Stay.objects.get(id=stay_id)
+
+        if not stay.check_out_date:
+            return {'status': 'error', 'reason': 'missing_checkout_date'}
         
-        # Schedule extend check-in message based on hours_24
-        # 11 hours for 12-hour stay, 23 hours for 24-hour stay
-        countdown_hours = 23 if stay.hours_24 else 11
-        countdown_seconds = countdown_hours * 3600
-        
+        now = timezone.now()
+        if is_test:
+            countdown_seconds = 120
+            scheduled_for = now + timedelta(seconds=countdown_seconds)
+        else:
+            # Schedule reminder around 4 hours before checkout.
+            # If close to checkout, send quickly rather than skipping.
+            reminder_time = stay.check_out_date - timedelta(hours=4)
+            if reminder_time <= now:
+                countdown_seconds = 60
+                scheduled_for = now + timedelta(seconds=countdown_seconds)
+            else:
+                countdown_seconds = int((reminder_time - now).total_seconds())
+                scheduled_for = reminder_time
+
         send_extend_checkin_reminder.apply_async(
-            args=[stay_id],
+            args=[stay_id, is_test],
             countdown=countdown_seconds,
             task_id=f"extend_reminder_{stay_id}_{timezone.now().timestamp()}"
         )
-        
-        logger.info(f"Scheduled extension reminder for stay {stay_id} in {countdown_hours} hours")
-        
+
+        logger.info(f"Scheduled extension reminder for stay {stay_id} at {scheduled_for}")
+
         return {
             'status': 'success',
             'stay_id': stay_id,
             'hours_24': stay.hours_24,
-            'countdown_hours': countdown_hours,
-            'countdown_seconds': countdown_seconds
+            'is_test': bool(is_test),
+            'countdown_seconds': countdown_seconds,
+            'scheduled_for': scheduled_for.isoformat() if hasattr(scheduled_for, 'isoformat') else str(scheduled_for)
         }
         
     except Stay.DoesNotExist:
@@ -93,6 +140,11 @@ def schedule_checkin_reminder(stay_id):
     except Exception as e:
         logger.error(f"Error scheduling reminder for stay {stay_id}: {str(e)}")
         return {'status': 'error', 'reason': str(e)}
+
+
+# Backward-compatible semantic aliases for clarity.
+send_checkout_extension_reminder = send_extend_checkin_reminder
+schedule_checkout_extension_reminder = schedule_checkin_reminder
 
 
 @shared_task

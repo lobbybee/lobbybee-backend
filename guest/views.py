@@ -425,9 +425,10 @@ class StayManagementViewSet(viewsets.GenericViewSet):
 
                 # Schedule check-in reminder message using Celery
                 if stay.guest.whatsapp_number:
-                    from .tasks import schedule_checkin_reminder, schedule_meal_reminders
+                    from .tasks import schedule_checkout_extension_reminder, schedule_meal_reminders
+                    is_test_reminder = serializer.validated_data.get('is_test', False)
                     # Schedule the reminder task asynchronously
-                    schedule_checkin_reminder.delay(stay.id)
+                    schedule_checkout_extension_reminder.delay(stay.id, is_test_reminder)
 
                     # Schedule meal reminders if both hotel setting is true AND request has it true
                     breakfast_enabled = stay.hotel.breakfast_reminder and stay.breakfast_reminder
@@ -900,6 +901,10 @@ Please take a moment to rate your overall experience from 1 to 5 stars. We truly
                 if stay.booking:
                     stay.booking.check_out_date = new_checkout_date
                     stay.booking.save()
+
+                # Re-schedule checkout extension reminder based on new checkout time
+                from .tasks import schedule_checkout_extension_reminder
+                schedule_checkout_extension_reminder.delay(stay.id)
 
                 logger.info(f"Extended stay for guest {stay.guest.full_name} from {old_checkout_date} to {new_checkout_date}")
 
