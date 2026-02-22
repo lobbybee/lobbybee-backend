@@ -1,11 +1,13 @@
 from rest_framework import viewsets, permissions, status, generics
 from rest_framework.decorators import action
-from django.db.models import Q
+from django.db.models import Q, Sum
 from lobbybee.utils.responses import success_response, error_response, created_response, not_found_response
 from django.db import transaction
 from django.utils import timezone
 from django.shortcuts import get_object_or_404
 import threading
+import math
+from decimal import Decimal
 
 from .models import Guest, GuestIdentityDocument, Stay, Booking
 from .serializers import (
@@ -552,9 +554,18 @@ class StayManagementViewSet(viewsets.GenericViewSet):
             with transaction.atomic():
                 if debug is not True:
                     logger.info(f"Updating status for stay {stay.id} - guest {stay.guest.full_name}")
+                    checkout_at = timezone.now()
+
+                    amount_paid = checkout_serializer.validated_data.get('amount_paid')
+                    if amount_paid is None:
+                        amount_paid = self._calculate_checkout_amount(stay, checkout_at)
+
+                    # Persist amount against this stay.
+                    stay.total_amount = amount_paid
+
                     # Update stay status
                     stay.status = 'completed'
-                    stay.actual_check_out = timezone.now()
+                    stay.actual_check_out = checkout_at
                     
                     # Update optional internal rating and note if provided
                     if 'internal_rating' in checkout_serializer.validated_data:
@@ -563,6 +574,15 @@ class StayManagementViewSet(viewsets.GenericViewSet):
                         stay.internal_note = checkout_serializer.validated_data['internal_note']
                     
                     stay.save()
+
+                    # Keep booking.total_amount in sync as the sum of associated stay totals.
+                    if stay.booking:
+                        booking_total = (
+                            stay.booking.stays.aggregate(total=Sum('total_amount')).get('total')
+                            or Decimal('0.00')
+                        )
+                        stay.booking.total_amount = booking_total
+                        stay.booking.save(update_fields=['total_amount'])
 
                     # Create flag if flag_user is true
                     if checkout_serializer.validated_data.get('flag_user', False):
@@ -671,7 +691,8 @@ Please take a moment to rate your overall experience from 1 to 5 stars. We truly
 
                 response_data = {
                     'stay_id': stay.id,
-                    'message': 'Guest checked out successfully'
+                    'message': 'Guest checked out successfully',
+                    'total_amount': str(stay.total_amount)
                 }
                 
                 # Include internal rating and note in response if they were set
@@ -688,6 +709,22 @@ Please take a moment to rate your overall experience from 1 to 5 stars. We truly
                 f'Failed to check out guest: {str(e)}',
                 status=status.HTTP_400_BAD_REQUEST
             )
+
+    def _calculate_checkout_amount(self, stay, checkout_at):
+        """
+        Fallback checkout billing when frontend amount is not provided.
+        Uses room category base rate * number of stay days (minimum 1 day).
+        """
+        if not stay.room or not stay.room.category or stay.room.category.base_price is None:
+            return Decimal('0.00')
+
+        start_time = stay.actual_check_in or stay.check_in_date
+        if not start_time:
+            return Decimal('0.00')
+
+        total_seconds = (checkout_at - start_time).total_seconds()
+        days = max(1, math.ceil(max(total_seconds, 0) / (24 * 3600)))
+        return Decimal(stay.room.category.base_price) * Decimal(days)
 
     @action(detail=True, methods=['post'], url_path='extend-stay')
     def extend_stay(self, request, pk=None):

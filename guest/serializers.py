@@ -100,6 +100,14 @@ class VerifyCheckinSerializer(serializers.Serializer):
     )
 
 class CheckoutSerializer(serializers.Serializer):
+    amount_paid = serializers.DecimalField(
+        required=False,
+        allow_null=True,
+        max_digits=10,
+        decimal_places=2,
+        min_value=0,
+        help_text="Amount paid during checkout (optional)"
+    )
     internal_rating = serializers.IntegerField(
         required=False,
         allow_null=True,
