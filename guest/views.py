@@ -693,6 +693,43 @@ class StayManagementViewSet(viewsets.GenericViewSet):
                 
                 logger.info(f"Closed {closed_conversations_count} active conversations for guest {stay.guest.full_name} before checkout")
 
+                # Send checkout thank-you template message
+                if stay.guest.whatsapp_number:
+                    try:
+                        template_context = self._build_checkout_template_context(stay)
+                        template_result = process_template(
+                            hotel_id=stay.hotel.id,
+                            template_name='lobbybee_checkout_thank_you',
+                            guest_id=stay.guest.id,
+                            additional_context=template_context
+                        )
+
+                        if template_result.get('success'):
+                            checkout_message = template_result.get('processed_content', '')
+                            checkout_media_url = template_result.get('media_url')
+
+                            if checkout_media_url:
+                                send_whatsapp_image_with_link(
+                                    recipient_number=stay.guest.whatsapp_number,
+                                    image_url=checkout_media_url,
+                                    caption=checkout_message
+                                )
+                            elif checkout_message:
+                                send_whatsapp_text_message(
+                                    recipient_number=stay.guest.whatsapp_number,
+                                    message_text=checkout_message
+                                )
+                        else:
+                            logger.warning(
+                                f"Checkout template processing failed for stay {stay.id}: "
+                                f"{template_result.get('error', 'Unknown error')}"
+                            )
+                    except Exception as template_err:
+                        logger.error(
+                            f"Failed to send checkout thank-you template for stay {stay.id}: {template_err}",
+                            exc_info=True
+                        )
+
                 # Initiate feedback flow automatically
                 from .models import Feedback
                 from chat.models import Conversation
@@ -789,6 +826,39 @@ Please take a moment to rate your overall experience from 1 to 5 stars. We truly
         total_seconds = (checkout_at - start_time).total_seconds()
         days = max(1, math.ceil(max(total_seconds, 0) / (24 * 3600)))
         return Decimal(stay.room.category.base_price) * Decimal(days)
+
+    def _build_checkout_template_context(self, stay):
+        """
+        Build additional template context for checkout thank-you templates.
+        """
+        checkin_dt = stay.actual_check_in or stay.check_in_date
+        checkout_dt = stay.actual_check_out or timezone.now()
+        room_number = stay.room.room_number if stay.room else ''
+
+        stay_duration = ''
+        if checkin_dt and checkout_dt and checkout_dt >= checkin_dt:
+            duration = checkout_dt - checkin_dt
+            total_minutes = int(duration.total_seconds() // 60)
+            days, rem_minutes = divmod(total_minutes, 1440)
+            hours, minutes = divmod(rem_minutes, 60)
+            duration_parts = []
+            if days:
+                duration_parts.append(f"{days} day{'s' if days != 1 else ''}")
+            if hours:
+                duration_parts.append(f"{hours} hour{'s' if hours != 1 else ''}")
+            if minutes and days == 0:
+                duration_parts.append(f"{minutes} minute{'s' if minutes != 1 else ''}")
+            stay_duration = ', '.join(duration_parts) if duration_parts else '0 minutes'
+
+        return {
+            'checkin_time': checkin_dt.strftime('%H:%M') if checkin_dt else '',
+            'checkout_time': checkout_dt.strftime('%H:%M') if checkout_dt else '',
+            'room_number': room_number,
+            'stay_duration': stay_duration,
+            # Compatibility aliases if template uses underscore style keys.
+            'check_in_time': checkin_dt.strftime('%H:%M') if checkin_dt else '',
+            'check_out_time': checkout_dt.strftime('%H:%M') if checkout_dt else '',
+        }
 
     @action(detail=True, methods=['post'], url_path='extend-stay')
     def extend_stay(self, request, pk=None):
