@@ -956,11 +956,12 @@ class HotelUserStatsViewSet(viewsets.ViewSet):
             # Get feedback for this hotel
             feedback_queryset = Feedback.objects.filter(stay__hotel=hotel)
             
-            # Apply date filters
+            # Apply date filters (day-inclusive).
+            # Using __date avoids naive midnight comparisons that can hide same-day data.
             if start_date:
-                feedback_queryset = feedback_queryset.filter(created_at__gte=start_date)
+                feedback_queryset = feedback_queryset.filter(created_at__date__gte=start_date)
             if end_date:
-                feedback_queryset = feedback_queryset.filter(created_at__lte=end_date)
+                feedback_queryset = feedback_queryset.filter(created_at__date__lte=end_date)
             
             # Apply room filter
             if room_id:
