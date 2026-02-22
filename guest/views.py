@@ -14,7 +14,7 @@ from .serializers import (
     CreateGuestSerializer, CheckinOfflineSerializer, VerifyCheckinSerializer,
     StayListSerializer, BookingListSerializer, GuestResponseSerializer, ExtendStaySerializer
 )
-from hotel.models import Hotel, Room
+from hotel.models import Hotel, Room, WiFiCredential
 from hotel.permissions import IsHotelStaff, IsSameHotelUser
 from .permissions import CanManageGuests, CanViewAndManageStays
 from flag_system.models import GuestFlag
@@ -280,17 +280,26 @@ class StayManagementViewSet(viewsets.GenericViewSet):
                 if 'room_id' in serializer.validated_data:
                     new_room = get_object_or_404(Room, id=serializer.validated_data['room_id'], hotel=stay.hotel)
 
-                    # Free up old room
-                    if stay.room:
-                        stay.room.status = 'available'
-                        stay.room.current_guest = None
-                        stay.room.save()
+                    # Validate availability for room switch (unless it's already the same room)
+                    is_same_room = stay.room and stay.room.id == new_room.id
+                    if not is_same_room and new_room.status != 'available':
+                        return error_response(
+                            f'Room {new_room.room_number} is not available for reassignment',
+                            status=status.HTTP_400_BAD_REQUEST
+                        )
 
-                    # Assign new room
-                    new_room.status = 'occupied'
-                    new_room.current_guest = stay.guest
-                    new_room.save()
-                    stay.room = new_room
+                    if not is_same_room:
+                        # Free up old room
+                        if stay.room:
+                            stay.room.status = 'available'
+                            stay.room.current_guest = None
+                            stay.room.save()
+
+                        # Assign new room
+                        new_room.status = 'occupied'
+                        new_room.current_guest = stay.guest
+                        new_room.save()
+                        stay.room = new_room
 
                 # Update checkout date if provided
                 if 'check_out_date' in serializer.validated_data:
@@ -376,11 +385,14 @@ class StayManagementViewSet(viewsets.GenericViewSet):
                 if stay.guest.whatsapp_number:
                     def send_welcome_message_async():
                         try:
+                            template_context = self._build_checkin_template_context(stay)
+
                             # Process the welcome template with complete guest context
                             template_result = process_template(
                                 hotel_id=stay.hotel.id,
                                 template_name='lobbybee_hotel_welcome',
-                                guest_id=stay.guest.id
+                                guest_id=stay.guest.id,
+                                additional_context=template_context
                             )
 
                             if template_result['success']:
@@ -465,6 +477,58 @@ class StayManagementViewSet(viewsets.GenericViewSet):
                 f'Failed to verify check-in: {str(e)}',
                 status=status.HTTP_400_BAD_REQUEST
             )
+
+    def _get_wifi_credentials_for_stay(self, stay):
+        """
+        Get WiFi credentials for a stay using room floor + category preference.
+        """
+        if not stay.room:
+            return None
+
+        # Prefer category-specific credentials for the room's floor.
+        credential = WiFiCredential.objects.filter(
+            hotel=stay.hotel,
+            floor=stay.room.floor,
+            room_category=stay.room.category,
+            is_active=True
+        ).first()
+
+        if credential:
+            return credential
+
+        # Fall back to floor-wide credentials.
+        return WiFiCredential.objects.filter(
+            hotel=stay.hotel,
+            floor=stay.room.floor,
+            room_category__isnull=True,
+            is_active=True
+        ).first()
+
+    def _build_checkin_template_context(self, stay):
+        """
+        Build additional template context for check-in confirmation templates.
+        """
+        wifi_credential = self._get_wifi_credentials_for_stay(stay)
+        checkin_dt = stay.actual_check_in or stay.check_in_date
+        checkout_dt = stay.check_out_date
+
+        room_number = stay.room.room_number if stay.room else ''
+        room_floor = stay.room.floor if stay.room else ''
+
+        return {
+            # WiFi variables requested for templates.
+            'wifi_name': wifi_credential.network_name if wifi_credential else '',
+            'wifi_password': wifi_credential.password if wifi_credential else '',
+            # Time variables requested for templates.
+            'checkin_time': checkin_dt.strftime('%H:%M') if checkin_dt else '',
+            'checkout_time': checkout_dt.strftime('%H:%M') if checkout_dt else '',
+            # Compatibility aliases that some templates may already use.
+            'check_in_time': checkin_dt.strftime('%H:%M') if checkin_dt else '',
+            'check_out_time': checkout_dt.strftime('%H:%M') if checkout_dt else '',
+            # Explicit room fallbacks for template edge cases.
+            'room_number': room_number,
+            'room_floor': room_floor,
+        }
 
     @action(detail=False, methods=['get'], url_path='pending-stays')
     def pending_stays(self, request):

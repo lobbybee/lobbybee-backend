@@ -101,6 +101,18 @@ TEMPLATE_VARIABLES = {
         'description': 'Room status',
         'example': 'available',
     },
+    'wifi_name': {
+        'model': 'System',
+        'field': 'wifi_name',
+        'description': 'WiFi network name for the guest room/floor',
+        'example': 'LobbyBee-Guest',
+    },
+    'wifi_password': {
+        'model': 'System',
+        'field': 'wifi_password',
+        'description': 'WiFi password for the guest room/floor',
+        'example': 'welcome123',
+    },
     
     # Booking related variables
     'check_in_date': {
@@ -140,6 +152,18 @@ TEMPLATE_VARIABLES = {
         'field': 'current_time',
         'description': 'Current time',
         'example': '14:30',
+    },
+    'checkin_time': {
+        'model': 'System',
+        'field': 'checkin_time',
+        'description': 'Guest check-in time for the active stay',
+        'example': '14:00',
+    },
+    'checkout_time': {
+        'model': 'System',
+        'field': 'checkout_time',
+        'description': 'Guest check-out time for the active stay',
+        'example': '11:00',
     },
 }
 
@@ -541,11 +565,17 @@ def _render_template(template_content: str, context: Dict[str, Any]) -> str:
         replacements_made = 0
         
         for var_name, value in context.items():
-            placeholder = f'{{{{{var_name}}}}}'
-            if placeholder in rendered_content:
-                rendered_content = rendered_content.replace(placeholder, str(value))
+            # Support both {{var}} and {var} placeholders.
+            double_brace_placeholder = f'{{{{{var_name}}}}}'
+            single_brace_placeholder = f'{{{var_name}}}'
+            if double_brace_placeholder in rendered_content:
+                rendered_content = rendered_content.replace(double_brace_placeholder, str(value))
                 replacements_made += 1
-                logger.debug(f"Replaced {placeholder} with: {str(value)[:50]}")
+                logger.debug(f"Replaced {double_brace_placeholder} with: {str(value)[:50]}")
+            if single_brace_placeholder in rendered_content:
+                rendered_content = rendered_content.replace(single_brace_placeholder, str(value))
+                replacements_made += 1
+                logger.debug(f"Replaced {single_brace_placeholder} with: {str(value)[:50]}")
         
         logger.debug(f"Template rendering completed. Made {replacements_made} replacements.")
         logger.debug(f"Final rendered content: {rendered_content}")
