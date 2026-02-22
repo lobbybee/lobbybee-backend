@@ -540,10 +540,16 @@ class GuestConversationTypeView(APIView):
                     }
                 )
 
+            active_stay = Stay.objects.filter(guest=guest, status='active').first()
+            context_hotel = active_stay.hotel if active_stay else None
+
+            if not context_hotel and user.is_authenticated and hasattr(user, 'hotel'):
+                context_hotel = user.hotel
+
             # Check for existing active conversations
-            if user.is_authenticated and hasattr(user, 'hotel'):
+            if context_hotel:
                 conversations = Conversation.objects.filter(
-                    guest=guest, hotel=user.hotel, status="active"
+                    guest=guest, hotel=context_hotel, status="active"
                 ).select_related("guest", "hotel")
             else:
                 conversations = Conversation.objects.filter(
@@ -586,6 +592,8 @@ class GuestConversationTypeView(APIView):
                 "status": guest.status,
             }
 
+            available_departments = self._get_available_departments_for_hotel(context_hotel)
+
             return Response(
                 {
                     "guest_exists": True,
@@ -593,6 +601,7 @@ class GuestConversationTypeView(APIView):
                     "conversations": conversations_data,
                     "guest_info": guest_info,
                     "guest_status": guest_status,
+                    "available_departments": available_departments,
                 }
             )
 
@@ -605,6 +614,55 @@ class GuestConversationTypeView(APIView):
                 {"error": "Internal server error", "details": str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
+
+    def _get_available_departments_for_hotel(self, hotel):
+        """
+        Resolve departments dynamically from active hotel staff assignments.
+        """
+        default_departments = [choice[0] for choice in Conversation.DEPARTMENT_CHOICES]
+        if not hotel:
+            return default_departments
+
+        staff_departments = User.objects.filter(
+            hotel=hotel,
+            is_active_hotel_user=True
+        ).exclude(
+            department__isnull=True
+        ).values_list("department", flat=True)
+
+        resolved_departments = []
+        seen = set()
+
+        for department_value in staff_departments:
+            if isinstance(department_value, str):
+                values_to_check = [department_value]
+            elif isinstance(department_value, list):
+                values_to_check = department_value
+            else:
+                continue
+
+            for raw_department in values_to_check:
+                if not isinstance(raw_department, str):
+                    continue
+
+                raw_department = raw_department.strip()
+                if not raw_department:
+                    continue
+
+                canonical_department = next(
+                    (
+                        dept
+                        for dept in default_departments
+                        if dept.lower() == raw_department.lower()
+                    ),
+                    None,
+                )
+
+                if canonical_department and canonical_department not in seen:
+                    seen.add(canonical_department)
+                    resolved_departments.append(canonical_department)
+
+        return resolved_departments or default_departments
 
     def _determine_guest_status(self, guest):
         """
@@ -635,6 +693,7 @@ class GuestConversationTypeView(APIView):
         conversations = guest_data.get('conversations', [])
         guest_info = guest_data.get('guest_info')
         guest_status = guest_data.get('guest_status')
+        available_departments = guest_data.get('available_departments')
 
         recipient_number = message_data.get('from')
         guest_name = guest_info.get('full_name', 'Guest') if guest_info else 'Guest'
@@ -669,7 +728,12 @@ class GuestConversationTypeView(APIView):
                 # Handle list reply to create new conversation with selected department
                 if message_type_info.get('is_list_reply'):
                     return self._handle_department_selection(
-                        guest_data, message_type_info, recipient_number, guest_name, conversations
+                        guest_data,
+                        message_type_info,
+                        recipient_number,
+                        guest_name,
+                        conversations,
+                        available_departments
                     )
                 else:
                     # Show department menu (guest is already confirmed as checked-in)
@@ -678,7 +742,8 @@ class GuestConversationTypeView(APIView):
                         'action': 'show_menu',
                         'whatsapp_payload': [generate_department_menu_payload(
                             recipient_number,
-                            guest_name
+                            guest_name,
+                            available_departments
                         )]
                     }
 
@@ -688,7 +753,12 @@ class GuestConversationTypeView(APIView):
             if message_type_info.get('is_list_reply'):
                 logger.info("List reply detected, handling department selection")
                 return self._handle_department_selection(
-                    guest_data, message_type_info, recipient_number, guest_name, conversations
+                    guest_data,
+                    message_type_info,
+                    recipient_number,
+                    guest_name,
+                    conversations,
+                    available_departments
                 )
 
             # Use the most recent active conversation for other message types
@@ -709,7 +779,12 @@ class GuestConversationTypeView(APIView):
             if message_type_info.get('is_list_reply'):
                 logger.info(f"Department selection detected for guest with no conversations: {guest_name}")
                 return self._handle_department_selection(
-                    guest_data, message_type_info, recipient_number, guest_name, []
+                    guest_data,
+                    message_type_info,
+                    recipient_number,
+                    guest_name,
+                    [],
+                    available_departments
                 )
             
             # Show department menu
@@ -719,7 +794,8 @@ class GuestConversationTypeView(APIView):
                 'action': 'show_menu',
                 'whatsapp_payload': [generate_department_menu_payload(
                     recipient_number,
-                    guest_name
+                    guest_name,
+                    available_departments
                 )]
             }
 
@@ -730,13 +806,25 @@ class GuestConversationTypeView(APIView):
             'action': 'flow'  # Default to flow webhook
         }
 
-    def _handle_department_selection(self, guest_data, message_type_info,
-                                     recipient_number, guest_name, conversations):
+    def _handle_department_selection(
+        self,
+        guest_data,
+        message_type_info,
+        recipient_number,
+        guest_name,
+        conversations,
+        available_departments
+    ):
         """
         Handle department selection from interactive list
         """
         list_reply_id = message_type_info.get('list_reply_id')
-        is_valid, dept_name = validate_department_selection(list_reply_id)
+        list_reply_title = message_type_info.get('list_reply_title')
+        is_valid, dept_name = validate_department_selection(
+            list_reply_id,
+            available_departments=available_departments,
+            list_reply_title=list_reply_title
+        )
 
         if not is_valid:
             return {

@@ -1,8 +1,25 @@
 from datetime import datetime, timezone
 from typing import Dict, Optional, Tuple, List
 import logging
+import re
 
 logger = logging.getLogger(__name__)
+
+DEFAULT_DEPARTMENTS = [
+    "Reception",
+    "Housekeeping",
+    "Room Service",
+    "Restaurant",
+    "Management",
+]
+
+DEPARTMENT_DESCRIPTIONS = {
+    "Reception": "Front desk and guest services",
+    "Housekeeping": "Room cleaning and maintenance",
+    "Room Service": "In-room dining and amenities",
+    "Restaurant": "Dining reservations and inquiries",
+    "Management": "Speak with hotel management",
+}
 
 def is_conversation_expired(last_message_at, expiry_minutes=2):
     """
@@ -105,10 +122,74 @@ def get_message_type_info(message_data):
     return result
 
 
-def generate_department_menu_payload(recipient_number, guest_name="Guest"):
+def _normalize_departments(available_departments=None):
+    """Normalize department names into canonical values used by conversations."""
+    if not available_departments:
+        return DEFAULT_DEPARTMENTS.copy()
+
+    resolved = []
+    seen = set()
+    for raw_value in available_departments:
+        if not isinstance(raw_value, str):
+            continue
+        value = raw_value.strip()
+        if not value:
+            continue
+
+        canonical = next(
+            (dept for dept in DEFAULT_DEPARTMENTS if dept.lower() == value.lower()),
+            None,
+        )
+        if canonical and canonical not in seen:
+            seen.add(canonical)
+            resolved.append(canonical)
+
+    return resolved or DEFAULT_DEPARTMENTS.copy()
+
+
+def _build_department_options(available_departments=None):
+    """
+    Build WhatsApp list rows and ID lookup map for department selection.
+    """
+    normalized_departments = _normalize_departments(available_departments)
+    rows = []
+    id_to_department = {}
+
+    for department_name in normalized_departments:
+        slug = re.sub(r"[^a-z0-9]+", "_", department_name.lower()).strip("_")
+        row_id = f"dept_{slug}" if slug else f"dept_{len(rows) + 1}"
+
+        # Ensure uniqueness in edge cases.
+        original_row_id = row_id
+        suffix = 2
+        while row_id in id_to_department:
+            row_id = f"{original_row_id}_{suffix}"
+            suffix += 1
+
+        id_to_department[row_id] = department_name
+        # Backward compatibility with legacy static IDs and titles.
+        id_to_department[slug] = department_name
+        id_to_department[department_name.lower()] = department_name
+
+        rows.append(
+            {
+                "id": row_id,
+                "title": department_name,
+                "description": DEPARTMENT_DESCRIPTIONS.get(
+                    department_name, "Guest support and assistance"
+                ),
+            }
+        )
+
+    return normalized_departments, id_to_department, rows
+
+
+def generate_department_menu_payload(recipient_number, guest_name="Guest", available_departments=None):
     """
     Generate WhatsApp interactive list payload for department selection
     """
+    _, _, rows = _build_department_options(available_departments)
+
     return {
         "messaging_product": "whatsapp",
         "recipient_type": "individual",
@@ -131,33 +212,7 @@ def generate_department_menu_payload(recipient_number, guest_name="Guest"):
                 "sections": [
                     {
                         "title": "Hotel Departments",
-                        "rows": [
-                            {
-                                "id": "reception",
-                                "title": "Reception",
-                                "description": "Front desk and guest services"
-                            },
-                            {
-                                "id": "housekeeping",
-                                "title": "Housekeeping",
-                                "description": "Room cleaning and maintenance"
-                            },
-                            {
-                                "id": "room_service",
-                                "title": "Room Service",
-                                "description": "In-room dining and amenities"
-                            },
-                            {
-                                "id": "restaurant",
-                                "title": "Restaurant",
-                                "description": "Dining reservations and inquiries"
-                            },
-                            {
-                                "id": "management",
-                                "title": "Management",
-                                "description": "Speak with hotel management"
-                            }
-                        ]
+                        "rows": rows
                     }
                 ]
             }
@@ -195,21 +250,30 @@ def generate_success_text_payload(recipient_number, department_name, guest_name=
     }
 
 
-def validate_department_selection(department_id):
+def validate_department_selection(department_id, available_departments=None, list_reply_title=None):
     """
     Validate if department ID is from our menu
     Returns: (is_valid, normalized_department_name)
     """
-    valid_departments = {
-        'reception': 'Reception',
-        'housekeeping': 'Housekeeping',
-        'room_service': 'Room Service',
-        'restaurant': 'Restaurant',
-        'management': 'Management'
-    }
+    normalized_departments, id_to_department, _ = _build_department_options(available_departments)
 
-    if department_id and department_id.lower() in valid_departments:
-        return True, valid_departments[department_id.lower()]
+    if list_reply_title:
+        title_match = next(
+            (
+                department_name
+                for department_name in normalized_departments
+                if department_name.lower() == list_reply_title.strip().lower()
+            ),
+            None,
+        )
+        if title_match:
+            return True, title_match
+
+    if department_id:
+        resolved_department = id_to_department.get(department_id.lower())
+        if resolved_department:
+            return True, resolved_department
+
     return False, None
 
 
