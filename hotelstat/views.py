@@ -1234,7 +1234,7 @@ class HotelUserStatsViewSet(viewsets.ViewSet):
                 )['total_nights'] or timedelta(0)
                 # Convert timedelta to total seconds, then to days for ADR calculation
                 occupied_nights_days = occupied_room_nights.total_seconds() / (24 * 3600)
-                adr = total_revenue / occupied_nights_days if occupied_nights_days > 0 else 0
+                adr = total_revenue / Decimal(str(occupied_nights_days)) if occupied_nights_days > 0 else 0
             else:
                 # ADR for current month
                 month_start = target_date.replace(day=1)
@@ -1249,7 +1249,7 @@ class HotelUserStatsViewSet(viewsets.ViewSet):
                 )['total_nights'] or timedelta(0)
                 # Convert timedelta to total seconds, then to days for ADR calculation
                 occupied_nights_days = occupied_room_nights.total_seconds() / (24 * 3600)
-                adr = total_revenue / occupied_nights_days if occupied_nights_days > 0 else 0
+                adr = total_revenue / Decimal(str(occupied_nights_days)) if occupied_nights_days > 0 else 0
             
             # Hotel basic details
             hotel_details = {
