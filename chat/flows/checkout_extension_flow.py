@@ -52,35 +52,24 @@ def process_checkout_extension_response(guest, message_text):
             )
         }
 
-    # YES -> notify receptionists in this hotel.
+    # YES -> notify all hotel staff (admin, manager, receptionist).
     try:
-        from notifications.utils import send_notification_to_user
-        from user.models import User
+        from notifications.utils import send_notification_to_hotel_staff
 
-        reception_users = User.objects.filter(
-            hotel=stay.hotel,
-            user_type="receptionist",
-            is_active=True
-        )
-
-        title = "Stay Extension Request"
         room_number = stay.room.room_number if stay.room else "N/A"
         checkout_local = stay.check_out_date.astimezone(hotel_tz) if stay.check_out_date else None
         checkout_time_text = checkout_local.strftime("%Y-%m-%d %H:%M") if checkout_local else "N/A"
-        message = (
-            f"{guest.full_name or 'Guest'} requested a stay extension "
-            f"(Room: {room_number}, Current checkout: {checkout_time_text})."
-        )
 
-        link = f"/stays/{stay.id}"
-        for receptionist in reception_users:
-            send_notification_to_user(
-                receptionist,
-                title=title,
-                message=message,
-                link=link,
-                link_label="Review Request"
-            )
+        send_notification_to_hotel_staff(
+            hotel=stay.hotel,
+            title="Stay Extension Request",
+            message=(
+                f"{guest.full_name or 'Guest'} requested a stay extension "
+                f"(Room: {room_number}, Current checkout: {checkout_time_text})."
+            ),
+            link=f"/stays/{stay.id}",
+            link_label="Review Request"
+        )
     except Exception as e:
         logger.error(
             f"Failed to create stay extension notifications for stay {stay.id}: {e}",

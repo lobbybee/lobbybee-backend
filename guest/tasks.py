@@ -51,10 +51,15 @@ def send_extend_checkin_reminder(self, stay_id, is_test=False):
             return {'status': 'error', 'reason': 'no_whatsapp_number'}
 
         hotel_tz = _get_hotel_tz(stay.hotel)
-        checkout_time_text = stay.check_out_date.astimezone(hotel_tz).strftime('%H:%M') if stay.check_out_date else ''
+        checkout_time_text = stay.check_out_date.astimezone(hotel_tz).strftime('%d %b %Y, %H:%M') if stay.check_out_date else ''
+        guest_name = stay.guest.full_name or 'Guest'
+        room_number = stay.room.room_number if stay.room else 'N/A'
         message = (
-            f"Your checkout time is {checkout_time_text}. "
-            "Would you like to extend your stay?"
+            f"Dear {guest_name},\n\n"
+            f"Your check-out time for Room No {room_number} is today at {checkout_time_text}.\n"
+            f"Please settle the bills and return your room keys on time to avoid any additional charges.\n\n"
+            f"If you like to continue your stay, Please contact Reception immediately to check availability.\n\n"
+            f"Have a great day!!"
         )
 
         buttons = [
