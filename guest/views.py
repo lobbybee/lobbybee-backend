@@ -1,5 +1,6 @@
 from rest_framework import viewsets, permissions, status, generics
 from rest_framework.decorators import action
+from rest_framework.views import APIView
 from django.db.models import Q, Sum
 from lobbybee.utils.responses import success_response, error_response, created_response, not_found_response
 from django.db import transaction
@@ -16,6 +17,7 @@ from .serializers import (
 )
 from hotel.models import Hotel, Room, WiFiCredential
 from hotel.permissions import IsHotelStaff, IsSameHotelUser
+from user.permissions import IsPlatformAdmin, IsPlatformStaff
 from .permissions import CanManageGuests, CanViewAndManageStays
 from flag_system.models import GuestFlag
 from flag_system.services import get_flag_summary_for_guest, create_guest_flag
@@ -902,9 +904,19 @@ Please take a moment to rate your overall experience from 1 to 5 stars. We truly
                     stay.booking.check_out_date = new_checkout_date
                     stay.booking.save()
 
-                # Re-schedule checkout extension reminder based on new checkout time
-                from .tasks import schedule_checkout_extension_reminder
+                # Revoke the old extension reminder (deterministic task ID) and reschedule
+                from celery import current_app
+                current_app.control.revoke(f"extend_reminder_{stay.id}")
+                from .tasks import schedule_checkout_extension_reminder, schedule_meal_reminders
                 schedule_checkout_extension_reminder.delay(stay.id)
+
+                # Schedule meal reminders for the newly added days.
+                # Deterministic date-based task IDs make this idempotent for already-scheduled days.
+                if stay.guest.whatsapp_number:
+                    breakfast_enabled = stay.hotel.breakfast_reminder and stay.breakfast_reminder
+                    dinner_enabled = stay.hotel.dinner_reminder and stay.dinner_reminder
+                    if breakfast_enabled or dinner_enabled:
+                        schedule_meal_reminders.delay(stay.id)
 
                 logger.info(f"Extended stay for guest {stay.guest.full_name} from {old_checkout_date} to {new_checkout_date}")
 
@@ -993,3 +1005,105 @@ Please take a moment to rate your overall experience from 1 to 5 stars. We truly
                 f'Failed to reject checkin: {str(e)}',
                 status=status.HTTP_400_BAD_REQUEST
             )
+
+
+class ScheduleTestReminderView(APIView):
+    """
+    Platform admin/staff only — schedule a one-off WhatsApp reminder for a stay.
+
+    POST body:
+        hotel_id      (required) — hotel UUID
+        stay_id       (required) — stay integer PK
+        guest_id      (required) — guest integer PK
+        reminder_date (required) — "YYYY-MM-DD"  (hotel local date)
+        reminder_time (required) — "HH:MM"       (hotel local 24-hour time)
+
+    The reminder is sent using send_extend_checkin_reminder with is_test=True,
+    which bypasses the 4-hour stale-reminder guard.
+    """
+
+    permission_classes = [permissions.IsAuthenticated, IsPlatformAdmin | IsPlatformStaff]
+
+    def post(self, request):
+        from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+        from datetime import datetime as dt
+
+        # --- Validate required fields ---
+        hotel_id = request.data.get('hotel_id')
+        stay_id = request.data.get('stay_id')
+        guest_id = request.data.get('guest_id')
+        reminder_date = request.data.get('reminder_date')   # "YYYY-MM-DD"
+        reminder_time = request.data.get('reminder_time')   # "HH:MM"
+
+        missing = [f for f, v in [
+            ('hotel_id', hotel_id), ('stay_id', stay_id), ('guest_id', guest_id),
+            ('reminder_date', reminder_date), ('reminder_time', reminder_time)
+        ] if not v]
+        if missing:
+            return error_response(f"Missing required fields: {', '.join(missing)}", status=status.HTTP_400_BAD_REQUEST)
+
+        # --- Parse date/time ---
+        try:
+            naive_dt = dt.strptime(f"{reminder_date} {reminder_time}", "%Y-%m-%d %H:%M")
+        except ValueError:
+            return error_response(
+                "Invalid date/time format. Use reminder_date=YYYY-MM-DD and reminder_time=HH:MM",
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # --- Fetch objects ---
+        try:
+            hotel = Hotel.objects.get(id=hotel_id)
+        except Hotel.DoesNotExist:
+            return not_found_response("Hotel not found")
+
+        try:
+            stay = Stay.objects.select_related('guest', 'hotel').get(id=stay_id, hotel=hotel)
+        except Stay.DoesNotExist:
+            return not_found_response("Stay not found for this hotel")
+
+        if str(stay.guest.id) != str(guest_id):
+            return error_response("guest_id does not match the stay's guest", status=status.HTTP_400_BAD_REQUEST)
+
+        if not stay.guest.whatsapp_number:
+            return error_response("Guest has no WhatsApp number", status=status.HTTP_400_BAD_REQUEST)
+
+        # --- Convert hotel-local datetime to UTC countdown ---
+        try:
+            hotel_tz = ZoneInfo(hotel.time_zone or 'UTC')
+        except (ZoneInfoNotFoundError, KeyError):
+            hotel_tz = ZoneInfo('UTC')
+
+        reminder_dt_local = naive_dt.replace(tzinfo=hotel_tz)
+        now = timezone.now()
+        countdown = int((reminder_dt_local - now).total_seconds())
+
+        if countdown <= 0:
+            return error_response(
+                f"reminder_date/time is in the past (hotel local: {naive_dt}, hotel tz: {hotel.time_zone})",
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # --- Schedule ---
+        from .tasks import send_extend_checkin_reminder
+        task_id = f"test_reminder_{stay_id}_{reminder_date}_{reminder_time.replace(':', '')}"
+        send_extend_checkin_reminder.apply_async(
+            args=[stay_id, True],
+            countdown=countdown,
+            task_id=task_id
+        )
+
+        logger.info(
+            f"Platform user {request.user.email} scheduled test reminder for stay {stay_id} "
+            f"at {naive_dt} {hotel.time_zone} (countdown={countdown}s, task_id={task_id})"
+        )
+
+        return success_response(data={
+            'task_id': task_id,
+            'stay_id': stay_id,
+            'guest_id': str(stay.guest.id),
+            'whatsapp_number': stay.guest.whatsapp_number,
+            'scheduled_for_local': str(naive_dt),
+            'hotel_timezone': hotel.time_zone,
+            'countdown_seconds': countdown,
+        })

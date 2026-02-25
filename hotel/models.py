@@ -38,6 +38,7 @@ class Hotel(models.Model):
 
     # Settings
     check_in_time = models.TimeField(default='14:00')
+    check_out_time = models.TimeField(default='11:00', help_text="Hotel's standard check-out time")
     time_zone = models.CharField(max_length=50, default='UTC')
     breakfast_reminder = models.BooleanField(default=False, help_text="Enable breakfast reminders for guests")
     dinner_reminder = models.BooleanField(default=False, help_text="Enable dinner reminders for guests")

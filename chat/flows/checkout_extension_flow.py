@@ -1,5 +1,6 @@
 import logging
 from django.utils import timezone
+from zoneinfo import ZoneInfo
 
 logger = logging.getLogger(__name__)
 
@@ -38,8 +39,11 @@ def process_checkout_extension_response(guest, message_text):
             "text": "This stay is no longer active. Please contact reception for assistance."
         }
 
+    hotel_tz = ZoneInfo(stay.hotel.time_zone or 'UTC')
+
     if message_text.startswith(no_prefix):
-        checkout_time_text = stay.check_out_date.strftime('%H:%M') if stay.check_out_date else "the scheduled time"
+        checkout_local = stay.check_out_date.astimezone(hotel_tz) if stay.check_out_date else None
+        checkout_time_text = checkout_local.strftime('%H:%M') if checkout_local else "the scheduled time"
         return {
             "type": "text",
             "text": (
@@ -61,7 +65,8 @@ def process_checkout_extension_response(guest, message_text):
 
         title = "Stay Extension Request"
         room_number = stay.room.room_number if stay.room else "N/A"
-        checkout_time_text = stay.check_out_date.strftime("%Y-%m-%d %H:%M") if stay.check_out_date else "N/A"
+        checkout_local = stay.check_out_date.astimezone(hotel_tz) if stay.check_out_date else None
+        checkout_time_text = checkout_local.strftime("%Y-%m-%d %H:%M") if checkout_local else "N/A"
         message = (
             f"{guest.full_name or 'Guest'} requested a stay extension "
             f"(Room: {room_number}, Current checkout: {checkout_time_text})."

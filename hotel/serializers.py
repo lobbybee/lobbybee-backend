@@ -29,7 +29,7 @@ class HotelSerializer(serializers.ModelSerializer):
             'id', 'name', 'description', 'address', 'city', 'state', 'country',
             'pincode', 'phone', 'email', 'google_review_link', 'latitude',
             'longitude', 'qr_code_url', 'unique_qr_code',
-            'check_in_time', 'time_zone', 'breakfast_reminder', 'dinner_reminder',
+            'check_in_time', 'check_out_time', 'time_zone', 'breakfast_reminder', 'dinner_reminder',
             'status', 'is_verified', 'is_active',
             'is_demo', 'verification_notes', 'registration_date', 'verified_at',
             'updated_at', 'admin', 'documents'
@@ -58,7 +58,7 @@ class AdminHotelUpdateSerializer(serializers.ModelSerializer):
         fields = [
             'name', 'description', 'address', 'city', 'state', 'country',
             'pincode', 'phone', 'email', 'google_review_link', 'latitude',
-            'longitude', 'qr_code_url', 'check_in_time', 'time_zone',
+            'longitude', 'qr_code_url', 'check_in_time', 'check_out_time', 'time_zone',
             'breakfast_reminder', 'dinner_reminder'
         ]
 
