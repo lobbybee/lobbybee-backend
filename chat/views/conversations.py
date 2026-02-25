@@ -979,8 +979,47 @@ class GuestConversationTypeView(APIView):
             return self._handle_fulfillment_response(button_id, True, response_data)
         elif button_id.startswith('req_unfulfilled_conv#'):
             return self._handle_fulfillment_response(button_id, False, response_data)
+        elif button_id.startswith('stay_extend_yes_') or button_id.startswith('stay_extend_no_'):
+            return self._handle_checkout_extension_button(button_id, response_data)
 
         return None
+
+    def _handle_checkout_extension_button(self, button_id, response_data):
+        """Handle stay_extend_yes_* and stay_extend_no_* button clicks."""
+        from chat.flows.checkout_extension_flow import process_checkout_extension_response
+        from guest.models import Guest as GuestModel
+        from chat.utils.whatsapp_utils import send_whatsapp_text_message
+
+        guest_info = response_data.get('guest_info')
+        if not guest_info:
+            return None
+
+        try:
+            guest = GuestModel.objects.get(id=guest_info['id'])
+        except GuestModel.DoesNotExist:
+            return None
+
+        result = process_checkout_extension_response(guest, button_id)
+        if result is None:
+            return None
+
+        if result.get('type') == 'text' and guest.whatsapp_number:
+            try:
+                send_whatsapp_text_message(
+                    recipient_number=guest.whatsapp_number,
+                    message_text=result['text']
+                )
+            except Exception as e:
+                logger.error(
+                    f"Failed to send checkout extension response to {guest.whatsapp_number}: {e}",
+                    exc_info=True
+                )
+
+        return {
+            'success': True,
+            'action': 'checkout_extension_handled',
+            'button_id': button_id,
+        }
 
     def _handle_accept_reopen_conversation(self, button_id, response_data):
         """Handle accept_reopen_conversation button click"""
