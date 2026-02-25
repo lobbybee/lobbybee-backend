@@ -3,7 +3,7 @@ from celery import Celery
 
 # Set the default Django settings module for the 'celery' program.
 # Use development settings by default for local development
-settings_module = os.environ.get('DJANGO_SETTINGS_MODULE', 'lobbybee.config.development')
+settings_module = os.environ.get('DJANGO_SETTINGS_MODULE', 'lobbybee.settings')
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', settings_module)
 
 app = Celery('lobbybee')
