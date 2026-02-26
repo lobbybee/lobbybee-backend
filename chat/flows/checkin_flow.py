@@ -703,19 +703,17 @@ def complete_checkin_flow(conversation, guest):
         conversation.status = 'closed'
         conversation.save(update_fields=['conversation_type', 'status'])
 
-        response_text = f"""✅ Check-in completed successfully!
+        guest_name = guest.full_name or 'Guest'
+        response_text = f"""Hello {guest_name}!
 
-Dear {guest.full_name}, your information has been received and is pending verification.
+Your information has been received and is pending verification.
 
-Our receptionist will:
-• Verify your identity documents
-• Assign you a suitable room
-• Confirm your check-in details
+Our receptionist shall:
+* Verify your identity documents
+* Enquire your preferences
+* Assign you a suitable room
 
-You'll receive a confirmation once your room is ready.
-
-Booking ID: {booking.id}
-Welcome to {conversation.hotel.name}! 🏨"""
+You'll receive a confirmation once your room is ready. Please wait a moment."""
 
         save_system_message(conversation, response_text, CheckinStep.COMPLETED)
         return {

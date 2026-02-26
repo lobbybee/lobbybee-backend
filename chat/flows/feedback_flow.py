@@ -322,18 +322,13 @@ def handle_high_rating_flow(conversation, guest, flow_data, rating):
 
 def handle_low_rating_flow(conversation, guest, flow_data, rating):
     """Handle low rating flow for ratings < 3."""
-    
-    rating_text = ""
-    if rating == 1:
-        rating_text = "We're very sorry to hear that. ⭐"
-    elif rating == 2:
-        rating_text = "We're sorry to hear that. ⭐⭐"
-    
-    header_text = rating_text
-    body_text = "We're sorry that your experience didn't meet your expectations. We value your feedback and would like to understand what we can do to improve.\n\nWould you like to share more details about your experience?"
-    
+
+    guest_name = guest.full_name or 'Guest'
+    header_text = f"Dear {guest_name}"
+    body_text = "We take your opinion and experience very seriously.\nKindly send a message or voice note so we can address your concerns and get back to you.\n\nAs a token of appreciation, we want to give you 5% discount on your next visit.\n\nThank you for your help."
+
     save_system_message(conversation, f"{header_text}\n\n{body_text}", FeedbackStep.NOTE_OPTION)
-    
+
     return {
         "type": "button",
         "text": header_text,
@@ -479,7 +474,7 @@ def complete_feedback_flow(conversation, guest, show_google_review=False):
         header_text = "Thank you for your feedback!"
         
         if show_google_review and conversation.hotel.google_review_link:
-            body_text = f"We appreciate you taking the time to share your experience with us!\n\n🌟 **We'd love it if you could share your experience on Google Reviews:**\n{conversation.hotel.google_review_link}\n\nWe hope to welcome you back to {conversation.hotel.name} again soon!\n\nHave a great day! 🌟"
+            body_text = f"We appreciate you taking the time to share your experience with us! :)\n\n🌟 We'd love it if you could share your experience on Google Reviews:\n{conversation.hotel.google_review_link}\n\nWe hope to welcome you back to {conversation.hotel.name} again soon!\n\nJust reply here to rebook with us anytime.\n\nHave a great day! 🌟"
         else:
             body_text = f"We appreciate you taking the time to share your experience with us. Your feedback is valuable in helping us improve our services.\n\nWe hope to welcome you back to {conversation.hotel.name} again soon!\n\nHave a great day! 🌟"
         

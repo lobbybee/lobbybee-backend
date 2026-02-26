@@ -139,12 +139,22 @@ def handle_fresh_demo_command(guest, hotel_id, flow_data):
 
 def handle_initial_step(conversation, guest, message_text, flow_data):
     """Initial step - welcome message and service menu."""
-    
-    response_text = "Welcome to Demo Hotel!"
-    body_text = "Here are the services we offer:\n\n• Restaurant - Order food and drinks\n• Management - Speak with hotel management\n• Housekeeping - Request room services\n• Exit Demo - End the demo experience\n\nPlease select a service from the options below:"
-    
+
+    response_text = "Welcome to LobbyBee!"
+    body_text = """First of its kind, Concierge Service on Whatsapp
+
+Features:
+- Check in
+- Guest Communications
+- Guest, Room Management
+- ID Repository.
+
+Please type "Interested" so we shall contact you.
+
+Powered by LobbyBee"""
+
     save_system_message(conversation, f"{response_text}\n\n{body_text}", DemoStep.SERVICE_MENU)
-    
+
     return {
         "type": "list",
         "text": response_text,
@@ -257,13 +267,13 @@ def handle_service_selected_step(conversation, guest, message_text, flow_data):
     # Simulate order confirmation based on service
     if selected_service == 'restaurant':
         response_text = "Restaurant Order Received"
-        body_text = f"Your order has been placed and forwarded to our kitchen staff. Please be awaited while we prepare your order.\n\nEstimated time: 15-20 minutes"
+        body_text = f"Your order has been placed and forwarded to our kitchen staff. Please be awaited while we prepare your order."
     elif selected_service == 'management':
         response_text = "Management Request Received"
-        body_text = f"Your request has been forwarded to hotel management. Someone will contact you shortly to address your concerns.\n\nResponse time: Within 10 minutes"
+        body_text = f"Your request has been forwarded to hotel management. Someone will contact you shortly to address your concerns."
     elif selected_service == 'housekeeping':
         response_text = "Housekeeping Request Received"
-        body_text = f"Your housekeeping request has been registered. Our staff will attend to your room shortly.\n\nResponse time: Within 5-10 minutes"
+        body_text = f"Your housekeeping request has been registered. Our staff will attend to your room shortly."
     else:
         response_text = "Request Received"
         body_text = f"Your request has been received and forwarded to the appropriate department.\n\nWe will respond as soon as possible."
