@@ -5,7 +5,7 @@ Handles template processing, variable resolution, and fallback templates.
 
 from typing import Dict, List, Optional, Any
 from django.db.models import Model
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
 import logging
 
 logger = logging.getLogger(__name__)
@@ -22,6 +22,18 @@ def _format_human_datetime_label(value):
     if isinstance(value, time):
         return value.strftime('%I %p').lstrip('0')
     return value
+
+def _meal_end_time(meal_time) -> str:
+    """
+    Return the formatted end time for a meal service window (start + 2 hours).
+    e.g. time(7, 30) → '9 AM'
+    """
+    if not meal_time:
+        return ''
+    dt = datetime.combine(datetime.today(), meal_time)
+    end_dt = dt + timedelta(hours=2)
+    return _format_human_datetime_label(end_dt.time())
+
 
 from ..models import MessageTemplate, CustomMessageTemplate
 from guest.models import Guest, Booking
@@ -94,6 +106,66 @@ TEMPLATE_VARIABLES = {
         'description': 'Hotel city',
         'example': 'New York',
     },
+    'hotel_state': {
+        'model': 'Hotel',
+        'field': 'state',
+        'description': 'Hotel state',
+        'example': 'California',
+    },
+    'hotel_country': {
+        'model': 'Hotel',
+        'field': 'country',
+        'description': 'Hotel country',
+        'example': 'India',
+    },
+    'hotel_pincode': {
+        'model': 'Hotel',
+        'field': 'pincode',
+        'description': 'Hotel postal/pin code',
+        'example': '110001',
+    },
+    'google_map_link': {
+        'model': 'Hotel',
+        'field': 'google_map_link',
+        'description': 'Google Maps link for the hotel',
+        'example': 'https://maps.google.com/?q=Grand+Hotel',
+    },
+    'breakfast_time': {
+        'model': 'Hotel',
+        'field': 'breakfast_time',
+        'description': 'Time when breakfast service starts',
+        'example': '8 AM',
+    },
+    'breakfast_end_time': {
+        'model': 'Hotel',
+        'field': 'breakfast_time',
+        'description': 'Time when breakfast service ends (start + 2 hours)',
+        'example': '10 AM',
+    },
+    'lunch_time': {
+        'model': 'Hotel',
+        'field': 'lunch_time',
+        'description': 'Time when lunch service starts',
+        'example': '12 PM',
+    },
+    'lunch_end_time': {
+        'model': 'Hotel',
+        'field': 'lunch_time',
+        'description': 'Time when lunch service ends (start + 2 hours)',
+        'example': '2 PM',
+    },
+    'dinner_time': {
+        'model': 'Hotel',
+        'field': 'dinner_time',
+        'description': 'Time when dinner service starts',
+        'example': '7 PM',
+    },
+    'dinner_end_time': {
+        'model': 'Hotel',
+        'field': 'dinner_time',
+        'description': 'Time when dinner service ends (start + 2 hours)',
+        'example': '9 PM',
+    },
     
     # Room related variables
     'room_number': {
@@ -115,14 +187,14 @@ TEMPLATE_VARIABLES = {
         'example': 'available',
     },
     'wifi_name': {
-        'model': 'System',
-        'field': 'wifi_name',
+        'model': 'WiFiCredential',
+        'field': 'network_name',
         'description': 'WiFi network name for the guest room/floor',
         'example': 'LobbyBee-Guest',
     },
     'wifi_password': {
-        'model': 'System',
-        'field': 'wifi_password',
+        'model': 'WiFiCredential',
+        'field': 'password',
         'description': 'WiFi password for the guest room/floor',
         'example': 'welcome123',
     },
@@ -153,6 +225,20 @@ TEMPLATE_VARIABLES = {
         'example': '299.99',
     },
     
+    # Stay variables
+    'hours_24': {
+        'model': 'Stay',
+        'field': 'hours_24',
+        'description': '24-hour stay indicator',
+        'example': 'True',
+    },
+    'no_of_days': {
+        'model': 'Stay',
+        'field': 'no_of_days',
+        'description': 'Number of days of the stay (check_out_date - check_in_date)',
+        'example': '3',
+    },
+
     # Dynamic variables
     'current_date': {
         'model': 'System',
@@ -460,6 +546,10 @@ def _resolve_variables(
         if hotel_id:
             hotel = Hotel.objects.get(id=hotel_id)
             context.update(_extract_model_fields(hotel, 'Hotel'))
+            # Compute meal service end times (start + 2 hours)
+            context['breakfast_end_time'] = _meal_end_time(hotel.breakfast_time)
+            context['lunch_end_time'] = _meal_end_time(hotel.lunch_time)
+            context['dinner_end_time'] = _meal_end_time(hotel.dinner_time)
     except Hotel.DoesNotExist:
         pass
     
@@ -473,12 +563,22 @@ def _resolve_variables(
             
             # Get current room information from the guest's active stay
             try:
+                from hotel.models import WiFiCredential
                 active_stay = Stay.objects.filter(guest=guest, status='active').first()
-                if active_stay and active_stay.room:
-                    room = active_stay.room
-                    context.update(_extract_model_fields(room, 'Room'))
-                    logger.debug(f"Found room {room.room_number} from active stay {active_stay.id}")
-                else:
+                room = None
+                if active_stay:
+                    context['hours_24'] = active_stay.hours_24
+                    # Calculate number of stay days from calendar dates
+                    no_of_days = (
+                        active_stay.check_out_date.date() - active_stay.check_in_date.date()
+                    ).days
+                    context['no_of_days'] = no_of_days
+                    if active_stay.room:
+                        room = active_stay.room
+                        context.update(_extract_model_fields(room, 'Room'))
+                        logger.debug(f"Found room {room.room_number} from active stay {active_stay.id}")
+
+                if room is None:
                     # Fallback: check if guest has a room attribute directly
                     if hasattr(guest, 'room') and guest.room:
                         room = guest.room
@@ -486,6 +586,23 @@ def _resolve_variables(
                         logger.debug(f"Found room {room.room_number} from guest.room attribute")
                     else:
                         logger.debug(f"No room found for guest {guest.id}")
+
+                # Resolve WiFi credentials for the guest's room.
+                # Mirrors RoomWiFiCredentialSerializer: prefer category-specific
+                # over floor-wide by ordering on room_category__id descending.
+                if room:
+                    from django.db.models import Q
+                    wifi_cred = WiFiCredential.objects.filter(
+                        hotel_id=hotel_id,
+                        floor=room.floor,
+                        is_active=True,
+                    ).filter(
+                        Q(room_category=room.category) | Q(room_category__isnull=True)
+                    ).order_by('-room_category__id').first()
+                    if wifi_cred:
+                        context['wifi_name'] = wifi_cred.network_name
+                        context['wifi_password'] = wifi_cred.password
+                        logger.debug(f"Resolved WiFi credentials for room {room.room_number}")
             except Exception as e:
                 logger.error(f"Error getting room from stay for guest {guest.id}: {str(e)}")
             
@@ -557,6 +674,13 @@ def _extract_model_fields(model_instance: Model, model_name: str) -> Dict[str, A
                         and field_name in ['check_in_date', 'check_out_date']
                     ):
                         fields[var_name] = _format_human_datetime_label(value)
+                        continue
+                    # Render hotel time fields as human-readable labels (e.g. '8 AM').
+                    if (
+                        model_name == 'Hotel'
+                        and field_name in ['breakfast_time', 'dinner_time']
+                    ):
+                        fields[var_name] = _format_human_datetime_label(value) if value else ''
                         continue
                     fields[var_name] = value
             else:

@@ -27,6 +27,7 @@ class Hotel(models.Model):
     phone = models.CharField(max_length=15, blank=True)
     email = models.EmailField(blank=True)
     google_review_link = models.URLField(blank=True, help_text="Google Review link for the hotel")
+    google_map_link = models.URLField(blank=True, help_text="Google Maps link for the hotel")
 
     # Documents (CDN URLs)
 
@@ -40,6 +41,9 @@ class Hotel(models.Model):
     check_in_time = models.TimeField(default='14:00')
     check_out_time = models.TimeField(default='11:00', help_text="Hotel's standard check-out time")
     time_zone = models.CharField(max_length=50, default='UTC')
+    breakfast_time = models.TimeField(null=True, blank=True, help_text="Time when breakfast is served (e.g. 07:30)")
+    lunch_time = models.TimeField(null=True, blank=True, help_text="Time when lunch is served (e.g. 12:30)")
+    dinner_time = models.TimeField(null=True, blank=True, help_text="Time when dinner is served (e.g. 19:00)")
     breakfast_reminder = models.BooleanField(default=False, help_text="Enable breakfast reminders for guests")
     dinner_reminder = models.BooleanField(default=False, help_text="Enable dinner reminders for guests")
 
