@@ -44,16 +44,16 @@ TEMPLATE_UPDATES = [
     {
         'name': 'lobbybee_checkout_thank_you',
         'variables': [
-            'guest_name', 'hotel_name', 'check_in_date', 'checkin_time',
-            'check_out_date', 'checkout_time', 'room_number', 'no_of_days',
+            'guest_name', 'hotel_name', 'checkin_time',
+            'checkout_time', 'room_number', 'no_of_days',
         ],
         'text_content': (
             'Dear {{guest_name}},\n'
             '\n'
             'Thank you for choosing {{hotel_name}} for your stay!\n'
             'Your Stay Details:\n'
-            'Check in Day: {{check_in_date}} Time: {{checkin_time}}\n'
-            'Check out Day: {{check_out_date}} Time: {{checkout_time}}\n'
+            'Check in Time: {{checkin_time}}\n'
+            'Check out Time: {{checkout_time}}\n'
             'Room No: {{room_number}}\n'
             'No of Days: {{no_of_days}}\n'
             '\n'

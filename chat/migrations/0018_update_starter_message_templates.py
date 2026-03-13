@@ -9,16 +9,16 @@ TEMPLATE_UPDATES = [
         'template_type': 'greeting',
         'variables': [
             'guest_name', 'hotel_name', 'hotel_city', 'room_number',
-            'checkin_time', 'check_in_date', 'check_out_date', 'checkout_time',
-            'hotel_phone', 'wifi_name', 'wifi_password', 'google_map_link', 'hours_24',
+            'checkin_time', 'checkout_time',
+            'hotel_phone', 'wifi_name', 'wifi_password', 'google_map_link',
         ],
         'text_content': (
             'Hello {{guest_name}}!\n'
             '\n'
             'Welcome to {{hotel_name}}, {{hotel_city}}\n'
             'Your room {{room_number}} is ready.\n'
-            'Check in time is: {{checkin_time}}, {{check_in_date}}\n'
-            'Your Planned Check out Date & time is {{check_out_date}} {{checkout_time}} ({{hours_24}})\n'
+            'Check in time is: {{checkin_time}}\n'
+            'Your Planned Check out time is {{checkout_time}}\n'
             '\n'
             'Reception Phone No is: {{hotel_phone}}\n'
             'Google Location: {{google_map_link}}\n'
@@ -67,16 +67,16 @@ TEMPLATE_UPDATES = [
         'name': 'lobbybee_checkout_thank_you',
         'template_type': 'farewell',
         'variables': [
-            'guest_name', 'hotel_name', 'check_in_date', 'checkin_time',
-            'check_out_date', 'checkout_time', 'room_number',
+            'guest_name', 'hotel_name', 'checkin_time',
+            'checkout_time', 'room_number',
         ],
         'text_content': (
             'Dear {{guest_name}},\n'
             '\n'
             'Thank you for choosing {{hotel_name}} for your stay!\n'
             'Your Stay Details:\n'
-            'Check in Day: {{check_in_date}} Time: {{checkin_time}}\n'
-            'Check out Day: {{check_out_date}} Time: {{checkout_time}}\n'
+            'Check in Time: {{checkin_time}}\n'
+            'Check out Time: {{checkout_time}}\n'
             'Room No: {{room_number}}\n'
             '\n'
             'We hope you had a wonderful experience.\n'

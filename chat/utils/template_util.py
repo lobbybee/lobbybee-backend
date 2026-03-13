@@ -23,6 +23,23 @@ def _format_human_datetime_label(value):
         return value.strftime('%I %p').lstrip('0')
     return value
 
+
+def _format_human_time_with_minutes(value):
+    """
+    Format time as a guest-friendly label with minutes when needed.
+    Examples: '2 PM', '2:30 PM'
+    """
+    if not value:
+        return ''
+    if isinstance(value, datetime):
+        value = value.time()
+    if isinstance(value, time):
+        if value.minute == 0:
+            return value.strftime('%I %p').lstrip('0')
+        return value.strftime('%I:%M %p').lstrip('0')
+    return value
+
+
 def _meal_end_time(meal_time) -> str:
     """
     Return the formatted end time for a meal service window (start + 2 hours).
@@ -200,18 +217,6 @@ TEMPLATE_VARIABLES = {
     },
     
     # Booking related variables
-    'check_in_date': {
-        'model': 'Booking',
-        'field': 'check_in_date',
-        'description': 'Check-in date',
-        'example': '2024-12-01',
-    },
-    'check_out_date': {
-        'model': 'Booking',
-        'field': 'check_out_date',
-        'description': 'Check-out date',
-        'example': '2024-12-03',
-    },
     'booking_status': {
         'model': 'Booking',
         'field': 'status',
@@ -619,7 +624,7 @@ def _resolve_variables(
     now = datetime.now()
     context.update({
         'current_date': now.strftime('%Y-%m-%d'),
-        'current_time': now.strftime('%H:%M'),
+        'current_time': _format_human_time_with_minutes(now),
     })
     
     return context
@@ -660,20 +665,19 @@ def _extract_model_fields(model_instance: Model, model_name: str) -> Dict[str, A
                         fields[var_name] = None
                 else:
                     logger.debug(f"Field {field_name} is not callable, value: {value}")
-                    # Render booking check-in/out fields as human-readable labels
-                    # for template usage (e.g. '26 Monday 12 PM').
-                    if (
-                        model_name == 'Booking'
-                        and field_name in ['check_in_date', 'check_out_date']
-                    ):
-                        fields[var_name] = _format_human_datetime_label(value)
-                        continue
                     # Render hotel time fields as human-readable labels (e.g. '8 AM').
                     if (
                         model_name == 'Hotel'
-                        and field_name in ['breakfast_time', 'dinner_time']
+                        and field_name in ['breakfast_time', 'lunch_time', 'dinner_time']
                     ):
                         fields[var_name] = _format_human_datetime_label(value) if value else ''
+                        continue
+                    # Prefer human labels for choice-based status values.
+                    if model_name == 'Room' and field_name == 'status':
+                        fields[var_name] = model_instance.get_status_display()
+                        continue
+                    if model_name == 'Booking' and field_name == 'status':
+                        fields[var_name] = model_instance.get_status_display()
                         continue
                     fields[var_name] = value
             else:
@@ -706,14 +710,19 @@ def _render_template(template_content: str, context: Dict[str, Any]) -> str:
             # Support both {{var}} and {var} placeholders.
             double_brace_placeholder = f'{{{{{var_name}}}}}'
             single_brace_placeholder = f'{{{var_name}}}'
+            value_for_template = value
+            if value_for_template is None:
+                value_for_template = ''
+            elif isinstance(value_for_template, bool):
+                value_for_template = 'Yes' if value_for_template else 'No'
             if double_brace_placeholder in rendered_content:
-                rendered_content = rendered_content.replace(double_brace_placeholder, str(value))
+                rendered_content = rendered_content.replace(double_brace_placeholder, str(value_for_template))
                 replacements_made += 1
-                logger.debug(f"Replaced {double_brace_placeholder} with: {str(value)[:50]}")
+                logger.debug(f"Replaced {double_brace_placeholder} with: {str(value_for_template)[:50]}")
             if single_brace_placeholder in rendered_content:
-                rendered_content = rendered_content.replace(single_brace_placeholder, str(value))
+                rendered_content = rendered_content.replace(single_brace_placeholder, str(value_for_template))
                 replacements_made += 1
-                logger.debug(f"Replaced {single_brace_placeholder} with: {str(value)[:50]}")
+                logger.debug(f"Replaced {single_brace_placeholder} with: {str(value_for_template)[:50]}")
         
         logger.debug(f"Template rendering completed. Made {replacements_made} replacements.")
         logger.debug(f"Final rendered content: {rendered_content}")
