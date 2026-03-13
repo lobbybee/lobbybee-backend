@@ -83,6 +83,10 @@ class VerifyCheckinSerializer(serializers.Serializer):
         default=False,
         help_text="Enable breakfast reminders for this stay"
     )
+    lunch_reminder = serializers.BooleanField(
+        default=False,
+        help_text="Enable lunch reminders for this stay"
+    )
     dinner_reminder = serializers.BooleanField(
         default=False,
         help_text="Enable dinner reminders for this stay"
@@ -188,7 +192,7 @@ class StayListSerializer(serializers.ModelSerializer):
         fields = [
             "id", "guest", "status", "check_in_date", "check_out_date",
             "room", "room_details", "register_number", "identity_verified", "booking_details",
-            "internal_rating", "internal_note", "breakfast_reminder", "dinner_reminder", "billing"
+            "internal_rating", "internal_note", "breakfast_reminder", "lunch_reminder", "dinner_reminder", "billing"
         ]
     
     def get_room_details(self, obj):

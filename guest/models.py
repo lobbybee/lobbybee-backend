@@ -133,6 +133,7 @@ class Stay(models.Model):
     
     # Reminder settings
     breakfast_reminder = models.BooleanField(default=False, help_text="Enable breakfast reminder for this stay")
+    lunch_reminder = models.BooleanField(default=False, help_text="Enable lunch reminder for this stay")
     dinner_reminder = models.BooleanField(default=False, help_text="Enable dinner reminder for this stay")
 
     created_at = models.DateTimeField(auto_now_add=True)
@@ -151,3 +152,46 @@ class Feedback(models.Model):
 
     def __str__(self):
         return f"Feedback for {self.guest.full_name} - Rating: {self.rating}"
+
+
+class ReminderLog(models.Model):
+    REMINDER_TYPES = [
+        ('checkout', 'Checkout'),
+        ('breakfast', 'Breakfast'),
+        ('lunch', 'Lunch'),
+        ('dinner', 'Dinner'),
+    ]
+
+    STATUSES = [
+        ('scheduled', 'Scheduled'),
+        ('sent', 'Sent'),
+        ('skipped', 'Skipped'),
+        ('failed', 'Failed'),
+    ]
+
+    stay = models.ForeignKey(Stay, on_delete=models.CASCADE, related_name='reminder_logs')
+    reminder_type = models.CharField(max_length=20, choices=REMINDER_TYPES)
+    reminder_date = models.DateField()
+    scheduled_for = models.DateTimeField(null=True, blank=True)
+    task_id = models.CharField(max_length=255, blank=True, null=True)
+    status = models.CharField(max_length=20, choices=STATUSES, default='scheduled')
+    reason = models.TextField(blank=True, null=True)
+    is_test = models.BooleanField(default=False)
+    sent_at = models.DateTimeField(null=True, blank=True)
+    metadata = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=['stay', 'reminder_type', 'reminder_date'],
+                name='unique_stay_reminder_type_date'
+            )
+        ]
+        indexes = [
+            models.Index(fields=['status', 'reminder_type', 'reminder_date']),
+        ]
+
+    def __str__(self):
+        return f"{self.reminder_type} reminder for stay {self.stay_id} on {self.reminder_date}"

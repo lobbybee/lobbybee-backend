@@ -360,6 +360,8 @@ class StayManagementViewSet(viewsets.GenericViewSet):
                 # Update reminder settings from request
                 if 'breakfast_reminder' in serializer.validated_data:
                     stay.breakfast_reminder = serializer.validated_data['breakfast_reminder']
+                if 'lunch_reminder' in serializer.validated_data:
+                    stay.lunch_reminder = serializer.validated_data['lunch_reminder']
                 if 'dinner_reminder' in serializer.validated_data:
                     stay.dinner_reminder = serializer.validated_data['dinner_reminder']
 
@@ -432,9 +434,10 @@ class StayManagementViewSet(viewsets.GenericViewSet):
 
                     # Schedule meal reminders if both hotel setting is true AND request has it true
                     breakfast_enabled = stay.hotel.breakfast_reminder and stay.breakfast_reminder
+                    lunch_enabled = stay.lunch_reminder
                     dinner_enabled = stay.hotel.dinner_reminder and stay.dinner_reminder
 
-                    if breakfast_enabled or dinner_enabled:
+                    if breakfast_enabled or lunch_enabled or dinner_enabled:
                         schedule_meal_reminders.delay(stay.id)
 
                 # Check for guest flags before completing check-in
@@ -912,8 +915,9 @@ Please take a moment to rate your overall experience from 1 to 5 stars. We truly
                 # Deterministic date-based task IDs make this idempotent for already-scheduled days.
                 if stay.guest.whatsapp_number:
                     breakfast_enabled = stay.hotel.breakfast_reminder and stay.breakfast_reminder
+                    lunch_enabled = stay.lunch_reminder
                     dinner_enabled = stay.hotel.dinner_reminder and stay.dinner_reminder
-                    if breakfast_enabled or dinner_enabled:
+                    if breakfast_enabled or lunch_enabled or dinner_enabled:
                         schedule_meal_reminders.delay(stay.id)
 
                 logger.info(f"Extended stay for guest {stay.guest.full_name} from {old_checkout_date} to {new_checkout_date}")
