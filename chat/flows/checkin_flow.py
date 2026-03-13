@@ -1,6 +1,7 @@
 # flows/checkin_flow.py
 
 import logging
+import threading
 from django.utils import timezone
 from django.db import transaction
 import re
@@ -15,6 +16,7 @@ from faker import Faker
 
 from chat.utils.ocr.tasks.simple_ocr_tasks import extract_id_document, extract_id_document_task, extract_id_document_sync, detect_and_extract_id_document
 from guest.name_utils import get_first_name_from_full_name
+from chat.utils.whatsapp_utils import send_whatsapp_text_message
 
 
 class CheckinStep:
@@ -542,6 +544,24 @@ def handle_id_back_upload_step(conversation, guest, message_text, flow_data):
         filename = os.path.basename(media_data['filename'])
         doc.document_file_back.save(filename, ContentFile(media_data['content']), save=True)
         doc.save()
+
+        # Send an immediate acknowledgement before OCR/extraction, which can take time.
+        if guest and guest.whatsapp_number:
+            def send_processing_message_async():
+                try:
+                    send_whatsapp_text_message(
+                        recipient_number=guest.whatsapp_number,
+                        message_text="Processing documents..."
+                    )
+                except Exception as e:
+                    logger.error(
+                        f"Failed to send processing message to {guest.whatsapp_number}: {e}",
+                        exc_info=True
+                    )
+
+            thread = threading.Thread(target=send_processing_message_async)
+            thread.daemon = True
+            thread.start()
 
         return process_id_verification(conversation, guest, flow_data)
 
