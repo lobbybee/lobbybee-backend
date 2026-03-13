@@ -1,6 +1,7 @@
 import logging
 from django.utils import timezone
 from django.db import transaction
+from guest.name_utils import get_first_name_from_full_name
 
 logger = logging.getLogger(__name__)
 
@@ -323,7 +324,7 @@ def handle_high_rating_flow(conversation, guest, flow_data, rating):
 def handle_low_rating_flow(conversation, guest, flow_data, rating):
     """Handle low rating flow for ratings < 3."""
 
-    guest_name = guest.full_name or 'Guest'
+    guest_name = get_first_name_from_full_name(guest.full_name)
     header_text = f"Dear {guest_name}"
     body_text = "We take your opinion and experience very seriously.\nKindly send a message or voice note so we can address your concerns and get back to you.\n\nAs a token of appreciation, we want to give you 5% discount on your next visit.\n\nThank you for your help."
 

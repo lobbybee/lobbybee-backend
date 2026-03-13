@@ -3,6 +3,7 @@ from django.db import transaction
 from user.models import User
 from hotel.models import Hotel, Room
 from lobbybee.utils.file_url import upload_to_guest_documents
+from .name_utils import get_first_name_from_full_name
 
 class Booking(models.Model):
     BOOKING_STATUS = [
@@ -58,6 +59,10 @@ class Guest(models.Model):
 
     def __str__(self):
         return f"{self.full_name} ({self.whatsapp_number})"
+
+    def get_first_name(self):
+        """Return first name for guest-facing copy."""
+        return get_first_name_from_full_name(self.full_name)
 
 class GuestIdentityDocument(models.Model):
     DOCUMENT_TYPES = [
@@ -126,9 +131,6 @@ class Stay(models.Model):
     internal_rating = models.IntegerField(null=True, blank=True, help_text="Internal rating from 1 to 5")
     internal_note = models.TextField(blank=True, help_text="Internal notes about the guest stay")
     
-    # 24 hours stay indicator
-    hours_24 = models.BooleanField(default=False, help_text="Indicates if this is a 24-hour stay")
-
     # Reminder settings
     breakfast_reminder = models.BooleanField(default=False, help_text="Enable breakfast reminder for this stay")
     dinner_reminder = models.BooleanField(default=False, help_text="Enable dinner reminder for this stay")

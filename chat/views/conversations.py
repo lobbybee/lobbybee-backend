@@ -42,6 +42,7 @@ from ..utils.webhook_deduplication import (
 from .webhooks import process_guest_webhook
 from ..utils.whatsapp_payload_utils import convert_flow_response_to_whatsapp_payload
 from datetime import datetime,timezone
+from guest.name_utils import get_first_name_from_full_name
 class ConversationListView(APIView):
     """
     Get conversations for the authenticated user's department
@@ -696,7 +697,10 @@ class GuestConversationTypeView(APIView):
         available_departments = guest_data.get('available_departments')
 
         recipient_number = message_data.get('from')
-        guest_name = guest_info.get('full_name', 'Guest') if guest_info else 'Guest'
+        guest_name = (
+            get_first_name_from_full_name(guest_info.get('full_name'))
+            if guest_info else 'Guest'
+        )
 
         logger.info(f"Conversation routing: guest_exists={guest_exists}, has_conversations={has_conversations}, guest_status={guest_status}")
 
@@ -1039,7 +1043,7 @@ class GuestConversationTypeView(APIView):
                 }
 
             # Create a new message from guest to reactivate conversation
-            guest_name = conversation.guest.full_name or 'Guest'
+            guest_name = get_first_name_from_full_name(conversation.guest.full_name)
             guest_message = Message.objects.create(
                 conversation=conversation,
                 sender_type='guest',
@@ -1076,7 +1080,7 @@ class GuestConversationTypeView(APIView):
                     'updated_at': guest_message.updated_at.isoformat(),
                     'guest_info': {
                         'id': conversation.guest.id,
-                        'name': conversation.guest.full_name,
+                        'name': get_first_name_from_full_name(conversation.guest.full_name),
                         'whatsapp_number': conversation.guest.whatsapp_number,
                         'room_number': active_stay.room.room_number if active_stay else None
                     }

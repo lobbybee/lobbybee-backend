@@ -14,6 +14,7 @@ import random
 from faker import Faker
 
 from chat.utils.ocr.tasks.simple_ocr_tasks import extract_id_document, extract_id_document_task, extract_id_document_sync, detect_and_extract_id_document
+from guest.name_utils import get_first_name_from_full_name
 
 
 class CheckinStep:
@@ -679,7 +680,7 @@ def complete_checkin_flow(conversation, guest):
         from notifications.utils import send_notification_to_hotel_staff
 
         notification_title = "New Check-in Request"
-        notification_message = f"{guest.full_name or 'Guest'} is trying to check-in"
+        notification_message = f"{get_first_name_from_full_name(guest.full_name)} is trying to check-in"
 
         send_notification_to_hotel_staff(
             hotel=conversation.hotel,
@@ -703,7 +704,7 @@ def complete_checkin_flow(conversation, guest):
         conversation.status = 'closed'
         conversation.save(update_fields=['conversation_type', 'status'])
 
-        guest_name = guest.full_name or 'Guest'
+        guest_name = get_first_name_from_full_name(guest.full_name)
         response_text = f"""Hello {guest_name}!
 
 Your information has been received and is pending verification.

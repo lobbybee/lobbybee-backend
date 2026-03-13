@@ -1162,7 +1162,6 @@ Auto-generated definitions for Hotel Admin/Staff routes.
   booking_details: string
   internal_rating: integer // Internal rating from 1 to 5
   internal_note: string // Internal notes about the guest stay
-  hours_24: boolean // Indicates if this is a 24-hour stay
   breakfast_reminder: boolean // Enable breakfast reminder for this stay
   dinner_reminder: boolean // Enable dinner reminder for this stay
   billing: string
@@ -1206,7 +1205,6 @@ Auto-generated definitions for Hotel Admin/Staff routes.
   booking_details: string
   internal_rating: integer // Internal rating from 1 to 5
   internal_note: string // Internal notes about the guest stay
-  hours_24: boolean // Indicates if this is a 24-hour stay
   breakfast_reminder: boolean // Enable breakfast reminder for this stay
   dinner_reminder: boolean // Enable dinner reminder for this stay
   billing: string
@@ -1228,7 +1226,6 @@ Auto-generated definitions for Hotel Admin/Staff routes.
   check_in_date*: datetime (ISO 8601)
   check_out_date*: datetime (ISO 8601)
   guest_names: string
-  hours_24: boolean // Indicates if this is a 24-hour stay
 }
 ```
 
@@ -1247,7 +1244,6 @@ Auto-generated definitions for Hotel Admin/Staff routes.
   check_in_date*: datetime (ISO 8601)
   check_out_date*: datetime (ISO 8601)
   guest_names: string
-  hours_24: boolean // Indicates if this is a 24-hour stay
 }
 ```
 
@@ -1288,7 +1284,6 @@ Auto-generated definitions for Hotel Admin/Staff routes.
   booking_details: string
   internal_rating: integer // Internal rating from 1 to 5
   internal_note: string // Internal notes about the guest stay
-  hours_24: boolean // Indicates if this is a 24-hour stay
   breakfast_reminder: boolean // Enable breakfast reminder for this stay
   dinner_reminder: boolean // Enable dinner reminder for this stay
   billing: string
@@ -1332,7 +1327,6 @@ Auto-generated definitions for Hotel Admin/Staff routes.
   booking_details: string
   internal_rating: integer // Internal rating from 1 to 5
   internal_note: string // Internal notes about the guest stay
-  hours_24: boolean // Indicates if this is a 24-hour stay
   breakfast_reminder: boolean // Enable breakfast reminder for this stay
   dinner_reminder: boolean // Enable dinner reminder for this stay
   billing: string
@@ -1864,4 +1858,3 @@ Auto-generated definitions for Hotel Admin/Staff routes.
 ```
 
 ---
-

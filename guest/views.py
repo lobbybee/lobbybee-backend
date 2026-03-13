@@ -188,7 +188,6 @@ class StayManagementViewSet(viewsets.GenericViewSet):
                 check_in_date = serializer.validated_data['check_in_date']
                 check_out_date = serializer.validated_data['check_out_date']
                 guest_names = serializer.validated_data.get('guest_names', [])
-                hours_24 = serializer.validated_data.get('hours_24', False)
 
                 # Validate primary guest exists
                 primary_guest = get_object_or_404(Guest, id=primary_guest_id)
@@ -230,7 +229,6 @@ class StayManagementViewSet(viewsets.GenericViewSet):
                         status='pending',
                         identity_verified=False,
                         documents_uploaded=True,
-                        hours_24=hours_24
                     )
                     stays.append(stay)
 

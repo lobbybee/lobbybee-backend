@@ -27,7 +27,6 @@ def test_extension_message():
     print(f"Guest: {stay.guest.full_name}")
     print(f"WhatsApp: {stay.guest.whatsapp_number}")
     print(f"Hotel: {stay.hotel.name}")
-    print(f"24-hour stay: {stay.hours_24}")
     
     # Send extension message immediately
     result = send_extend_checkin_reminder.delay(stay.id)
@@ -52,7 +51,6 @@ def test_scheduling():
         return
     
     print(f"Scheduling extension reminder for stay {stay.id}")
-    print(f"Hours_24: {stay.hours_24}")
     
     # Schedule extension reminder
     result = schedule_checkin_reminder.delay(stay.id)

@@ -1,6 +1,7 @@
 import logging
 from django.utils import timezone
 from zoneinfo import ZoneInfo
+from guest.name_utils import get_first_name_from_full_name
 
 logger = logging.getLogger(__name__)
 
@@ -64,7 +65,7 @@ def process_checkout_extension_response(guest, message_text):
             hotel=stay.hotel,
             title="Stay Extension Request",
             message=(
-                f"{guest.full_name or 'Guest'} requested a stay extension "
+                f"{get_first_name_from_full_name(guest.full_name)} requested a stay extension "
                 f"(Room: {room_number}, Current checkout: {checkout_time_text})."
             ),
             link=f"/stays/{stay.id}",

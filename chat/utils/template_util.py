@@ -46,9 +46,9 @@ TEMPLATE_VARIABLES = {
     # Guest related variables
     'guest_name': {
         'model': 'Guest',
-        'field': 'full_name',
-        'description': 'Guest full name',
-        'example': 'John Doe',
+        'field': 'get_first_name',
+        'description': 'Guest first name',
+        'example': 'John',
     },
     'guest_email': {
         'model': 'Guest',
@@ -226,12 +226,6 @@ TEMPLATE_VARIABLES = {
     },
     
     # Stay variables
-    'hours_24': {
-        'model': 'Stay',
-        'field': 'hours_24',
-        'description': '24-hour stay indicator',
-        'example': 'True',
-    },
     'no_of_days': {
         'model': 'Stay',
         'field': 'no_of_days',
@@ -567,7 +561,6 @@ def _resolve_variables(
                 active_stay = Stay.objects.filter(guest=guest, status='active').first()
                 room = None
                 if active_stay:
-                    context['hours_24'] = active_stay.hours_24
                     # Calculate number of stay days from calendar dates
                     no_of_days = (
                         active_stay.check_out_date.date() - active_stay.check_in_date.date()

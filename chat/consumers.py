@@ -8,6 +8,7 @@ from .models import Conversation, Message, ConversationParticipant
 from .utils.phone_utils import normalize_phone_number, get_guest_group_name
 from .utils.whatsapp_utils import send_whatsapp_message_with_media, send_whatsapp_media_with_link, send_whatsapp_button_message
 import logging
+from guest.name_utils import get_first_name_from_full_name
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
@@ -768,7 +769,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
             'updated_at': message.updated_at.isoformat(),
             'guest_info': {
                 'id': message.conversation.guest.id,
-                'name': message.conversation.guest.full_name,
+                'name': get_first_name_from_full_name(message.conversation.guest.full_name),
                 'whatsapp_number': message.conversation.guest.whatsapp_number,
                 'room_number': message.conversation.guest.stays.filter(
                     status='active'
@@ -944,7 +945,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
         """Notify department members about new conversation"""
         conversation_data = {
             'id': conversation.id,
-            'guest_name': conversation.guest.full_name,
+            'guest_name': get_first_name_from_full_name(conversation.guest.full_name),
             'department': conversation.department.lower(),
             'conversation_type': conversation.conversation_type,
             'status': conversation.status,
@@ -969,7 +970,7 @@ async def notify_new_conversation_to_department(conversation):
     
     conversation_data = {
         'id': conversation.id,
-        'guest_name': conversation.guest.full_name,
+        'guest_name': get_first_name_from_full_name(conversation.guest.full_name),
         'department': normalize_department_name(conversation.department),
         'conversation_type': conversation.conversation_type,
         'status': conversation.status,
@@ -1004,7 +1005,7 @@ async def notify_conversation_update_to_department(conversation, update_type='up
     
     conversation_data = {
         'id': conversation.id,
-        'guest_name': conversation.guest.full_name,
+        'guest_name': get_first_name_from_full_name(conversation.guest.full_name),
         'department': normalize_department_name(conversation.department),
         'conversation_type': conversation.conversation_type,
         'status': conversation.status,

@@ -17,6 +17,7 @@ from ..utils.webhook_deduplication import (
 import uuid
 import time
 from hotel.models import Hotel
+from guest.name_utils import get_first_name_from_full_name
 
 
 def process_guest_webhook(request_data, request_headers=None, media_id=None):
@@ -196,7 +197,7 @@ def process_guest_webhook(request_data, request_headers=None, media_id=None):
                         logger.info(f"process_guest_webhook: User is returning after {timezone.now() - conversation.last_message_at}")
                         # Create a service message to notify staff that user is back online
                         try:
-                            guest_display_name = guest.full_name or 'Guest'
+                            guest_display_name = get_first_name_from_full_name(guest.full_name)
                             return_message = Message.objects.create(
                                 conversation=conversation,
                                 sender_type='staff',
@@ -225,7 +226,7 @@ def process_guest_webhook(request_data, request_headers=None, media_id=None):
                                     'updated_at': return_message.updated_at.isoformat(),
                                     'guest_info': {
                                         'id': guest.id,
-                                        'name': guest.full_name,
+                                        'name': get_first_name_from_full_name(guest.full_name),
                                         'whatsapp_number': guest.whatsapp_number,
                                         'room_number': active_stay.room.room_number if active_stay else None
                                     }
@@ -268,7 +269,7 @@ def process_guest_webhook(request_data, request_headers=None, media_id=None):
 
                         conversation_data = {
                             'id': conversation.id,
-                            'guest_name': conversation.guest.full_name,
+                            'guest_name': get_first_name_from_full_name(conversation.guest.full_name),
                             'department': normalize_department_name(conversation.department),
                             'conversation_type': conversation.conversation_type,
                             'status': conversation.status,
@@ -326,7 +327,7 @@ def process_guest_webhook(request_data, request_headers=None, media_id=None):
                 'id': message.id,
                 'conversation_id': conversation.id,
                 'sender_type': 'guest',
-                'sender_name': guest.full_name or 'Guest',
+                'sender_name': get_first_name_from_full_name(guest.full_name),
                 'sender_id': None,
                 'message_type': message.message_type,
                 'content': message.content,
@@ -337,7 +338,7 @@ def process_guest_webhook(request_data, request_headers=None, media_id=None):
                 'updated_at': message.updated_at.isoformat(),
                 'guest_info': {
                     'id': guest.id,
-                    'name': guest.full_name,
+                    'name': get_first_name_from_full_name(guest.full_name),
                     'whatsapp_number': guest.whatsapp_number,
                     'room_number': active_stay.room.room_number if active_stay else None
                 }

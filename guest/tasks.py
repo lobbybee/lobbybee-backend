@@ -4,6 +4,7 @@ import logging
 from datetime import datetime, timedelta, time
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from .models import Stay
+from .name_utils import get_first_name_from_full_name
 from chat.utils.whatsapp_utils import send_whatsapp_text_message, send_whatsapp_button_message
 
 logger = logging.getLogger(__name__)
@@ -52,7 +53,7 @@ def send_extend_checkin_reminder(self, stay_id, is_test=False):
 
         hotel_tz = _get_hotel_tz(stay.hotel)
         checkout_time_text = stay.check_out_date.astimezone(hotel_tz).strftime('%d %b %Y, %H:%M') if stay.check_out_date else ''
-        guest_name = stay.guest.full_name or 'Guest'
+        guest_name = get_first_name_from_full_name(stay.guest.full_name)
         room_number = stay.room.room_number if stay.room else 'N/A'
         message = (
             f"Dear {guest_name},\n\n"
@@ -110,7 +111,7 @@ def schedule_checkin_reminder(stay_id, is_test=False):
         stay_id: The ID of the newly checked-in stay
     """
     try:
-        # Get the stay to check hours_24 flag
+        # Get the stay
         stay = Stay.objects.get(id=stay_id)
 
         if not stay.check_out_date:
@@ -143,7 +144,6 @@ def schedule_checkin_reminder(stay_id, is_test=False):
         return {
             'status': 'success',
             'stay_id': stay_id,
-            'hours_24': stay.hours_24,
             'is_test': bool(is_test),
             'countdown_seconds': countdown_seconds,
             'scheduled_for': scheduled_for.isoformat() if hasattr(scheduled_for, 'isoformat') else str(scheduled_for)

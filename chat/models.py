@@ -4,6 +4,7 @@ from user.models import User
 from guest.models import Guest
 from hotel.models import Hotel
 from lobbybee.utils.file_url import upload_to_chat_media, upload_to_template_media, upload_to_custom_template_media
+from guest.name_utils import get_first_name_from_full_name
 
 class Conversation(models.Model):
     """
@@ -180,7 +181,7 @@ class Message(models.Model):
         """Get display name for sender"""
         if self.sender_type == 'guest':
             if self.conversation.guest:
-                return self.conversation.guest.full_name or 'Guest'
+                return get_first_name_from_full_name(self.conversation.guest.full_name)
             else:
                 return 'Guest'
         elif self.sender:

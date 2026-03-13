@@ -5,6 +5,7 @@ import logging
 from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
 from chat.consumers import normalize_department_name
+from guest.name_utils import get_first_name_from_full_name
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +31,7 @@ async def notify_new_checkin_to_reception(conversation, booking, stay, guest):
             'booking_id': str(booking.id),
             'stay_id': str(stay.id),
             'guest_id': str(guest.id),
-            'guest_name': guest.full_name or 'Guest',
+            'guest_name': get_first_name_from_full_name(guest.full_name),
             'hotel_id': str(conversation.hotel.id),
             'hotel_name': conversation.hotel.name,
             'check_in_date': booking.check_in_date.strftime('%Y-%m-%d'),
@@ -38,7 +39,7 @@ async def notify_new_checkin_to_reception(conversation, booking, stay, guest):
             'guest_whatsapp': guest.whatsapp_number,
             'status': 'pending_verification',
             'created_at': conversation.created_at.isoformat(),
-            'message': f"New check-in request from {guest.full_name or 'Guest'}",
+            'message': f"New check-in request from {get_first_name_from_full_name(guest.full_name)}",
             'link': f"/checkin/{conversation.id}",
             'link_label': "View Check-in"
         }
