@@ -6,6 +6,7 @@ from lobbybee.utils.responses import success_response, error_response, created_r
 from django.db import transaction
 from django.utils import timezone
 from django.shortcuts import get_object_or_404
+from django.contrib.auth import get_user_model
 import threading
 import math
 from decimal import Decimal
@@ -22,7 +23,10 @@ from .permissions import CanManageGuests, CanViewAndManageStays
 from flag_system.models import GuestFlag
 from flag_system.services import get_flag_summary_for_guest, create_guest_flag
 from chat.utils.template_util import process_template
-from chat.utils.whatsapp_utils import send_whatsapp_image_with_link, send_whatsapp_button_message, send_whatsapp_list_message, send_whatsapp_text_message
+from chat.utils.whatsapp_utils import send_whatsapp_image_with_link, send_whatsapp_button_message, send_whatsapp_list_message, send_whatsapp_text_message, send_whatsapp_payload
+from chat.utils.whatsapp_flow_utils import generate_department_menu_payload
+from chat.models import Conversation
+from guest.name_utils import get_first_name_from_full_name
 import logging
 
 logger = logging.getLogger(__name__)
@@ -413,6 +417,15 @@ class StayManagementViewSet(viewsets.GenericViewSet):
                                     caption=welcome_message
                                 )
 
+                                available_departments = self._get_available_departments_for_hotel(stay.hotel)
+                                guest_name = get_first_name_from_full_name(stay.guest.full_name)
+                                menu_payload = generate_department_menu_payload(
+                                    stay.guest.whatsapp_number,
+                                    guest_name,
+                                    available_departments
+                                )
+                                send_whatsapp_payload(menu_payload)
+
                                 logger.info(f"Welcome message sent to guest {stay.guest.full_name} ({stay.guest.whatsapp_number})")
                             else:
                                 logger.error(f"Failed to process welcome template for guest {stay.guest.full_name}: {template_result.get('error', 'Unknown error')}")
@@ -481,6 +494,56 @@ class StayManagementViewSet(viewsets.GenericViewSet):
                 f'Failed to verify check-in: {str(e)}',
                 status=status.HTTP_400_BAD_REQUEST
             )
+
+    def _get_available_departments_for_hotel(self, hotel):
+        """
+        Resolve departments dynamically from active hotel staff assignments.
+        """
+        default_departments = [choice[0] for choice in Conversation.DEPARTMENT_CHOICES]
+        if not hotel:
+            return default_departments
+
+        User = get_user_model()
+        staff_departments = User.objects.filter(
+            hotel=hotel,
+            is_active_hotel_user=True
+        ).exclude(
+            department__isnull=True
+        ).values_list("department", flat=True)
+
+        resolved_departments = []
+        seen = set()
+
+        for department_value in staff_departments:
+            if isinstance(department_value, str):
+                values_to_check = [department_value]
+            elif isinstance(department_value, list):
+                values_to_check = department_value
+            else:
+                continue
+
+            for raw_department in values_to_check:
+                if not isinstance(raw_department, str):
+                    continue
+
+                raw_department = raw_department.strip()
+                if not raw_department:
+                    continue
+
+                canonical_department = next(
+                    (
+                        dept
+                        for dept in default_departments
+                        if dept.lower() == raw_department.lower()
+                    ),
+                    None,
+                )
+
+                if canonical_department and canonical_department not in seen:
+                    seen.add(canonical_department)
+                    resolved_departments.append(canonical_department)
+
+        return resolved_departments or default_departments
 
     def _get_wifi_credentials_for_stay(self, stay):
         """

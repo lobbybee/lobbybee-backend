@@ -12,6 +12,29 @@ from ..utils.whatsapp_payload_utils import create_text_message_payload
 from ..utils.checkin_adapter import adapt_checkin_response_to_whatsapp
 
 
+def _get_past_stays_queryset(guest, limit=None):
+    """Return guest's past stays, newest first."""
+    if not guest:
+        return None
+
+    from guest.models import Stay
+
+    stays = (
+        Stay.objects
+        .filter(
+            guest=guest,
+            check_out_date__lt=timezone.now()
+        )
+        .exclude(status='cancelled')
+        .select_related('hotel', 'room')
+        .order_by('-check_out_date')
+    )
+
+    if limit:
+        return stays[:limit]
+    return stays
+
+
 def handle_incoming_whatsapp_message(whatsapp_number, flow_data):
     """
     Main webhook handler for incoming WhatsApp flow messages.
@@ -130,12 +153,9 @@ def handle_incoming_whatsapp_message(whatsapp_number, flow_data):
     # Always add follow-up buttons for start/welcome flow
     button_options = [
         {"id": "start_demo", "title": "View Demo"},
-        {"id": "start_contact", "title": "Contact"}
+        {"id": "start_contact", "title": "Contact"},
+        {"id": "start_history", "title": "Stay History"},
     ]
-
-    # Add "Stay History" button if guest exists
-    if guest:
-        button_options.append({"id": "start_history", "title": "Stay History"})
 
     button_message = {
         "type": "button",
@@ -164,36 +184,29 @@ def handle_start_menu_command(guest, button_id):
         }
     
     elif button_id == 'start_history':
-        from guest.models import Stay
-
         if not guest:
             return {
                 "type": "text",
-                "text": "No stay history found for this number."
+                "text": "You don't have any stay record yet."
             }
 
-        stays = (
-            Stay.objects
-            .filter(guest=guest, check_out_date__lt=timezone.now())
-            .select_related('hotel', 'room')
-            .order_by('-check_out_date')[:5]
-        )
+        stays = _get_past_stays_queryset(guest, limit=5)
 
         if not stays:
             return {
                 "type": "text",
-                "text": "🏨 Stay History\n\nNo past stays found yet."
+                "text": "You don't have any stay record yet."
             }
 
         lines = ["🏨 Stay History (Last 5)\n"]
         for idx, stay in enumerate(stays, start=1):
-            room_label = stay.room.number if stay.room else "N/A"
+            nights = max((stay.check_out_date.date() - stay.check_in_date.date()).days, 1)
+            hotel_contact = stay.hotel.phone or "N/A"
             lines.append(
                 f"{idx}. {stay.hotel.name}\n"
-                f"   Check-in: {stay.check_in_date.strftime('%d %b %Y')}\n"
-                f"   Check-out: {stay.check_out_date.strftime('%d %b %Y')}\n"
-                f"   Room: {room_label}\n"
-                f"   Status: {stay.get_status_display()}"
+                f"   Contact: {hotel_contact}\n"
+                f"   Date: {stay.check_in_date.strftime('%d %b %Y')} - {stay.check_out_date.strftime('%d %b %Y')}\n"
+                f"   Nights: {nights}"
             )
 
         return {
@@ -212,11 +225,34 @@ def handle_start_menu_command(guest, button_id):
 def get_existing_guest(whatsapp_number):
     """Get existing guest or return None."""
     from guest.models import Guest
+    from ..utils.phone_utils import normalize_phone_number
 
-    try:
-        return Guest.objects.get(whatsapp_number=whatsapp_number)
-    except Guest.DoesNotExist:
+    if not whatsapp_number:
         return None
+
+    lookup_numbers = []
+
+    def add_candidate(value):
+        if value and value not in lookup_numbers:
+            lookup_numbers.append(value)
+
+    raw_number = str(whatsapp_number).strip()
+    digits_only = re.sub(r"[^\d]", "", raw_number)
+    normalized_number = normalize_phone_number(raw_number)
+
+    # Support common storage/input variants:
+    # +countrycode..., countrycode..., and plain local number.
+    add_candidate(raw_number)
+    add_candidate(digits_only)
+    add_candidate(normalized_number)
+    add_candidate(f"+{digits_only}" if digits_only else None)
+    add_candidate(f"+{normalized_number}" if normalized_number else None)
+
+    # Fallback for records stored as 10-digit local number.
+    if digits_only and len(digits_only) > 10:
+        add_candidate(digits_only[-10:])
+
+    return Guest.objects.filter(whatsapp_number__in=lookup_numbers).first()
 
 
 def detect_command(message_text):

@@ -520,6 +520,39 @@ def send_whatsapp_text_message(recipient_number: str, message_text: str):
         raise
 
 
+def send_whatsapp_payload(payload: dict):
+    """
+    Sends a pre-built WhatsApp payload as-is.
+
+    Args:
+        payload: Complete WhatsApp message payload compatible with Graph API.
+
+    Returns:
+        The response from WhatsApp API.
+    """
+    phone_number_id = settings.PHONE_NUMBER_ID
+    access_token = settings.WHATSAPP_ACCESS_KEY
+    url = f"https://graph.facebook.com/v22.0/{phone_number_id}/messages"
+
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/json",
+    }
+
+    try:
+        response = requests.post(url, json=payload, headers=headers)
+        response.raise_for_status()
+        logger.info("WhatsApp payload sent to %s", payload.get("to", "unknown recipient"))
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        logger.error(
+            "Error sending WhatsApp payload to %s: %s",
+            payload.get("to", "unknown recipient"),
+            str(e),
+        )
+        raise
+
+
 def send_whatsapp_button_message(recipient_number: str, message_text: str, buttons: list):
     """
     Sends a WhatsApp interactive message with reply buttons.
