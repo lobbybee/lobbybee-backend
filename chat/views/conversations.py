@@ -1313,7 +1313,7 @@ class GuestConversationTypeView(APIView):
                     media_id = webhook_body.get('media_id') if webhook_body else None
                     try:
                         flow_target_number = (
-                            guest_data.get('guest_info', {}).get('whatsapp_number')
+                            (guest_data.get('guest_info') or {}).get('whatsapp_number')
                             or guest_whatsapp_number
                         )
                         logger.info(f"GuestConversationTypeView: About to call handle_incoming_whatsapp_message")
