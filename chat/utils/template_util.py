@@ -5,10 +5,18 @@ Handles template processing, variable resolution, and fallback templates.
 
 from typing import Dict, List, Optional, Any
 from django.db.models import Model
+from django.utils import timezone
 from datetime import datetime, time, timedelta
 import logging
 
 logger = logging.getLogger(__name__)
+
+STAY_TIME_TEMPLATE_KEYS = {
+    'checkin_time',
+    'checkout_time',
+    'check_in_time',
+    'check_out_time',
+}
 
 
 def _format_human_datetime_label(value):
@@ -21,6 +29,26 @@ def _format_human_datetime_label(value):
         return f"{value.day} {value.strftime('%A')} {hour_label}"
     if isinstance(value, time):
         return value.strftime('%I %p').lstrip('0')
+    return value
+
+
+def _format_stay_datetime_label(value):
+    """
+    Format stay datetime variables for templates.
+    Example: '12 Wed March 12 PM'
+    """
+    if not value:
+        return ''
+
+    if isinstance(value, datetime):
+        if timezone.is_aware(value):
+            value = timezone.localtime(value)
+        hour_label = value.strftime('%I').lstrip('0') or '0'
+        return f"{value.day} {value.strftime('%a')} {value.strftime('%B')} {hour_label} {value.strftime('%p')}"
+
+    if isinstance(value, time):
+        return value.strftime('%I %p').lstrip('0')
+
     return value
 
 
@@ -627,7 +655,18 @@ def _resolve_variables(
         'current_time': _format_human_time_with_minutes(now),
     })
     
-    return context
+    return _normalize_template_context(context)
+
+
+def _normalize_template_context(context: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Apply centralized value normalization for known template variables.
+    """
+    normalized = context.copy()
+    for key in STAY_TIME_TEMPLATE_KEYS:
+        if key in normalized:
+            normalized[key] = _format_stay_datetime_label(normalized[key])
+    return normalized
 
 
 def _extract_model_fields(model_instance: Model, model_name: str) -> Dict[str, Any]:
