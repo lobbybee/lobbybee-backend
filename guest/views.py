@@ -587,15 +587,29 @@ class StayManagementViewSet(viewsets.GenericViewSet):
             'wifi_name': wifi_credential.network_name if wifi_credential else '',
             'wifi_password': wifi_credential.password if wifi_credential else '',
             # Time variables requested for templates.
-            'checkin_time': checkin_dt.strftime('%H:%M') if checkin_dt else '',
-            'checkout_time': checkout_dt.strftime('%H:%M') if checkout_dt else '',
+            'checkin_time': self._format_stay_datetime_label(checkin_dt),
+            'checkout_time': self._format_stay_datetime_label(checkout_dt),
             # Compatibility aliases that some templates may already use.
-            'check_in_time': checkin_dt.strftime('%H:%M') if checkin_dt else '',
-            'check_out_time': checkout_dt.strftime('%H:%M') if checkout_dt else '',
+            'check_in_time': self._format_stay_datetime_label(checkin_dt),
+            'check_out_time': self._format_stay_datetime_label(checkout_dt),
             # Explicit room fallbacks for template edge cases.
             'room_number': room_number,
             'room_floor': room_floor,
         }
+
+    def _format_stay_datetime_label(self, value):
+        """
+        Format stay datetimes for guest-facing templates.
+        Example: "12 Wed March 12 PM"
+        """
+        if not value:
+            return ''
+
+        if timezone.is_aware(value):
+            value = timezone.localtime(value)
+
+        hour_label = value.strftime('%I').lstrip('0') or '0'
+        return f"{value.day} {value.strftime('%a')} {value.strftime('%B')} {hour_label} {value.strftime('%p')}"
 
     @action(detail=False, methods=['get'], url_path='pending-stays')
     def pending_stays(self, request):
@@ -918,13 +932,13 @@ Please take a moment to rate your overall experience from 1 to 5 stars. We truly
             stay_duration = ', '.join(duration_parts) if duration_parts else '0 minutes'
 
         return {
-            'checkin_time': checkin_dt.strftime('%H:%M') if checkin_dt else '',
-            'checkout_time': checkout_dt.strftime('%H:%M') if checkout_dt else '',
+            'checkin_time': self._format_stay_datetime_label(checkin_dt),
+            'checkout_time': self._format_stay_datetime_label(checkout_dt),
             'room_number': room_number,
             'stay_duration': stay_duration,
             # Compatibility aliases if template uses underscore style keys.
-            'check_in_time': checkin_dt.strftime('%H:%M') if checkin_dt else '',
-            'check_out_time': checkout_dt.strftime('%H:%M') if checkout_dt else '',
+            'check_in_time': self._format_stay_datetime_label(checkin_dt),
+            'check_out_time': self._format_stay_datetime_label(checkout_dt),
         }
 
     @action(detail=True, methods=['post'], url_path='extend-stay')
