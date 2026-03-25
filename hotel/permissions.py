@@ -43,13 +43,13 @@ class CanCheckInCheckOut(BasePermission):
     def has_permission(self, request, view):
         return (
             request.user.is_authenticated
-            and request.user.user_type in ["hotel_admin", "receptionist"]
+            and request.user.user_type in ["hotel_admin", "manager", "receptionist"]
         )
 
 class IsHotelStaffReadOnlyOrAdmin(BasePermission):
     """
     Allows read-only access to hotel staff (manager, receptionist), 
-    and full access to hotel admins.
+    and full access to hotel admins and managers.
     """
     def has_permission(self, request, view):
         is_hotel_staff = (
@@ -63,7 +63,7 @@ class IsHotelStaffReadOnlyOrAdmin(BasePermission):
         if request.method in permissions.SAFE_METHODS:
             return True
 
-        return request.user.user_type == 'hotel_admin'
+        return request.user.user_type in ['hotel_admin', 'manager']
 
 class RoomPermissions(BasePermission):
     """
@@ -71,7 +71,7 @@ class RoomPermissions(BasePermission):
     - All staff can list/retrieve rooms.
     - All staff can partially update (for status changes).
     - Receptionists and managers can update room status.
-    - Only admins can create, fully update details, or delete.
+    - Only admins and managers can create, fully update details, or delete.
     """
     def has_permission(self, request, view):
         is_hotel_staff = (
@@ -90,9 +90,9 @@ class RoomPermissions(BasePermission):
         if view.action in ['partial_update', 'update']:
             return True
 
-        # Only admin can do other actions
+        # Only admin and manager can do other actions
         if view.action in ['create', 'destroy', 'bulk_create']:
-            return request.user.user_type == 'hotel_admin'
+            return request.user.user_type in ['hotel_admin', 'manager']
             
         return False
 
