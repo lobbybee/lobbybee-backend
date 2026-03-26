@@ -53,3 +53,28 @@ class IsHotelStaffOrAdmin(BasePermission):
         return (request.user and 
                 (request.user.is_superuser or 
                  request.user.user_type in ['hotel_admin', 'manager', 'receptionist']))
+
+
+class CanManageHotelUsers(BasePermission):
+    """
+    Allows hotel admins and managers to manage hotel users.
+    Managers cannot manage hotel_admin/manager accounts.
+    """
+    def has_permission(self, request, view):
+        return (
+            request.user and
+            request.user.is_authenticated and
+            request.user.user_type in ['hotel_admin', 'manager'] and
+            request.user.hotel is not None
+        )
+
+    def has_object_permission(self, request, view, obj):
+        # Restrict to same hotel only
+        if getattr(obj, 'hotel', None) != request.user.hotel:
+            return False
+
+        # Managers cannot manage manager/admin users
+        if request.user.user_type == 'manager' and obj.user_type in ['hotel_admin', 'manager']:
+            return False
+
+        return True

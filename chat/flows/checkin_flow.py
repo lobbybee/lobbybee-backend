@@ -764,13 +764,16 @@ def create_pending_stay_from_flow(conversation, guest):
 
     try:
         with transaction.atomic():
+            check_in_at = timezone.now()
+            check_out_at = check_in_at + timedelta(days=1)
+
             # Create booking record to group the stay
             # Use current date as check-in, tomorrow as check-out (can be modified by staff)
             booking = Booking.objects.create(
                 hotel=conversation.hotel,
                 primary_guest=guest,
-                check_in_date=timezone.now().date(),
-                check_out_date=(timezone.now() + timedelta(days=1)).date(),
+                check_in_date=check_in_at,
+                check_out_date=check_out_at,
                 status='pending',  # Will be confirmed by staff after room assignment
                 guest_names=[guest.full_name] if guest.full_name else [],
                 total_amount=0,  # Will be calculated based on assigned room
@@ -784,8 +787,8 @@ def create_pending_stay_from_flow(conversation, guest):
                 guest=guest,
                 room=None,  # No room assigned yet - will be assigned by receptionist
                 register_number=None,  # Will be assigned during verification
-                check_in_date=timezone.now().date(),
-                check_out_date=(timezone.now() + timedelta(days=1)).date(),
+                check_in_date=check_in_at,
+                check_out_date=check_out_at,
                 number_of_guests=1,  # Default, can be updated by staff
                 guest_names=[guest.full_name] if guest.full_name else [],
                 status='pending',  # Pending room assignment and verification

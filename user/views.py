@@ -11,8 +11,8 @@ from django.core.exceptions import ValidationError
 from rest_framework.exceptions import PermissionDenied
 from .models import User, OTP
 from .serializers import UserSerializer
-from hotel.permissions import IsHotelAdmin, CanCreateReceptionist
-from .permissions import IsSuperUser, IsPlatformAdmin, IsPlatformStaff
+from hotel.permissions import IsHotelAdmin
+from .permissions import IsSuperUser, IsPlatformAdmin, IsPlatformStaff, CanManageHotelUsers
 from hotel.models import Hotel
 from hotel.serializers import UserHotelSerializer
 import re
@@ -256,13 +256,29 @@ class PlatformCreateHotelView(generics.CreateAPIView):
         })
 
 class HotelStaffRegistrationView(generics.CreateAPIView):
-    permission_classes = [IsAuthenticated, IsHotelAdmin]
+    permission_classes = [IsAuthenticated, CanManageHotelUsers]
     serializer_class = UserSerializer
 
     def create(self, request, *args, **kwargs):
         data = request.data
         
         try:
+            if request.user.user_type == 'manager':
+                blocked_types = {'hotel_admin', 'manager'}
+                if isinstance(data, list):
+                    blocked_requested = [
+                        item.get('user_type') for item in data
+                        if item.get('user_type') in blocked_types
+                    ]
+                    if blocked_requested:
+                        return forbidden_response(
+                            "Managers cannot create hotel admins or managers."
+                        )
+                elif data.get('user_type') in blocked_types:
+                    return forbidden_response(
+                        "Managers cannot create hotel admins or managers."
+                    )
+
             # Check if incoming data is a list for bulk creation
             if isinstance(data, list):
                 serializer = self.get_serializer(data=data, many=True)
@@ -465,9 +481,12 @@ class UserViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
-        if user.user_type == 'hotel_admin':
-            return User.objects.filter(hotel=user.hotel)
-        return User.objects.none() # Superadmins can see all users, but for now, only hotel admins can see their hotel's users.
+        if user.user_type in ['hotel_admin', 'manager'] and user.hotel:
+            queryset = User.objects.filter(hotel=user.hotel)
+            if user.user_type == 'manager':
+                queryset = queryset.exclude(user_type__in=['hotel_admin', 'manager'])
+            return queryset
+        return User.objects.none()
 
     def perform_create(self, serializer):
         serializer.save(
@@ -478,6 +497,22 @@ class UserViewSet(viewsets.ModelViewSet):
 
     def create(self, request, *args, **kwargs):
         data = request.data
+
+        if request.user.user_type == 'manager':
+            blocked_types = {'hotel_admin', 'manager'}
+            if isinstance(data, list):
+                blocked_requested = [
+                    item.get('user_type') for item in data
+                    if item.get('user_type') in blocked_types
+                ]
+                if blocked_requested:
+                    return forbidden_response(
+                        "Managers cannot create hotel admins or managers."
+                    )
+            elif data.get('user_type') in blocked_types:
+                return forbidden_response(
+                    "Managers cannot create hotel admins or managers."
+                )
         
         # Check if incoming data is a list for bulk creation
         if isinstance(data, list):
@@ -514,24 +549,11 @@ class UserViewSet(viewsets.ModelViewSet):
 
     def get_permissions(self):
         if self.action == 'create':
-            # Check if the request is to create a 'receptionist'
-            # Handle both single object and list (bulk creation)
-            data = self.request.data
-            if isinstance(data, list):
-                # Check if any item in the bulk creation is a receptionist
-                is_receptionist_creation = any(item.get('user_type') == 'receptionist' for item in data)
-            else:
-                is_receptionist_creation = data.get('user_type') == 'receptionist'
-            
-            if is_receptionist_creation:
-                permission_classes = [IsAuthenticated, CanCreateReceptionist]
-            else:
-                # For creating other user types, only hotel_admin is allowed
-                permission_classes = [IsAuthenticated, IsHotelAdmin]
+            permission_classes = [IsAuthenticated, CanManageHotelUsers]
         elif self.action in ['list', 'retrieve']:
-            permission_classes = [IsAuthenticated, IsHotelAdmin]
+            permission_classes = [IsAuthenticated, CanManageHotelUsers]
         elif self.action in ['update', 'partial_update', 'destroy']:
-            permission_classes = [IsAuthenticated, IsHotelAdmin]
+            permission_classes = [IsAuthenticated, CanManageHotelUsers]
         else:
             permission_classes = [IsAuthenticated]
         return [permission() for permission in permission_classes]
