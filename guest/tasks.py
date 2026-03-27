@@ -209,6 +209,16 @@ def _build_meal_message(stay, reminder_type):
     )
 
 
+def _format_checkout_time_for_guest(stay, hotel_tz):
+    """
+    Format checkout time in hotel-local timezone for guest-facing reminder copy.
+    """
+    if not stay.check_out_date:
+        return ""
+    checkout_local = stay.check_out_date.astimezone(hotel_tz)
+    return checkout_local.strftime('%d %b %Y, %I:%M %p')
+
+
 def _is_meal_enabled(stay, reminder_type):
     if reminder_type == 'breakfast':
         return stay.breakfast_reminder and stay.hotel.breakfast_reminder
@@ -314,12 +324,12 @@ def send_extend_checkin_reminder(self, stay_id, is_test=False, reminder_date=Non
                 return {'status': 'error', 'reason': 'no_whatsapp_number'}
 
             hotel_tz = _get_hotel_tz(stay.hotel)
-            checkout_time_text = stay.check_out_date.astimezone(hotel_tz).strftime('%d %b %Y, %H:%M')
+            checkout_time_text = _format_checkout_time_for_guest(stay, hotel_tz)
             guest_name = get_first_name_from_full_name(stay.guest.full_name)
             room_number = stay.room.room_number if stay.room else 'N/A'
             message = (
                 f"Dear {guest_name},\n\n"
-                f"Your check-out time for Room No {room_number} is today at {checkout_time_text}.\n"
+                f"Your check-out time for Room No {room_number} is {checkout_time_text}.\n"
                 "Please settle the bills and return your room keys on time to avoid any additional charges.\n\n"
                 "If you like to continue your stay, Please contact Reception immediately to check availability.\n\n"
                 "Have a great day!!"
