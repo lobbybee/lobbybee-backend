@@ -1,6 +1,7 @@
 import logging
 from django.utils import timezone
 from django.db import transaction
+from django.db.models.functions import Coalesce
 from guest.name_utils import get_first_name_from_full_name
 
 logger = logging.getLogger(__name__)
@@ -241,7 +242,13 @@ def handle_rating_step(conversation, guest, message_text, flow_data):
     from guest.models import Feedback, Stay
     from django.core.exceptions import MultipleObjectsReturned
     
-    stay = Stay.objects.filter(guest=guest, hotel=conversation.hotel, status='completed').order_by('-check_out_date').first()
+    stay = Stay.objects.filter(
+        guest=guest,
+        hotel=conversation.hotel,
+        status='completed'
+    ).annotate(
+        effective_check_out=Coalesce('actual_check_out', 'check_out_date')
+    ).order_by('-effective_check_out').first()
     
     if stay:
         # Check if feedback already exists for this stay
@@ -349,7 +356,13 @@ def handle_note_option_step(conversation, guest, message_text, flow_data):
     rating = None
     
     try:
-        stay = Stay.objects.filter(guest=guest, hotel=conversation.hotel, status='completed').order_by('-check_out_date').first()
+        stay = Stay.objects.filter(
+            guest=guest,
+            hotel=conversation.hotel,
+            status='completed'
+        ).annotate(
+            effective_check_out=Coalesce('actual_check_out', 'check_out_date')
+        ).order_by('-effective_check_out').first()
         if stay:
             feedback = Feedback.objects.filter(stay=stay, guest=guest).first()
             if feedback:
@@ -411,7 +424,13 @@ def handle_note_input_step(conversation, guest, message_text, flow_data):
     rating = None
     
     try:
-        stay = Stay.objects.filter(guest=guest, hotel=conversation.hotel, status='completed').order_by('-check_out_date').first()
+        stay = Stay.objects.filter(
+            guest=guest,
+            hotel=conversation.hotel,
+            status='completed'
+        ).annotate(
+            effective_check_out=Coalesce('actual_check_out', 'check_out_date')
+        ).order_by('-effective_check_out').first()
         if stay:
             feedback = Feedback.objects.filter(stay=stay, guest=guest).first()
             if feedback:
@@ -430,7 +449,13 @@ def handle_note_input_step(conversation, guest, message_text, flow_data):
     # Update feedback record with note
     from guest.models import Feedback, Stay
     try:
-        stay = Stay.objects.filter(guest=guest, hotel=conversation.hotel, status='completed').order_by('-check_out_date').first()
+        stay = Stay.objects.filter(
+            guest=guest,
+            hotel=conversation.hotel,
+            status='completed'
+        ).annotate(
+            effective_check_out=Coalesce('actual_check_out', 'check_out_date')
+        ).order_by('-effective_check_out').first()
         if stay:
             feedback = Feedback.objects.get(stay=stay, guest=guest)
             feedback.note = note

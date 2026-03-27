@@ -6,6 +6,7 @@ from django.utils import timezone
 from django.db import transaction
 import re
 from datetime import datetime, date
+from zoneinfo import ZoneInfo
 
 logger = logging.getLogger(__name__)
 
@@ -759,13 +760,36 @@ def create_pending_stay_from_flow(conversation, guest):
     by receptionists during the verification step.
     """
     from guest.models import Booking, Stay
-    from django.utils import timezone
     from datetime import timedelta
 
     try:
         with transaction.atomic():
-            check_in_at = timezone.now()
-            check_out_at = check_in_at + timedelta(days=1)
+            hotel_tz_name = conversation.hotel.time_zone or 'UTC'
+            try:
+                hotel_tz = ZoneInfo(hotel_tz_name)
+            except Exception:
+                logger.warning(
+                    f"Invalid hotel timezone '{hotel_tz_name}' for hotel {conversation.hotel_id}; using UTC"
+                )
+                hotel_tz = ZoneInfo('UTC')
+
+            now_local = timezone.now().astimezone(hotel_tz)
+            check_in_local = datetime.combine(
+                now_local.date(),
+                conversation.hotel.check_in_time,
+                tzinfo=hotel_tz
+            )
+            check_out_local = datetime.combine(
+                check_in_local.date(),
+                conversation.hotel.check_out_time,
+                tzinfo=hotel_tz
+            )
+            if check_out_local <= check_in_local:
+                check_out_local += timedelta(days=1)
+
+            # Store aware UTC datetimes in DB; render in hotel timezone for user-facing views.
+            check_in_at = check_in_local.astimezone(ZoneInfo('UTC'))
+            check_out_at = check_out_local.astimezone(ZoneInfo('UTC'))
 
             # Create booking record to group the stay
             # Use current date as check-in, tomorrow as check-out (can be modified by staff)

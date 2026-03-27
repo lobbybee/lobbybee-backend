@@ -586,6 +586,7 @@ class StayManagementViewSet(viewsets.GenericViewSet):
             # WiFi variables requested for templates.
             'wifi_name': wifi_credential.network_name if wifi_credential else '',
             'wifi_password': wifi_credential.password if wifi_credential else '',
+            'hotel_timezone': stay.hotel.time_zone or 'UTC',
             # Time variables requested for templates.
             'checkin_time': checkin_dt,
             'checkout_time': checkout_dt,
@@ -918,6 +919,7 @@ Please take a moment to rate your overall experience from 1 to 5 stars. We truly
             stay_duration = ', '.join(duration_parts) if duration_parts else '0 minutes'
 
         return {
+            'hotel_timezone': stay.hotel.time_zone or 'UTC',
             'checkin_time': checkin_dt,
             'checkout_time': checkout_dt,
             'room_number': room_number,

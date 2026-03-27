@@ -7,6 +7,7 @@ from typing import Dict, List, Optional, Any
 from django.db.models import Model
 from django.utils import timezone
 from datetime import datetime, time, timedelta
+from zoneinfo import ZoneInfo
 import logging
 
 logger = logging.getLogger(__name__)
@@ -32,7 +33,7 @@ def _format_human_datetime_label(value):
     return value
 
 
-def _format_stay_datetime_label(value):
+def _format_stay_datetime_label(value, target_tz: Optional[ZoneInfo] = None):
     """
     Format stay datetime variables for templates.
     Example: '12 Wed March 12 PM'
@@ -42,7 +43,7 @@ def _format_stay_datetime_label(value):
 
     if isinstance(value, datetime):
         if timezone.is_aware(value):
-            value = timezone.localtime(value)
+            value = value.astimezone(target_tz) if target_tz else timezone.localtime(value)
         hour_label = value.strftime('%I').lstrip('0') or '0'
         return f"{value.day} {value.strftime('%a')} {value.strftime('%B')} {hour_label} {value.strftime('%p')}"
 
@@ -594,9 +595,12 @@ def _resolve_variables(
                 active_stay = Stay.objects.filter(guest=guest, status='active').first()
                 room = None
                 if active_stay:
+                    # Use actual timestamps once available; fall back to planned values.
+                    effective_check_in = active_stay.actual_check_in or active_stay.check_in_date
+                    effective_check_out = active_stay.actual_check_out or active_stay.check_out_date
                     # Calculate number of stay days from calendar dates
                     no_of_days = (
-                        active_stay.check_out_date.date() - active_stay.check_in_date.date()
+                        effective_check_out.date() - effective_check_in.date()
                     ).days
                     context['no_of_days'] = no_of_days
                     if active_stay.room:
@@ -648,8 +652,13 @@ def _resolve_variables(
     except Guest.DoesNotExist:
         pass
     
-    # Add system variables
-    now = datetime.now()
+    # Add system variables in hotel-local timezone for guest-facing templates.
+    tz_name = context.get('time_zone') or additional_context.get('hotel_timezone') or 'UTC'
+    try:
+        hotel_tz = ZoneInfo(tz_name)
+    except Exception:
+        hotel_tz = ZoneInfo('UTC')
+    now = timezone.now().astimezone(hotel_tz)
     context.update({
         'current_date': now.strftime('%Y-%m-%d'),
         'current_time': _format_human_time_with_minutes(now),
@@ -663,9 +672,18 @@ def _normalize_template_context(context: Dict[str, Any]) -> Dict[str, Any]:
     Apply centralized value normalization for known template variables.
     """
     normalized = context.copy()
+    tz_name = (
+        normalized.get('hotel_timezone')
+        or normalized.get('time_zone')
+        or 'UTC'
+    )
+    try:
+        hotel_tz = ZoneInfo(tz_name)
+    except Exception:
+        hotel_tz = ZoneInfo('UTC')
     for key in STAY_TIME_TEMPLATE_KEYS:
         if key in normalized:
-            normalized[key] = _format_stay_datetime_label(normalized[key])
+            normalized[key] = _format_stay_datetime_label(normalized[key], target_tz=hotel_tz)
     return normalized
 
 

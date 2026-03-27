@@ -152,8 +152,12 @@ class HotelStatsViewSet(viewsets.ViewSet):
             active_stays = Stay.objects.filter(
                 hotel=hotel, 
                 status='active',
-                check_in_date__lte=target_date,
-                check_out_date__gte=target_date
+            ).filter(
+                Q(actual_check_in__date__lte=target_date) |
+                Q(actual_check_in__isnull=True, check_in_date__date__lte=target_date)
+            ).filter(
+                Q(actual_check_out__date__gte=target_date) |
+                Q(actual_check_out__isnull=True, check_out_date__date__gte=target_date)
             )
             
             # Booking statistics
@@ -472,8 +476,12 @@ class HotelStatsViewSet(viewsets.ViewSet):
                 occupied_rooms = Stay.objects.filter(
                     hotel=hotel,
                     status='active',
-                    check_in_date__lte=month_end,
-                    check_out_date__gte=month_start
+                ).filter(
+                    Q(actual_check_in__date__lte=month_end) |
+                    Q(actual_check_in__isnull=True, check_in_date__date__lte=month_end)
+                ).filter(
+                    Q(actual_check_out__date__gte=month_start) |
+                    Q(actual_check_out__isnull=True, check_out_date__date__gte=month_start)
                 ).values('room').distinct().count()
                 
                 occupancy_rate = (occupied_rooms / total_rooms) * 100
@@ -604,13 +612,16 @@ class HotelUserStatsViewSet(viewsets.ViewSet):
             
             # Apply date filters - include guests who were present during the period
             if start_date or end_date:
-                filtered_stays = Stay.objects.filter(hotel=hotel)
+                filtered_stays = Stay.objects.filter(hotel=hotel).annotate(
+                    effective_check_in=Coalesce('actual_check_in', 'check_in_date'),
+                    effective_check_out=Coalesce('actual_check_out', 'check_out_date')
+                )
                 
                 # Find stays that overlap with the date range
                 if start_date:
-                    filtered_stays = filtered_stays.filter(check_out_date__gte=start_date)
+                    filtered_stays = filtered_stays.filter(effective_check_out__date__gte=start_date)
                 if end_date:
-                    filtered_stays = filtered_stays.filter(check_in_date__lte=end_date)
+                    filtered_stays = filtered_stays.filter(effective_check_in__date__lte=end_date)
                     
                 guests = guests.filter(stays__in=filtered_stays).distinct()
             
@@ -622,21 +633,24 @@ class HotelUserStatsViewSet(viewsets.ViewSet):
             guest_data = []
             for guest in guests:
                 # Get all stays for this guest, then optionally filter by overlapping dates for display
-                guest_stays = Stay.objects.filter(guest=guest, hotel=hotel).order_by('-check_in_date')
+                guest_stays = Stay.objects.filter(guest=guest, hotel=hotel).annotate(
+                    effective_check_in=Coalesce('actual_check_in', 'check_in_date'),
+                    effective_check_out=Coalesce('actual_check_out', 'check_out_date')
+                ).order_by('-effective_check_in')
                 
                 # Apply date filters for display purposes - include overlapping stays
                 if start_date or end_date:
                     if start_date:
-                        guest_stays = guest_stays.filter(check_out_date__gte=start_date)
+                        guest_stays = guest_stays.filter(effective_check_out__date__gte=start_date)
                     if end_date:
-                        guest_stays = guest_stays.filter(check_in_date__lte=end_date)
+                        guest_stays = guest_stays.filter(effective_check_in__date__lte=end_date)
                 
                 stays_data = []
                 for stay in guest_stays:
                     stay_data = {
                         'id': stay.id,
-                        'check_in_date': stay.check_in_date,
-                        'check_out_date': stay.check_out_date,
+                        'check_in_date': stay.actual_check_in or stay.check_in_date,
+                        'check_out_date': stay.actual_check_out or stay.check_out_date,
                         'actual_check_in': stay.actual_check_in,
                         'actual_check_out': stay.actual_check_out,
                         'status': stay.status,
@@ -738,20 +752,23 @@ class HotelUserStatsViewSet(viewsets.ViewSet):
             room_data = []
             for room in rooms_queryset:
                 # Get all stays for this room, then optionally filter by overlapping dates for display
-                room_stays = Stay.objects.filter(room=room)
+                room_stays = Stay.objects.filter(room=room).annotate(
+                    effective_check_in=Coalesce('actual_check_in', 'check_in_date'),
+                    effective_check_out=Coalesce('actual_check_out', 'check_out_date')
+                )
                 
                 # Apply date filters for display purposes - include overlapping stays
                 if start_date or end_date:
                     if start_date:
-                        room_stays = room_stays.filter(check_out_date__gte=start_date)
+                        room_stays = room_stays.filter(effective_check_out__date__gte=start_date)
                     if end_date:
-                        room_stays = room_stays.filter(check_in_date__lte=end_date)
+                        room_stays = room_stays.filter(effective_check_in__date__lte=end_date)
                 
                 # Apply guest WhatsApp filter if provided
                 if guest_whatsapp:
                     room_stays = room_stays.filter(guest__whatsapp_number=guest_whatsapp)
                 
-                room_stays = room_stays.order_by('-check_in_date')
+                room_stays = room_stays.order_by('-effective_check_in')
                 
                 stays_data = []
                 for stay in room_stays:
@@ -759,8 +776,8 @@ class HotelUserStatsViewSet(viewsets.ViewSet):
                         'id': stay.id,
                         'guest_name': stay.guest.full_name,
                         'guest_whatsapp': stay.guest.whatsapp_number,
-                        'check_in_date': stay.check_in_date,
-                        'check_out_date': stay.check_out_date,
+                        'check_in_date': stay.actual_check_in or stay.check_in_date,
+                        'check_out_date': stay.actual_check_out or stay.check_out_date,
                         'actual_check_in': stay.actual_check_in,
                         'actual_check_out': stay.actual_check_out,
                         'status': stay.status,
@@ -1006,8 +1023,8 @@ class HotelUserStatsViewSet(viewsets.ViewSet):
                     'created_at': feedback.created_at,
                     'stay': {
                         'id': stay.id,
-                        'check_in_date': stay.check_in_date,
-                        'check_out_date': stay.check_out_date,
+                        'check_in_date': stay.actual_check_in or stay.check_in_date,
+                        'check_out_date': stay.actual_check_out or stay.check_out_date,
                         'actual_check_in': stay.actual_check_in,
                         'actual_check_out': stay.actual_check_out,
                         'status': stay.status,
@@ -1156,8 +1173,12 @@ class HotelUserStatsViewSet(viewsets.ViewSet):
             current_stays = Stay.objects.filter(
                 hotel=hotel,
                 status='active',
-                check_in_date__lte=target_date,
-                check_out_date__gte=target_date
+            ).filter(
+                Q(actual_check_in__date__lte=target_date) |
+                Q(actual_check_in__isnull=True, check_in_date__date__lte=target_date)
+            ).filter(
+                Q(actual_check_out__date__gte=target_date) |
+                Q(actual_check_out__isnull=True, check_out_date__date__gte=target_date)
             )
             current_guests_count = current_stays.count()
             
@@ -1167,8 +1188,11 @@ class HotelUserStatsViewSet(viewsets.ViewSet):
                 completed_stays = Stay.objects.filter(
                     hotel=hotel,
                     status='completed',
-                    check_out_date__gte=start_date,
-                    check_out_date__lte=end_date
+                ).annotate(
+                    effective_check_out=Coalesce('actual_check_out', 'check_out_date')
+                ).filter(
+                    effective_check_out__date__gte=start_date,
+                    effective_check_out__date__lte=end_date
                 )
                 revenue_period = f"{start_date} to {end_date}"
             else:
@@ -1177,8 +1201,11 @@ class HotelUserStatsViewSet(viewsets.ViewSet):
                 completed_stays = Stay.objects.filter(
                     hotel=hotel,
                     status='completed',
-                    check_out_date__gte=month_start,
-                    check_out_date__lte=target_date
+                ).annotate(
+                    effective_check_out=Coalesce('actual_check_out', 'check_out_date')
+                ).filter(
+                    effective_check_out__date__gte=month_start,
+                    effective_check_out__date__lte=target_date
                 )
                 revenue_period = f"Month of {target_date.strftime('%B %Y')}"
             

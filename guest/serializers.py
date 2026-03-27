@@ -2,10 +2,30 @@ from rest_framework import serializers
 from .models import Guest, GuestIdentityDocument, Stay, Booking
 from django.db import transaction
 from hotel.models import Room
+from django.utils import timezone
+from zoneinfo import ZoneInfo
 import logging
 import json
 
 logger = logging.getLogger(__name__)
+
+
+def _hotel_local_iso(dt_value, hotel):
+    """
+    Convert an aware datetime to the hotel's timezone and return ISO-8601 text.
+    """
+    if not dt_value:
+        return None
+    tz_name = getattr(hotel, 'time_zone', None) or 'UTC'
+    try:
+        hotel_tz = ZoneInfo(tz_name)
+    except Exception:
+        hotel_tz = ZoneInfo('UTC')
+
+    if timezone.is_naive(dt_value):
+        dt_value = timezone.make_aware(dt_value, timezone=ZoneInfo('UTC'))
+
+    return dt_value.astimezone(hotel_tz).isoformat()
 
 
 class JSONField(serializers.Field):
@@ -211,13 +231,21 @@ class StayListSerializer(serializers.ModelSerializer):
                 "total_amount": obj.booking.total_amount,
                 "is_via_whatsapp": obj.booking.is_via_whatsapp,
                 "guest_names": obj.booking.guest_names,
-                "booking_date": obj.booking.booking_date
+                "booking_date": _hotel_local_iso(obj.booking.booking_date, obj.hotel)
             }
         return None
 
     def get_billing(self, obj):
         from .services import calculate_stay_billing
         return calculate_stay_billing(obj)
+
+    def to_representation(self, instance):
+        representation = super().to_representation(instance)
+        effective_check_in = instance.actual_check_in or instance.check_in_date
+        effective_check_out = instance.actual_check_out or instance.check_out_date
+        representation["check_in_date"] = _hotel_local_iso(effective_check_in, instance.hotel)
+        representation["check_out_date"] = _hotel_local_iso(effective_check_out, instance.hotel)
+        return representation
 
 # Legacy serializers for compatibility with other parts of the codebase
 class GuestSerializer(serializers.ModelSerializer):
@@ -252,3 +280,9 @@ class BookingListSerializer(serializers.ModelSerializer):
             "id", "primary_guest", "check_in_date", "check_out_date",
             "status", "total_amount", "guest_names", "is_via_whatsapp"
         ]
+
+    def to_representation(self, instance):
+        representation = super().to_representation(instance)
+        representation["check_in_date"] = _hotel_local_iso(instance.check_in_date, instance.hotel)
+        representation["check_out_date"] = _hotel_local_iso(instance.check_out_date, instance.hotel)
+        return representation
