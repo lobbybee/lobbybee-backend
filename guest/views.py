@@ -3,6 +3,7 @@ from rest_framework.decorators import action
 from rest_framework.views import APIView
 from django.db.models import Q, Sum
 from lobbybee.utils.responses import success_response, error_response, created_response, not_found_response
+from lobbybee.utils.pagination import StandardizedPagination
 from django.db import transaction
 from django.utils import timezone
 from django.shortcuts import get_object_or_404
@@ -30,6 +31,12 @@ from guest.name_utils import get_first_name_from_full_name
 import logging
 
 logger = logging.getLogger(__name__)
+
+
+class StandardResultsSetPagination(StandardizedPagination):
+    page_size = 10
+    page_size_query_param = 'page_size'
+    max_page_size = 100
 
 
 class GuestManagementViewSet(viewsets.GenericViewSet):
@@ -136,7 +143,7 @@ class GuestManagementViewSet(viewsets.GenericViewSet):
         """
         List all guests for the hotel with optional search functionality
         Query parameters:
-        - search: Search term to filter guests by name or phone number
+        - search: Search term to filter guests by name, phone number, or ID number
         """
         try:
             queryset = self.get_queryset()
@@ -145,8 +152,9 @@ class GuestManagementViewSet(viewsets.GenericViewSet):
             if search_term:
                 queryset = queryset.filter(
                     Q(full_name__icontains=search_term) |
-                    Q(whatsapp_number__icontains=search_term)
-                )
+                    Q(whatsapp_number__icontains=search_term) |
+                    Q(identity_documents__document_number__icontains=search_term)
+                ).distinct()
 
             serializer = GuestResponseSerializer(queryset, many=True)
             return success_response(data=serializer.data)
@@ -171,6 +179,7 @@ class StayManagementViewSet(viewsets.GenericViewSet):
     Simplified stay management endpoints
     """
     permission_classes = [permissions.IsAuthenticated, CanViewAndManageStays, IsSameHotelUser]
+    pagination_class = StandardResultsSetPagination
 
     def get_queryset(self):
         return Stay.objects.filter(hotel=self.request.user.hotel)
@@ -645,9 +654,25 @@ class StayManagementViewSet(viewsets.GenericViewSet):
     @action(detail=False, methods=['get'], url_path='checked-in-users')
     def checked_in_users(self, request):
         """
-        List all checked-in users (active stays)
+        List all stays for the hotel with optional search and checked-in status flag.
         """
-        stays = self.get_queryset().filter(status='active').order_by('-actual_check_in')
+        stays = self.get_queryset()
+        search_term = request.query_params.get('search', None)
+
+        if search_term:
+            stays = stays.filter(
+                Q(guest__full_name__icontains=search_term) |
+                Q(guest__whatsapp_number__icontains=search_term) |
+                Q(guest__identity_documents__document_number__icontains=search_term)
+            ).distinct()
+
+        stays = stays.order_by('-created_at')
+
+        page = self.paginate_queryset(stays)
+        if page is not None:
+            serializer = StayListSerializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+
         serializer = StayListSerializer(stays, many=True)
         return success_response(data=serializer.data)
 

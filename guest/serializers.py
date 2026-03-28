@@ -206,13 +206,15 @@ class StayListSerializer(serializers.ModelSerializer):
     room_details = serializers.SerializerMethodField()
     booking_details = serializers.SerializerMethodField()
     billing = serializers.SerializerMethodField()
+    isCheckedIn = serializers.SerializerMethodField()
 
     class Meta:
         model = Stay
         fields = [
             "id", "guest", "status", "check_in_date", "check_out_date",
             "room", "room_details", "register_number", "identity_verified", "booking_details",
-            "internal_rating", "internal_note", "breakfast_reminder", "lunch_reminder", "dinner_reminder", "billing"
+            "internal_rating", "internal_note", "breakfast_reminder", "lunch_reminder", "dinner_reminder", "billing",
+            "isCheckedIn"
         ]
     
     def get_room_details(self, obj):
@@ -238,6 +240,9 @@ class StayListSerializer(serializers.ModelSerializer):
     def get_billing(self, obj):
         from .services import calculate_stay_billing
         return calculate_stay_billing(obj)
+
+    def get_isCheckedIn(self, obj):
+        return obj.status == 'active'
 
     def to_representation(self, instance):
         representation = super().to_representation(instance)
