@@ -593,6 +593,7 @@ class HotelUserStatsViewSet(viewsets.ViewSet):
             start_date = request.query_params.get('start_date')
             end_date = request.query_params.get('end_date')
             guest_whatsapp = request.query_params.get('guest_whatsapp')
+            search_term = request.query_params.get('search')
             
             try:
                 if start_date:
@@ -628,6 +629,14 @@ class HotelUserStatsViewSet(viewsets.ViewSet):
             # Filter by specific guest WhatsApp number if provided
             if guest_whatsapp:
                 guests = guests.filter(whatsapp_number=guest_whatsapp)
+
+            # Search by guest name, phone number, or ID document number
+            if search_term:
+                guests = guests.filter(
+                    Q(full_name__icontains=search_term) |
+                    Q(whatsapp_number__icontains=search_term) |
+                    Q(identity_documents__document_number__icontains=search_term)
+                ).distinct()
             
             # Prepare response data
             guest_data = []
@@ -723,6 +732,7 @@ class HotelUserStatsViewSet(viewsets.ViewSet):
             end_date = request.query_params.get('end_date')
             room_id = request.query_params.get('room_id')
             guest_whatsapp = request.query_params.get('guest_whatsapp')
+            search_term = request.query_params.get('search')
             
             try:
                 if start_date:
@@ -993,6 +1003,14 @@ class HotelUserStatsViewSet(viewsets.ViewSet):
             # Apply guest WhatsApp filter
             if guest_whatsapp:
                 feedback_queryset = feedback_queryset.filter(guest__whatsapp_number=guest_whatsapp)
+
+            # Search by guest name, phone number, or ID document number
+            if search_term:
+                feedback_queryset = feedback_queryset.filter(
+                    Q(guest__full_name__icontains=search_term) |
+                    Q(guest__whatsapp_number__icontains=search_term) |
+                    Q(guest__identity_documents__document_number__icontains=search_term)
+                ).distinct()
             
             # Order by most recent
             feedback_queryset = feedback_queryset.order_by('-created_at')
