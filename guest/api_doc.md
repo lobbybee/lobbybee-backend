@@ -336,7 +336,7 @@ GET /api/guest/guests/?search=123
 |-------|------|-------------|
 | `register_number` | String | Official register number for the stay (can be empty string) |
 | `room_id` | Integer | New room ID if room change is needed |
-| `room_ids` | Array[Integer] | Reassign rooms for all pending stays being activated in this booking+guest context (count must match pending stays) |
+| `room_ids` | Array[Integer] | Reassign rooms for all pending stays being activated; if count is greater than pending stays, missing stays are created (offline-style) |
 | `guest_updates` | Object | Dictionary of guest fields to update |
 
 #### Guest Updates Object:
@@ -356,7 +356,7 @@ The `guest_updates` object can contain any of these Guest model fields:
 1. **Validation:**
    - Stay must be in 'pending' status
    - If room_id is provided, new room must exist and belong to the same hotel
-   - If room_ids is provided, all rooms must exist in the same hotel and list length must match pending stays being activated
+   - If room_ids is provided, all rooms must exist in the same hotel and list length cannot be less than pending stays being activated
    - Use either room_id or room_ids, not both
 
 2. **Processing:**
@@ -366,6 +366,7 @@ The `guest_updates` object can contain any of these Guest model fields:
      - Occupies the new room (sets status to 'occupied', sets current_guest)
      - Updates the stay's room reference
    - If room_ids are specified, applies room reassignment across all pending stays being activated
+   - If room_ids has more entries than pending stays, creates additional pending stays first (same booking+guest), then activates all
    - Updates guest information if guest_updates provided
    - Marks identity as verified (`identity_verified = True`)
    - Updates all relevant pending stays to status 'active'

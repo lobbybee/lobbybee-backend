@@ -331,11 +331,56 @@ class StayManagementViewSet(viewsets.GenericViewSet):
                         stay.room = new_room
                 elif 'room_ids' in serializer.validated_data:
                     requested_room_ids = serializer.validated_data['room_ids']
-                    if len(requested_room_ids) != len(stays_to_activate):
+                    if not requested_room_ids:
                         return error_response(
-                            f'room_ids count must match pending stays count ({len(stays_to_activate)})',
+                            'room_ids cannot be empty',
                             status=status.HTTP_400_BAD_REQUEST
                         )
+
+                    initial_pending_stays_count = len(stays_to_activate)
+                    if len(requested_room_ids) < initial_pending_stays_count:
+                        return error_response(
+                            f'room_ids count cannot be less than pending stays count ({initial_pending_stays_count})',
+                            status=status.HTTP_400_BAD_REQUEST
+                        )
+
+                    # Mirror offline check-in behavior: if more rooms are provided than
+                    # pending stays, create additional pending stays under the same booking.
+                    if len(requested_room_ids) > initial_pending_stays_count:
+                        if not stay.booking:
+                            return error_response(
+                                'Cannot add multiple rooms without a booking',
+                                status=status.HTTP_400_BAD_REQUEST
+                            )
+
+                        extra_stays_count = len(requested_room_ids) - initial_pending_stays_count
+                        booking_guest_names = stay.booking.guest_names or []
+
+                        for i in range(extra_stays_count):
+                            guest_index = initial_pending_stays_count + i
+                            guest_name = (
+                                booking_guest_names[guest_index]
+                                if guest_index < len(booking_guest_names)
+                                else stay.guest.full_name
+                            )
+                            new_pending_stay = Stay.objects.create(
+                                booking=stay.booking,
+                                hotel=stay.hotel,
+                                guest=stay.guest,
+                                room=None,
+                                register_number=None,
+                                check_in_date=stay.check_in_date,
+                                check_out_date=stay.check_out_date,
+                                number_of_guests=1,
+                                guest_names=[guest_name],
+                                status='pending',
+                                identity_verified=False,
+                                documents_uploaded=stay.documents_uploaded,
+                                breakfast_reminder=stay.breakfast_reminder,
+                                lunch_reminder=stay.lunch_reminder,
+                                dinner_reminder=stay.dinner_reminder,
+                            )
+                            stays_to_activate.append(new_pending_stay)
 
                     if len(set(requested_room_ids)) != len(requested_room_ids):
                         return error_response(

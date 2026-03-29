@@ -373,3 +373,78 @@ class GuestAndStayEndpointTests(APITestCase):
         self.assertEqual(new_room_two.status, "occupied")
         self.assertEqual(new_room_one.current_guest_id, guest.id)
         self.assertEqual(new_room_two.current_guest_id, guest.id)
+
+    def test_verify_checkin_room_ids_can_expand_booking_like_offline_checkin(self):
+        guest = Guest.objects.create(
+            full_name="Expand Booking Guest",
+            whatsapp_number="+15550000777",
+            status="pending_checkin",
+        )
+        now = timezone.now()
+        booking = Booking.objects.create(
+            hotel=self.hotel,
+            primary_guest=guest,
+            check_in_date=now,
+            check_out_date=now + timedelta(days=1),
+            status="pending",
+            total_amount=0,
+            guest_names=[guest.full_name, guest.full_name],
+        )
+
+        base_room = self.room
+        base_room.status = "occupied"
+        base_room.current_guest = guest
+        base_room.save(update_fields=["status", "current_guest"])
+
+        target_room_one = Room.objects.create(
+            hotel=self.hotel,
+            room_number="105",
+            category=self.room.category,
+            floor=1,
+            status="available",
+        )
+        target_room_two = Room.objects.create(
+            hotel=self.hotel,
+            room_number="106",
+            category=self.room.category,
+            floor=1,
+            status="available",
+        )
+
+        primary_stay = Stay.objects.create(
+            booking=booking,
+            hotel=self.hotel,
+            guest=guest,
+            room=base_room,
+            check_in_date=now,
+            check_out_date=now + timedelta(days=1),
+            status="pending",
+            identity_verified=False,
+            documents_uploaded=True,
+        )
+
+        response = self.client.patch(
+            f"/api/guest/stay-management/{primary_stay.id}/verify-checkin/",
+            {"room_ids": [target_room_one.id, target_room_two.id], "register_number": "REG-ROOM-003"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["success"])
+        self.assertCountEqual(response.data["data"]["room_ids"], [target_room_one.id, target_room_two.id])
+        self.assertEqual(len(response.data["data"]["activated_stay_ids"]), 2)
+
+        booking_stays = list(Stay.objects.filter(booking=booking).order_by("id"))
+        self.assertEqual(len(booking_stays), 2)
+        self.assertCountEqual([s.room_id for s in booking_stays], [target_room_one.id, target_room_two.id])
+        self.assertTrue(all(s.status == "active" for s in booking_stays))
+
+        base_room.refresh_from_db()
+        target_room_one.refresh_from_db()
+        target_room_two.refresh_from_db()
+        self.assertEqual(base_room.status, "available")
+        self.assertIsNone(base_room.current_guest)
+        self.assertEqual(target_room_one.status, "occupied")
+        self.assertEqual(target_room_two.status, "occupied")
+        self.assertEqual(target_room_one.current_guest_id, guest.id)
+        self.assertEqual(target_room_two.current_guest_id, guest.id)
