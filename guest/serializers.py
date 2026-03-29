@@ -97,6 +97,10 @@ class CheckinOfflineSerializer(serializers.Serializer):
 class VerifyCheckinSerializer(serializers.Serializer):
     register_number = serializers.CharField(required=False, allow_blank=True)
     room_id = serializers.IntegerField(required=False)
+    room_ids = serializers.ListField(
+        child=serializers.IntegerField(),
+        required=False
+    )
     guest_updates = serializers.DictField(required=False)
     check_out_date = serializers.DateTimeField(required=False)
     breakfast_reminder = serializers.BooleanField(

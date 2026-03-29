@@ -336,6 +336,7 @@ GET /api/guest/guests/?search=123
 |-------|------|-------------|
 | `register_number` | String | Official register number for the stay (can be empty string) |
 | `room_id` | Integer | New room ID if room change is needed |
+| `room_ids` | Array[Integer] | Reassign rooms for all pending stays being activated in this booking+guest context (count must match pending stays) |
 | `guest_updates` | Object | Dictionary of guest fields to update |
 
 #### Guest Updates Object:
@@ -355,6 +356,8 @@ The `guest_updates` object can contain any of these Guest model fields:
 1. **Validation:**
    - Stay must be in 'pending' status
    - If room_id is provided, new room must exist and belong to the same hotel
+   - If room_ids is provided, all rooms must exist in the same hotel and list length must match pending stays being activated
+   - Use either room_id or room_ids, not both
 
 2. **Processing:**
    - Updates register number if provided
@@ -362,9 +365,10 @@ The `guest_updates` object can contain any of these Guest model fields:
      - Frees up the old room (sets status to 'available', clears current_guest)
      - Occupies the new room (sets status to 'occupied', sets current_guest)
      - Updates the stay's room reference
+   - If room_ids are specified, applies room reassignment across all pending stays being activated
    - Updates guest information if guest_updates provided
    - Marks identity as verified (`identity_verified = True`)
-   - Updates stay status to 'active'
+   - Updates all relevant pending stays to status 'active'
    - Sets `actual_check_in` to current timestamp
    - Updates guest status to 'checked_in'
    - Updates booking status to 'confirmed' if all associated stays are active
@@ -387,6 +391,14 @@ The `guest_updates` object can contain any of these Guest model fields:
 {
   "register_number": "REG-2024-00124",
   "room_id": 459
+}
+```
+
+**Multi-Room Reassignment During Verification:**
+```json
+{
+  "register_number": "REG-2024-00124",
+  "room_ids": [459, 460]
 }
 ```
 
@@ -424,8 +436,10 @@ The `guest_updates` object can contain any of these Guest model fields:
 ```json
 {
   "stay_id": 101,
+  "activated_stay_ids": [101, 102],
+  "room_ids": [460, 461],
   "register_number": "REG-2024-00123",
-  "message": "Check-in verified and activated successfully"
+  "message": "Check-in verified and activated successfully for 2 stay(s)"
 }
 ```
 

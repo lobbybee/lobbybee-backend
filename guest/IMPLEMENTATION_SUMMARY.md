@@ -81,10 +81,11 @@ const verify = await fetch('/api/guest/stay-management/789/verify-checkin/', {
     method: 'PATCH',
     body: JSON.stringify({
         register_number: "REG-2024-001",
+        room_ids: [201, 202],
         guest_updates: { email: "updated@email.com" }
     })
 });
-// Returns: { stay_id: 789, register_number: "REG-2024-001" }
+// Returns: { stay_id: 789, activated_stay_ids: [789, 790], room_ids: [201, 202], register_number: "REG-2024-001" }
 ```
 
 ## Installation

@@ -277,3 +277,99 @@ class GuestAndStayEndpointTests(APITestCase):
         self.assertIsNotNone(secondary_stay.actual_check_in)
         self.assertEqual(guest.status, "checked_in")
         self.assertEqual(booking.status, "confirmed")
+
+    def test_verify_checkin_accepts_room_ids_and_reassigns_all_pending_stays(self):
+        guest = Guest.objects.create(
+            full_name="Room Switch Guest",
+            whatsapp_number="+15550000888",
+            status="pending_checkin",
+        )
+        now = timezone.now()
+        booking = Booking.objects.create(
+            hotel=self.hotel,
+            primary_guest=guest,
+            check_in_date=now,
+            check_out_date=now + timedelta(days=1),
+            status="pending",
+            total_amount=0,
+            guest_names=[guest.full_name],
+        )
+
+        old_room_one = self.room
+        old_room_two = Room.objects.create(
+            hotel=self.hotel,
+            room_number="102",
+            category=self.room.category,
+            floor=1,
+            status="occupied",
+            current_guest=guest,
+        )
+        old_room_one.status = "occupied"
+        old_room_one.current_guest = guest
+        old_room_one.save(update_fields=["status", "current_guest"])
+
+        new_room_one = Room.objects.create(
+            hotel=self.hotel,
+            room_number="103",
+            category=self.room.category,
+            floor=1,
+            status="available",
+        )
+        new_room_two = Room.objects.create(
+            hotel=self.hotel,
+            room_number="104",
+            category=self.room.category,
+            floor=1,
+            status="available",
+        )
+
+        primary_stay = Stay.objects.create(
+            booking=booking,
+            hotel=self.hotel,
+            guest=guest,
+            room=old_room_one,
+            check_in_date=now,
+            check_out_date=now + timedelta(days=1),
+            status="pending",
+            identity_verified=False,
+            documents_uploaded=True,
+        )
+        secondary_stay = Stay.objects.create(
+            booking=booking,
+            hotel=self.hotel,
+            guest=guest,
+            room=old_room_two,
+            check_in_date=now,
+            check_out_date=now + timedelta(days=1),
+            status="pending",
+            identity_verified=False,
+            documents_uploaded=True,
+        )
+
+        response = self.client.patch(
+            f"/api/guest/stay-management/{primary_stay.id}/verify-checkin/",
+            {"room_ids": [new_room_one.id, new_room_two.id], "register_number": "REG-ROOM-002"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["success"])
+        self.assertCountEqual(response.data["data"]["room_ids"], [new_room_one.id, new_room_two.id])
+        self.assertIn("2 stay(s)", response.data["data"]["message"])
+
+        primary_stay.refresh_from_db()
+        secondary_stay.refresh_from_db()
+        old_room_one.refresh_from_db()
+        old_room_two.refresh_from_db()
+        new_room_one.refresh_from_db()
+        new_room_two.refresh_from_db()
+
+        self.assertCountEqual([primary_stay.room_id, secondary_stay.room_id], [new_room_one.id, new_room_two.id])
+        self.assertEqual(old_room_one.status, "available")
+        self.assertEqual(old_room_two.status, "available")
+        self.assertIsNone(old_room_one.current_guest)
+        self.assertIsNone(old_room_two.current_guest)
+        self.assertEqual(new_room_one.status, "occupied")
+        self.assertEqual(new_room_two.status, "occupied")
+        self.assertEqual(new_room_one.current_guest_id, guest.id)
+        self.assertEqual(new_room_two.current_guest_id, guest.id)

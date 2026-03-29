@@ -267,7 +267,7 @@ class StayManagementViewSet(viewsets.GenericViewSet):
     def verify_checkin(self, request, pk=None):
         """
         Verify and activate a stay. Updates register number and marks as checked in.
-        Can optionally update room assignment and checkout date.
+        Can optionally update room assignment(s) and checkout date.
         """
         try:
             stay = self.get_object()
@@ -291,9 +291,15 @@ class StayManagementViewSet(viewsets.GenericViewSet):
                         stay.booking.stays.select_for_update().filter(
                             guest=stay.guest,
                             status='pending'
-                        ).exclude(id=stay.id)
+                        ).exclude(id=stay.id).order_by('id')
                     )
                     stays_to_activate.extend(related_pending_stays)
+
+                if 'room_id' in serializer.validated_data and 'room_ids' in serializer.validated_data:
+                    return error_response(
+                        'Provide either room_id or room_ids, not both',
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
 
                 # Update register number if provided
                 if 'register_number' in serializer.validated_data:
@@ -323,6 +329,66 @@ class StayManagementViewSet(viewsets.GenericViewSet):
                         new_room.current_guest = stay.guest
                         new_room.save()
                         stay.room = new_room
+                elif 'room_ids' in serializer.validated_data:
+                    requested_room_ids = serializer.validated_data['room_ids']
+                    if len(requested_room_ids) != len(stays_to_activate):
+                        return error_response(
+                            f'room_ids count must match pending stays count ({len(stays_to_activate)})',
+                            status=status.HTTP_400_BAD_REQUEST
+                        )
+
+                    if len(set(requested_room_ids)) != len(requested_room_ids):
+                        return error_response(
+                            'room_ids must be unique',
+                            status=status.HTTP_400_BAD_REQUEST
+                        )
+
+                    rooms_by_id = {
+                        room.id: room for room in Room.objects.select_for_update().filter(
+                            id__in=requested_room_ids,
+                            hotel=stay.hotel
+                        )
+                    }
+                    missing_room_ids = [room_id for room_id in requested_room_ids if room_id not in rooms_by_id]
+                    if missing_room_ids:
+                        return error_response(
+                            f'Invalid room_ids for this hotel: {missing_room_ids}',
+                            status=status.HTTP_400_BAD_REQUEST
+                        )
+
+                    current_room_ids = {pending_stay.room_id for pending_stay in stays_to_activate if pending_stay.room_id}
+                    for room_id in requested_room_ids:
+                        room = rooms_by_id[room_id]
+                        if room.status == 'available':
+                            continue
+                        if room.id in current_room_ids and room.current_guest_id == stay.guest_id:
+                            continue
+                        return error_response(
+                            f'Room {room.room_number} is not available for reassignment',
+                            status=status.HTTP_400_BAD_REQUEST
+                        )
+
+                    room_assignments = list(zip(stays_to_activate, requested_room_ids))
+                    requested_room_id_set = set(requested_room_ids)
+                    rooms_to_release = []
+
+                    for pending_stay, target_room_id in room_assignments:
+                        old_room = pending_stay.room
+                        if old_room and old_room.id != target_room_id and old_room.id not in requested_room_id_set:
+                            rooms_to_release.append(old_room)
+
+                    for pending_stay, target_room_id in room_assignments:
+                        pending_stay.room = rooms_by_id[target_room_id]
+
+                    for room in {rooms_by_id[room_id] for room_id in requested_room_ids}:
+                        room.status = 'occupied'
+                        room.current_guest = stay.guest
+                        room.save()
+
+                    for old_room in rooms_to_release:
+                        old_room.status = 'available'
+                        old_room.current_guest = None
+                        old_room.save()
 
                 # Update checkout date if provided
                 if 'check_out_date' in serializer.validated_data:
@@ -487,8 +553,9 @@ class StayManagementViewSet(viewsets.GenericViewSet):
                     'stay_id': stay.id,
                     'activated_stay_ids': [pending_stay.id for pending_stay in stays_to_activate],
                     'register_number': stay.register_number,
+                    'room_ids': [pending_stay.room_id for pending_stay in stays_to_activate],
                     'check_out_date': stay.check_out_date,
-                    'message': 'Check-in verified and activated successfully'
+                    'message': f'Check-in verified and activated successfully for {len(stays_to_activate)} stay(s)'
                 }
                 
                 # Include flag summary if guest is flagged

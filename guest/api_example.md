@@ -80,6 +80,7 @@ guest_1_documents_0: [Child's document]
 ```json
 {
     "register_number": "REG-2024-001",
+    "room_ids": [103, 104],
     "guest_updates": {
         "email": "updated@email.com"
     }
@@ -90,8 +91,10 @@ guest_1_documents_0: [Child's document]
 ```json
 {
     "stay_id": 789,
+    "activated_stay_ids": [789, 790],
+    "room_ids": [103, 104],
     "register_number": "REG-2024-001",
-    "message": "Check-in verified and activated successfully"
+    "message": "Check-in verified and activated successfully for 2 stay(s)"
 }
 ```
 
