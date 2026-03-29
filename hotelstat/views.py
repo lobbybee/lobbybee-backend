@@ -733,6 +733,7 @@ class HotelUserStatsViewSet(viewsets.ViewSet):
             room_id = request.query_params.get('room_id')
             guest_whatsapp = request.query_params.get('guest_whatsapp')
             search_term = request.query_params.get('search')
+            search_term = request.query_params.get('search')
             
             try:
                 if start_date:
