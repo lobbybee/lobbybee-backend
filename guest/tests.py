@@ -4,7 +4,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.utils import timezone
 from rest_framework.test import APITestCase
 
-from guest.models import Guest, GuestIdentityDocument, Stay
+from guest.models import Booking, Guest, GuestIdentityDocument, Stay
 from hotel.models import Hotel, Room, RoomCategory
 from user.models import User
 
@@ -197,3 +197,83 @@ class GuestAndStayEndpointTests(APITestCase):
         result = response.data["data"]["results"][0]
         self.assertEqual(result["guest"]["id"], matching_guest.id)
         self.assertFalse(result["isCheckedIn"])
+
+    def test_verify_checkin_activates_all_pending_stays_for_same_booking(self):
+        guest = Guest.objects.create(
+            full_name="Multi Room Guest",
+            whatsapp_number="+15550000999",
+            status="pending_checkin",
+        )
+        now = timezone.now()
+        booking = Booking.objects.create(
+            hotel=self.hotel,
+            primary_guest=guest,
+            check_in_date=now,
+            check_out_date=now + timedelta(days=2),
+            status="pending",
+            total_amount=0,
+            guest_names=[guest.full_name],
+        )
+
+        second_room = Room.objects.create(
+            hotel=self.hotel,
+            room_number="102",
+            category=self.room.category,
+            floor=1,
+            status="occupied",
+            current_guest=guest,
+        )
+        self.room.status = "occupied"
+        self.room.current_guest = guest
+        self.room.save(update_fields=["status", "current_guest"])
+
+        primary_stay = Stay.objects.create(
+            booking=booking,
+            hotel=self.hotel,
+            guest=guest,
+            room=self.room,
+            check_in_date=now,
+            check_out_date=now + timedelta(days=2),
+            status="pending",
+            identity_verified=False,
+            documents_uploaded=True,
+        )
+        secondary_stay = Stay.objects.create(
+            booking=booking,
+            hotel=self.hotel,
+            guest=guest,
+            room=second_room,
+            check_in_date=now,
+            check_out_date=now + timedelta(days=2),
+            status="pending",
+            identity_verified=False,
+            documents_uploaded=True,
+        )
+
+        payload = {"register_number": "REG-MULTI-001"}
+        response = self.client.patch(
+            f"/api/guest/stay-management/{primary_stay.id}/verify-checkin/",
+            payload,
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["success"])
+        self.assertCountEqual(
+            response.data["data"]["activated_stay_ids"],
+            [primary_stay.id, secondary_stay.id],
+        )
+
+        primary_stay.refresh_from_db()
+        secondary_stay.refresh_from_db()
+        booking.refresh_from_db()
+        guest.refresh_from_db()
+
+        self.assertEqual(primary_stay.status, "active")
+        self.assertEqual(secondary_stay.status, "active")
+        self.assertTrue(primary_stay.identity_verified)
+        self.assertTrue(secondary_stay.identity_verified)
+        self.assertIsNotNone(primary_stay.actual_check_in)
+        self.assertIsNotNone(secondary_stay.actual_check_in)
+        self.assertEqual(guest.status, "checked_in")
+        self.assertEqual(booking.status, "confirmed")

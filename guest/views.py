@@ -285,6 +285,16 @@ class StayManagementViewSet(viewsets.GenericViewSet):
 
         try:
             with transaction.atomic():
+                stays_to_activate = [stay]
+                if stay.booking_id:
+                    related_pending_stays = list(
+                        stay.booking.stays.select_for_update().filter(
+                            guest=stay.guest,
+                            status='pending'
+                        ).exclude(id=stay.id)
+                    )
+                    stays_to_activate.extend(related_pending_stays)
+
                 # Update register number if provided
                 if 'register_number' in serializer.validated_data:
                     stay.register_number = serializer.validated_data['register_number']
@@ -317,7 +327,8 @@ class StayManagementViewSet(viewsets.GenericViewSet):
                 # Update checkout date if provided
                 if 'check_out_date' in serializer.validated_data:
                     new_checkout_date = serializer.validated_data['check_out_date']
-                    stay.check_out_date = new_checkout_date
+                    for pending_stay in stays_to_activate:
+                        pending_stay.check_out_date = new_checkout_date
 
                     # Also update booking checkout date if booking exists
                     if stay.booking:
@@ -372,17 +383,22 @@ class StayManagementViewSet(viewsets.GenericViewSet):
 
                 # Update reminder settings from request
                 if 'breakfast_reminder' in serializer.validated_data:
-                    stay.breakfast_reminder = serializer.validated_data['breakfast_reminder']
+                    for pending_stay in stays_to_activate:
+                        pending_stay.breakfast_reminder = serializer.validated_data['breakfast_reminder']
                 if 'lunch_reminder' in serializer.validated_data:
-                    stay.lunch_reminder = serializer.validated_data['lunch_reminder']
+                    for pending_stay in stays_to_activate:
+                        pending_stay.lunch_reminder = serializer.validated_data['lunch_reminder']
                 if 'dinner_reminder' in serializer.validated_data:
-                    stay.dinner_reminder = serializer.validated_data['dinner_reminder']
+                    for pending_stay in stays_to_activate:
+                        pending_stay.dinner_reminder = serializer.validated_data['dinner_reminder']
 
-                # Mark identity as verified (assuming manual verification by staff)
-                stay.identity_verified = True
-                stay.status = 'active'
-                stay.actual_check_in = timezone.now()
-                stay.save()
+                # Mark all related pending stays as active in one verification action.
+                activated_at = timezone.now()
+                for pending_stay in stays_to_activate:
+                    pending_stay.identity_verified = True
+                    pending_stay.status = 'active'
+                    pending_stay.actual_check_in = activated_at
+                    pending_stay.save()
 
                 # Update guest status
                 stay.guest.status = 'checked_in'
@@ -469,6 +485,7 @@ class StayManagementViewSet(viewsets.GenericViewSet):
                 
                 response_data = {
                     'stay_id': stay.id,
+                    'activated_stay_ids': [pending_stay.id for pending_stay in stays_to_activate],
                     'register_number': stay.register_number,
                     'check_out_date': stay.check_out_date,
                     'message': 'Check-in verified and activated successfully'
