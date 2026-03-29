@@ -230,6 +230,10 @@ def _is_meal_enabled(stay, reminder_type):
 
 
 def _send_meal_reminder(reminder_type, stay_id, reminder_date_str=None):
+    stay = None
+    reminder_date = None
+    log = None
+
     try:
         stay = Stay.objects.select_related('guest', 'hotel').get(id=stay_id)
         reminder_date = _resolve_reminder_date(stay, reminder_type, reminder_date_str)
@@ -278,6 +282,26 @@ def _send_meal_reminder(reminder_type, stay_id, reminder_date_str=None):
     except Stay.DoesNotExist:
         logger.error(f"Stay {stay_id} not found")
         return {'status': 'error', 'reason': 'stay_not_found'}
+    except Exception as e:
+        logger.error(
+            "Error sending %s reminder for stay %s: %s",
+            reminder_type,
+            stay_id,
+            str(e),
+            exc_info=True,
+        )
+        if log is not None:
+            _set_log_status(log, status='failed', reason='whatsapp_send_failed')
+        elif stay is not None and reminder_date is not None:
+            _upsert_reminder_log(
+                stay,
+                reminder_type,
+                reminder_date,
+                status='failed',
+                reason='whatsapp_send_failed',
+                metadata={'source': 'send_meal_reminder_exception'},
+            )
+        raise
 
 
 @shared_task(bind=True, autoretry_for=(Exception,), retry_kwargs={'max_retries': 3, 'countdown': 60})
@@ -524,7 +548,7 @@ def schedule_meal_reminders(stay_id):
             {
                 'type': 'dinner',
                 'enabled': bool(stay.dinner_reminder and stay.hotel.dinner_reminder),
-                'meal_time': stay.hotel.dinner_time or time(15, 0),
+                'meal_time': stay.hotel.dinner_time or time(17, 0),
                 'task': send_dinner_reminder,
             },
         ]

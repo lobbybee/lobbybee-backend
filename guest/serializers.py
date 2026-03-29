@@ -100,15 +100,15 @@ class VerifyCheckinSerializer(serializers.Serializer):
     guest_updates = serializers.DictField(required=False)
     check_out_date = serializers.DateTimeField(required=False)
     breakfast_reminder = serializers.BooleanField(
-        default=False,
+        required=False,
         help_text="Enable breakfast reminders for this stay"
     )
     lunch_reminder = serializers.BooleanField(
-        default=False,
+        required=False,
         help_text="Enable lunch reminders for this stay"
     )
     dinner_reminder = serializers.BooleanField(
-        default=False,
+        required=False,
         help_text="Enable dinner reminders for this stay"
     )
     is_test = serializers.BooleanField(
