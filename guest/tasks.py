@@ -44,6 +44,18 @@ def _resolve_reminder_date(stay, reminder_type, reminder_date_str=None):
     return timezone.now().astimezone(hotel_tz).date()
 
 
+def _guest_scope_logs(stay, reminder_type, reminder_date):
+    """
+    Guest-level dedupe scope: one reminder per guest + hotel + type + date.
+    """
+    return ReminderLog.objects.filter(
+        stay__guest_id=stay.guest_id,
+        stay__hotel_id=stay.hotel_id,
+        reminder_type=reminder_type,
+        reminder_date=reminder_date,
+    )
+
+
 def _upsert_reminder_log(
     stay,
     reminder_type,
@@ -244,6 +256,10 @@ def _send_meal_reminder(reminder_type, stay_id, reminder_date_str=None):
                 _log_already_sent(log)
                 return {'status': 'skipped', 'reason': 'already_sent'}
 
+            if _guest_scope_logs(stay, reminder_type, reminder_date).exclude(id=log.id).filter(status='sent').exists():
+                _set_log_status(log, status='skipped', reason='already_sent_for_guest')
+                return {'status': 'skipped', 'reason': 'already_sent_for_guest'}
+
             if stay.status != 'active':
                 _set_log_status(log, status='skipped', reason='stay_not_active')
                 return {'status': 'skipped', 'reason': 'stay_not_active'}
@@ -323,6 +339,10 @@ def send_extend_checkin_reminder(self, stay_id, is_test=False, reminder_date=Non
             if log.status == 'sent':
                 _log_already_sent(log)
                 return {'status': 'skipped', 'reason': 'already_sent'}
+
+            if _guest_scope_logs(stay, 'checkout', resolved_reminder_date).exclude(id=log.id).filter(status='sent').exists():
+                _set_log_status(log, status='skipped', reason='already_sent_for_guest', is_test=is_test)
+                return {'status': 'skipped', 'reason': 'already_sent_for_guest'}
 
             if stay.status != 'active':
                 _set_log_status(log, status='skipped', reason='stay_not_active', is_test=is_test)
@@ -446,18 +466,31 @@ def schedule_checkin_reminder(stay_id, is_test=False):
                 scheduled_for = reminder_time
 
         reminder_date = _checkout_reminder_date(stay)
-        task_id = f"extend_reminder_{stay_id}"
+        task_id = f"extend_reminder_guest_{stay.guest_id}_{reminder_date.strftime('%Y%m%d')}"
 
-        existing_log = ReminderLog.objects.filter(
-            stay=stay,
-            reminder_type='checkout',
-            reminder_date=reminder_date,
-        ).first()
+        existing_log = _guest_scope_logs(stay, 'checkout', reminder_date).filter(
+            status__in={'scheduled', 'sent'}
+        ).order_by('-created_at').first()
         if existing_log and existing_log.status == 'sent':
             _log_already_sent(existing_log)
             return {
                 'status': 'skipped',
                 'reason': 'already_sent',
+                'stay_id': stay_id,
+                'reminder_date': reminder_date.isoformat(),
+            }
+        if existing_log and existing_log.status == 'scheduled':
+            _log_reminder_event(
+                stay_id=stay.id,
+                reminder_type='checkout',
+                reminder_date=reminder_date,
+                task_id=existing_log.task_id,
+                status=existing_log.status,
+                reason='already_present_for_guest',
+            )
+            return {
+                'status': 'skipped',
+                'reason': 'already_present_for_guest',
                 'stay_id': stay_id,
                 'reminder_date': reminder_date.isoformat(),
             }
@@ -598,7 +631,7 @@ def schedule_meal_reminders(stay_id):
 
             while candidate < checkout_local:
                 reminder_date = candidate.date()
-                task_id = f"{reminder_type}_reminder_{stay_id}_{reminder_date.strftime('%Y%m%d')}"
+                task_id = f"{reminder_type}_reminder_guest_{stay.guest_id}_{reminder_date.strftime('%Y%m%d')}"
                 countdown = int((candidate - now_local).total_seconds())
 
                 if countdown <= 0:
@@ -606,11 +639,9 @@ def schedule_meal_reminders(stay_id):
                     candidate += timedelta(days=1)
                     continue
 
-                existing_log = ReminderLog.objects.filter(
-                    stay=stay,
-                    reminder_type=reminder_type,
-                    reminder_date=reminder_date,
-                ).first()
+                existing_log = _guest_scope_logs(stay, reminder_type, reminder_date).filter(
+                    status__in={'scheduled', 'sent'}
+                ).order_by('-created_at').first()
 
                 if existing_log and existing_log.status in {'scheduled', 'sent'}:
                     results[f'{reminder_type}_already_present'] += 1

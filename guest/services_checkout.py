@@ -5,10 +5,11 @@ from django.db import transaction
 from django.db.models import Sum
 from django.utils import timezone
 from rest_framework import serializers
+from celery import current_app
 
 from flag_system.models import GuestFlag
 from flag_system.services import create_guest_flag
-from guest.models import Booking, Guest, Stay
+from guest.models import Booking, Guest, ReminderLog, Stay
 
 
 def should_send_checkout_comms(guest, hotel):
@@ -59,6 +60,16 @@ def _resolve_booking_status(booking):
     return 'confirmed'
 
 
+def _revoke_tasks_after_commit(task_ids):
+    """Revoke pending Celery tasks after checkout transaction commits."""
+    for task_id in task_ids:
+        try:
+            current_app.control.revoke(task_id)
+        except Exception:
+            # Revoke errors should not fail checkout completion.
+            continue
+
+
 def checkout_stays_for_guest(*, hotel, guest_id, stay_ids, actor, options):
     """
     Checkout multiple active stays for a single guest atomically.
@@ -105,6 +116,7 @@ def checkout_stays_for_guest(*, hotel, guest_id, stay_ids, actor, options):
     checked_out_stays = []
     affected_booking_ids = set()
     total_amount = Decimal('0.00')
+    reminder_task_ids_to_revoke = []
 
     with transaction.atomic():
         for stay in stays:
@@ -129,6 +141,22 @@ def checkout_stays_for_guest(*, hotel, guest_id, stay_ids, actor, options):
 
             if stay.booking_id:
                 affected_booking_ids.add(stay.booking_id)
+
+        checked_out_stay_ids = [stay.id for stay in checked_out_stays]
+        future_logs = ReminderLog.objects.filter(
+            stay_id__in=checked_out_stay_ids,
+            status='scheduled',
+            scheduled_for__gt=checkout_at,
+        )
+        reminder_task_ids_to_revoke = list(
+            future_logs.exclude(task_id__isnull=True).exclude(task_id='').values_list('task_id', flat=True)
+        )
+        if future_logs.exists():
+            future_logs.update(
+                status='skipped',
+                reason='checked_out_before_schedule',
+                updated_at=timezone.now(),
+            )
 
         if flag_user:
             existing_flag = GuestFlag.objects.filter(
@@ -158,6 +186,9 @@ def checkout_stays_for_guest(*, hotel, guest_id, stay_ids, actor, options):
         guest_has_active_stays = Stay.objects.filter(guest=guest, hotel=hotel, status='active').exists()
         guest.status = 'checked_in' if guest_has_active_stays else 'checked_out'
         guest.save(update_fields=['status'])
+
+        if reminder_task_ids_to_revoke:
+            transaction.on_commit(lambda: _revoke_tasks_after_commit(reminder_task_ids_to_revoke))
 
     checked_out_stays.sort(key=lambda stay: stay.id)
     representative_stay = checked_out_stays[0]

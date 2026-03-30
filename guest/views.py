@@ -1450,7 +1450,13 @@ class StayManagementViewSet(viewsets.GenericViewSet):
 
                 # Revoke the old extension reminder (deterministic task ID) and reschedule
                 from celery import current_app
-                current_app.control.revoke(f"extend_reminder_{stay.id}")
+                from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+                try:
+                    hotel_tz = ZoneInfo(stay.hotel.time_zone or 'UTC')
+                except (ZoneInfoNotFoundError, KeyError):
+                    hotel_tz = ZoneInfo('UTC')
+                old_reminder_date = old_checkout_date.astimezone(hotel_tz).strftime('%Y%m%d')
+                current_app.control.revoke(f"extend_reminder_guest_{stay.guest_id}_{old_reminder_date}")
                 from .tasks import schedule_checkout_extension_reminder, schedule_meal_reminders
                 stay_id = stay.id
 
