@@ -14,7 +14,8 @@ from .models import Guest, GuestIdentityDocument, Stay, Booking
 from .serializers import (
     CreateGuestSerializer, CheckinOfflineSerializer, VerifyCheckinSerializer,
     StayListSerializer, BookingListSerializer, GuestResponseSerializer, ExtendStaySerializer,
-    CheckoutSerializer, CheckoutBulkSerializer, CheckedInGuestGroupSerializer
+    CheckoutSerializer, CheckoutBulkSerializer, CheckedInGuestGroupSerializer,
+    BookingHistoryGroupSerializer
 )
 from .services_checkout import checkout_stays_for_guest
 from hotel.models import Hotel, Room, WiFiCredential
@@ -293,6 +294,38 @@ class StayManagementViewSet(viewsets.GenericViewSet):
                         ).exclude(id=stay.id).order_by('id')
                     )
                     stays_to_activate.extend(related_pending_stays)
+                else:
+                    related_pending_stays = list(
+                        Stay.objects.select_for_update().filter(
+                            hotel=stay.hotel,
+                            guest=stay.guest,
+                            status='pending',
+                            booking__isnull=True,
+                        ).exclude(id=stay.id).order_by('id')
+                    )
+                    stays_to_activate.extend(related_pending_stays)
+
+                    # Ensure all activated stays are linked to one booking transaction.
+                    booking_guest_names = []
+                    for pending_stay in stays_to_activate:
+                        if pending_stay.guest_names:
+                            booking_guest_names.extend(pending_stay.guest_names)
+                    if not booking_guest_names:
+                        booking_guest_names = [stay.guest.full_name]
+
+                    generated_booking = Booking.objects.create(
+                        hotel=stay.hotel,
+                        primary_guest=stay.guest,
+                        check_in_date=stay.check_in_date,
+                        check_out_date=stay.check_out_date,
+                        guest_names=booking_guest_names,
+                        status='pending',
+                        total_amount=0,
+                    )
+                    for pending_stay in stays_to_activate:
+                        pending_stay.booking = generated_booking
+                        pending_stay.save(update_fields=['booking'])
+                    stay.booking = generated_booking
 
                 if 'room_id' in serializer.validated_data and 'room_ids' in serializer.validated_data:
                     return error_response(
@@ -890,10 +923,10 @@ class StayManagementViewSet(viewsets.GenericViewSet):
     @action(detail=False, methods=['get'], url_path='stays-history-grouped')
     def stays_history_grouped(self, request):
         """
-        Group stay history by guest with search and pagination.
+        Group stay history by booking transaction with search and pagination.
         Includes all statuses (active, pending, completed, cancelled).
         """
-        return self._group_stays_by_guest(request, active_only=False)
+        return self._group_stays_by_booking(request)
 
     @action(detail=True, methods=['post'], url_path='checkout')
     def checkout_user(self, request, pk=None):
@@ -1161,6 +1194,101 @@ class StayManagementViewSet(viewsets.GenericViewSet):
             return self.get_paginated_response(serializer.data)
 
         serializer = CheckedInGuestGroupSerializer(grouped_rows, many=True)
+        return success_response(data=serializer.data)
+
+    def _group_stays_by_booking(self, request):
+        base_stays = self.get_queryset().select_related(
+            'guest', 'room', 'room__category', 'booking'
+        ).filter(booking__isnull=False)
+        search_term = request.query_params.get('search', None)
+
+        if search_term:
+            matching_booking_ids = base_stays.filter(
+                Q(guest__full_name__icontains=search_term) |
+                Q(guest__whatsapp_number__icontains=search_term) |
+                Q(guest__identity_documents__document_number__icontains=search_term) |
+                Q(room__room_number__icontains=search_term) |
+                Q(register_number__icontains=search_term)
+            ).values_list('booking_id', flat=True).distinct()
+            stays = base_stays.filter(booking_id__in=matching_booking_ids)
+        else:
+            stays = base_stays
+
+        stays = stays.order_by('-booking__booking_date', '-created_at')
+        grouped_by_booking = {}
+        booking_order = []
+        guest_ids = []
+
+        for stay in stays:
+            booking_id = stay.booking_id
+            if booking_id not in grouped_by_booking:
+                grouped_by_booking[booking_id] = {
+                    'booking': stay.booking,
+                    'guest': stay.guest,
+                    'stays': [],
+                    'active_stay_ids': [],
+                    'pending_stay_ids': [],
+                    'completed_stay_ids': [],
+                    'is_checked_in': False,
+                }
+                booking_order.append(booking_id)
+                guest_ids.append(stay.guest_id)
+
+            group = grouped_by_booking[booking_id]
+            group['stays'].append(stay)
+            if stay.status == 'active':
+                group['active_stay_ids'].append(stay.id)
+                group['is_checked_in'] = True
+            elif stay.status == 'pending':
+                group['pending_stay_ids'].append(stay.id)
+            elif stay.status == 'completed':
+                group['completed_stay_ids'].append(stay.id)
+
+        flag_summary_map = self._get_flag_summary_map(request, guest_ids)
+        grouped_rows = []
+        from .services import calculate_stay_billing
+        for booking_id in booking_order:
+            group = grouped_by_booking[booking_id]
+            room_billing_rows = []
+            current_bill_total = 0.0
+            expected_bill_total = 0.0
+
+            for stay in group['stays']:
+                billing = calculate_stay_billing(stay)
+                current_bill_total += float(billing.get('current_bill', 0))
+                expected_bill_total += float(billing.get('expected_bill', 0))
+                room_billing_rows.append({
+                    'stay_id': stay.id,
+                    'room_id': stay.room_id,
+                    'current_bill': billing.get('current_bill', 0),
+                    'expected_bill': billing.get('expected_bill', 0),
+                })
+
+            group_row = {
+                'booking': group['booking'],
+                'guest': group['guest'],
+                'is_checked_in': group['is_checked_in'],
+                'stays': group['stays'],
+                'billing': {
+                    'current_bill_total': round(current_bill_total, 2),
+                    'expected_bill_total': round(expected_bill_total, 2),
+                    'rooms': room_billing_rows,
+                },
+                'active_stay_ids': group['active_stay_ids'],
+                'pending_stay_ids': group['pending_stay_ids'],
+                'completed_stay_ids': group['completed_stay_ids'],
+            }
+            guest_id = group['guest'].id
+            if guest_id in flag_summary_map:
+                group_row['flag_summary'] = flag_summary_map[guest_id]
+            grouped_rows.append(group_row)
+
+        page = self.paginate_queryset(grouped_rows)
+        if page is not None:
+            serializer = BookingHistoryGroupSerializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+
+        serializer = BookingHistoryGroupSerializer(grouped_rows, many=True)
         return success_response(data=serializer.data)
 
     def _send_checkout_message_and_feedback(self, representative_stay, checked_out_stays=None):

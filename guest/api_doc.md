@@ -733,11 +733,11 @@ The `guest_updates` object can contain any of these Guest model fields:
 
 **Endpoint:** `GET /api/guest/stay-management/stays-history-grouped/`
 
-**Description:** Returns grouped stay history by guest. Includes active, pending, completed, and cancelled stays.
+**Description:** Returns grouped stay history by booking transaction (one row per booking). Includes active, pending, completed, and cancelled stays under that booking.
 
 **Query Parameters:**
-- `search` (optional): guest full name / WhatsApp / document number
-- `page`, `page_size` (optional): paginates guest groups
+- `search` (optional): guest full name / WhatsApp / document number / room number / stay register number
+- `page`, `page_size` (optional): paginates booking groups
 
 **Success Response (200 OK):**
 ```json
@@ -747,6 +747,16 @@ The `guest_updates` object can contain any of these Guest model fields:
   "previous": null,
   "results": [
     {
+      "booking": {
+        "id": 789,
+        "status": "confirmed",
+        "check_in_date": "2024-01-15T14:00:00Z",
+        "check_out_date": "2024-01-18T11:00:00Z",
+        "total_amount": "4200.00",
+        "is_via_whatsapp": false,
+        "guest_names": ["Michael Brown", "Jane Brown"],
+        "booking_date": "2024-01-14T10:00:00Z"
+      },
       "guest": { "id": 125, "full_name": "Michael Brown" },
       "is_checked_in": true,
       "active_stay_ids": [103],
@@ -762,6 +772,9 @@ The `guest_updates` object can contain any of these Guest model fields:
   ]
 }
 ```
+Notes:
+- Same guest can appear in multiple rows across different date periods (different bookings).
+- One booking with multiple rooms returns one row with multiple `stays`.
 
 ### Check Out User
 

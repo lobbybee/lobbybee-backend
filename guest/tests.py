@@ -451,6 +451,122 @@ class GuestAndStayEndpointTests(APITestCase):
         self.assertEqual(target_room_one.current_guest_id, guest.id)
         self.assertEqual(target_room_two.current_guest_id, guest.id)
 
+    def test_verify_checkin_creates_booking_for_unbooked_pending_stays(self):
+        guest = Guest.objects.create(
+            full_name="No Booking Verify Guest",
+            whatsapp_number="+15550000666",
+            status="pending_checkin",
+        )
+        now = timezone.now()
+        second_room = Room.objects.create(
+            hotel=self.hotel,
+            room_number="117",
+            category=self.room.category,
+            floor=1,
+            status="occupied",
+            current_guest=guest,
+        )
+        self.room.status = "occupied"
+        self.room.current_guest = guest
+        self.room.save(update_fields=["status", "current_guest"])
+
+        primary_stay = Stay.objects.create(
+            hotel=self.hotel,
+            guest=guest,
+            room=self.room,
+            check_in_date=now,
+            check_out_date=now + timedelta(days=1),
+            status="pending",
+            identity_verified=False,
+            documents_uploaded=True,
+        )
+        secondary_stay = Stay.objects.create(
+            hotel=self.hotel,
+            guest=guest,
+            room=second_room,
+            check_in_date=now,
+            check_out_date=now + timedelta(days=1),
+            status="pending",
+            identity_verified=False,
+            documents_uploaded=True,
+        )
+
+        response = self.client.patch(
+            f"/api/guest/stay-management/{primary_stay.id}/verify-checkin/",
+            {"register_number": "REG-NO-BOOKING-001"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["success"])
+
+        primary_stay.refresh_from_db()
+        secondary_stay.refresh_from_db()
+        self.assertIsNotNone(primary_stay.booking_id)
+        self.assertEqual(primary_stay.booking_id, secondary_stay.booking_id)
+        self.assertEqual(primary_stay.status, "active")
+        self.assertEqual(secondary_stay.status, "active")
+
+        booking = Booking.objects.get(id=primary_stay.booking_id)
+        self.assertEqual(booking.primary_guest_id, guest.id)
+        self.assertEqual(booking.status, "confirmed")
+
+    def test_verify_checkin_room_ids_expansion_without_booking_uses_created_booking(self):
+        guest = Guest.objects.create(
+            full_name="No Booking Expansion Guest",
+            whatsapp_number="+15550000667",
+            status="pending_checkin",
+        )
+        now = timezone.now()
+
+        occupied_source_room = self.room
+        occupied_source_room.status = "occupied"
+        occupied_source_room.current_guest = guest
+        occupied_source_room.save(update_fields=["status", "current_guest"])
+
+        target_room_one = Room.objects.create(
+            hotel=self.hotel,
+            room_number="118",
+            category=self.room.category,
+            floor=1,
+            status="available",
+        )
+        target_room_two = Room.objects.create(
+            hotel=self.hotel,
+            room_number="119",
+            category=self.room.category,
+            floor=1,
+            status="available",
+        )
+
+        primary_stay = Stay.objects.create(
+            hotel=self.hotel,
+            guest=guest,
+            room=occupied_source_room,
+            check_in_date=now,
+            check_out_date=now + timedelta(days=1),
+            status="pending",
+            identity_verified=False,
+            documents_uploaded=True,
+        )
+
+        response = self.client.patch(
+            f"/api/guest/stay-management/{primary_stay.id}/verify-checkin/",
+            {"register_number": "REG-NO-BOOKING-002", "room_ids": [target_room_one.id, target_room_two.id]},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["success"])
+        self.assertEqual(len(response.data["data"]["activated_stay_ids"]), 2)
+
+        stays = list(Stay.objects.filter(guest=guest, hotel=self.hotel).order_by("id"))
+        self.assertEqual(len(stays), 2)
+        self.assertIsNotNone(stays[0].booking_id)
+        self.assertEqual(stays[0].booking_id, stays[1].booking_id)
+        self.assertCountEqual([s.room_id for s in stays], [target_room_one.id, target_room_two.id])
+        self.assertTrue(all(s.status == "active" for s in stays))
+
     def test_checked_in_users_grouped_returns_one_row_per_guest_with_billing(self):
         now = timezone.now()
         guest = Guest.objects.create(
@@ -518,6 +634,15 @@ class GuestAndStayEndpointTests(APITestCase):
             whatsapp_number="+15550000223",
             status="checked_in",
         )
+        booking = Booking.objects.create(
+            hotel=self.hotel,
+            primary_guest=guest,
+            check_in_date=now - timedelta(days=3),
+            check_out_date=now + timedelta(days=1),
+            status="confirmed",
+            total_amount=0,
+            guest_names=[guest.full_name],
+        )
         room_two = Room.objects.create(
             hotel=self.hotel,
             room_number="112",
@@ -531,6 +656,7 @@ class GuestAndStayEndpointTests(APITestCase):
         self.room.save(update_fields=["status", "current_guest"])
 
         active_stay = Stay.objects.create(
+            booking=booking,
             hotel=self.hotel,
             guest=guest,
             room=self.room,
@@ -542,6 +668,7 @@ class GuestAndStayEndpointTests(APITestCase):
             documents_uploaded=True,
         )
         completed_stay = Stay.objects.create(
+            booking=booking,
             hotel=self.hotel,
             guest=guest,
             room=room_two,
@@ -574,6 +701,277 @@ class GuestAndStayEndpointTests(APITestCase):
         )
         self.assertCountEqual(history_row["active_stay_ids"], [active_stay.id])
         self.assertCountEqual(history_row["completed_stay_ids"], [completed_stay.id])
+        self.assertEqual(history_row["booking"]["id"], booking.id)
+
+    def test_stays_history_grouped_returns_separate_rows_for_separate_bookings_same_guest(self):
+        now = timezone.now()
+        guest = Guest.objects.create(
+            full_name="Two Booking Guest",
+            whatsapp_number="+15550000224",
+            status="checked_out",
+        )
+        room_two = Room.objects.create(
+            hotel=self.hotel,
+            room_number="120",
+            category=self.room.category,
+            floor=1,
+            status="available",
+        )
+        booking_one = Booking.objects.create(
+            hotel=self.hotel,
+            primary_guest=guest,
+            check_in_date=now - timedelta(days=7),
+            check_out_date=now - timedelta(days=5),
+            status="completed",
+            total_amount=1000,
+            guest_names=[guest.full_name],
+        )
+        booking_two = Booking.objects.create(
+            hotel=self.hotel,
+            primary_guest=guest,
+            check_in_date=now - timedelta(days=2),
+            check_out_date=now + timedelta(days=1),
+            status="confirmed",
+            total_amount=1200,
+            guest_names=[guest.full_name],
+        )
+
+        stay_one = Stay.objects.create(
+            booking=booking_one,
+            hotel=self.hotel,
+            guest=guest,
+            room=self.room,
+            check_in_date=booking_one.check_in_date,
+            check_out_date=booking_one.check_out_date,
+            actual_check_in=booking_one.check_in_date,
+            actual_check_out=booking_one.check_out_date,
+            status="completed",
+            identity_verified=True,
+            documents_uploaded=True,
+        )
+        stay_two = Stay.objects.create(
+            booking=booking_two,
+            hotel=self.hotel,
+            guest=guest,
+            room=room_two,
+            check_in_date=booking_two.check_in_date,
+            check_out_date=booking_two.check_out_date,
+            actual_check_in=booking_two.check_in_date,
+            status="active",
+            identity_verified=True,
+            documents_uploaded=True,
+        )
+
+        response = self.client.get(
+            "/api/guest/stay-management/stays-history-grouped/",
+            {"search": "Two Booking Guest", "page": 1, "page_size": 10},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["success"])
+        self.assertEqual(response.data["data"]["count"], 2)
+        results = response.data["data"]["results"]
+        returned_booking_ids = {row["booking"]["id"] for row in results}
+        self.assertSetEqual(returned_booking_ids, {booking_one.id, booking_two.id})
+
+        booking_map = {row["booking"]["id"]: row for row in results}
+        self.assertEqual(len(booking_map[booking_one.id]["stays"]), 1)
+        self.assertEqual(booking_map[booking_one.id]["stays"][0]["id"], stay_one.id)
+        self.assertEqual(len(booking_map[booking_two.id]["stays"]), 1)
+        self.assertEqual(booking_map[booking_two.id]["stays"][0]["id"], stay_two.id)
+
+    def test_stays_history_grouped_returns_one_row_for_multi_room_booking(self):
+        now = timezone.now()
+        guest = Guest.objects.create(
+            full_name="Multi Room History Guest",
+            whatsapp_number="+15550000225",
+            status="checked_in",
+        )
+        room_two = Room.objects.create(
+            hotel=self.hotel,
+            room_number="121",
+            category=self.room.category,
+            floor=1,
+            status="occupied",
+            current_guest=guest,
+        )
+        room_three = Room.objects.create(
+            hotel=self.hotel,
+            room_number="122",
+            category=self.room.category,
+            floor=1,
+            status="occupied",
+            current_guest=guest,
+        )
+        self.room.status = "occupied"
+        self.room.current_guest = guest
+        self.room.save(update_fields=["status", "current_guest"])
+
+        booking = Booking.objects.create(
+            hotel=self.hotel,
+            primary_guest=guest,
+            check_in_date=now - timedelta(days=1),
+            check_out_date=now + timedelta(days=2),
+            status="confirmed",
+            total_amount=0,
+            guest_names=[guest.full_name, guest.full_name, guest.full_name],
+        )
+        stay_one = Stay.objects.create(
+            booking=booking,
+            hotel=self.hotel,
+            guest=guest,
+            room=self.room,
+            check_in_date=booking.check_in_date,
+            check_out_date=booking.check_out_date,
+            actual_check_in=booking.check_in_date,
+            status="active",
+            identity_verified=True,
+            documents_uploaded=True,
+        )
+        stay_two = Stay.objects.create(
+            booking=booking,
+            hotel=self.hotel,
+            guest=guest,
+            room=room_two,
+            check_in_date=booking.check_in_date,
+            check_out_date=booking.check_out_date,
+            actual_check_in=booking.check_in_date,
+            status="active",
+            identity_verified=True,
+            documents_uploaded=True,
+        )
+        stay_three = Stay.objects.create(
+            booking=booking,
+            hotel=self.hotel,
+            guest=guest,
+            room=room_three,
+            check_in_date=booking.check_in_date,
+            check_out_date=booking.check_out_date,
+            actual_check_in=booking.check_in_date,
+            status="active",
+            identity_verified=True,
+            documents_uploaded=True,
+        )
+
+        response = self.client.get("/api/guest/stay-management/stays-history-grouped/")
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["success"])
+        self.assertEqual(response.data["data"]["count"], 1)
+        row = response.data["data"]["results"][0]
+        self.assertEqual(row["booking"]["id"], booking.id)
+        self.assertEqual(len(row["stays"]), 3)
+        self.assertCountEqual([stay["id"] for stay in row["stays"]], [stay_one.id, stay_two.id, stay_three.id])
+
+    def test_stays_history_grouped_search_supports_room_and_register_number(self):
+        now = timezone.now()
+        guest = Guest.objects.create(
+            full_name="Search History Guest",
+            whatsapp_number="+15550000226",
+            status="checked_in",
+        )
+        target_room = Room.objects.create(
+            hotel=self.hotel,
+            room_number="A-701",
+            category=self.room.category,
+            floor=1,
+            status="occupied",
+            current_guest=guest,
+        )
+        booking = Booking.objects.create(
+            hotel=self.hotel,
+            primary_guest=guest,
+            check_in_date=now - timedelta(days=1),
+            check_out_date=now + timedelta(days=1),
+            status="confirmed",
+            total_amount=0,
+            guest_names=[guest.full_name],
+        )
+        target_stay = Stay.objects.create(
+            booking=booking,
+            hotel=self.hotel,
+            guest=guest,
+            room=target_room,
+            register_number="REG-HISTORY-777",
+            check_in_date=booking.check_in_date,
+            check_out_date=booking.check_out_date,
+            actual_check_in=booking.check_in_date,
+            status="active",
+            identity_verified=True,
+            documents_uploaded=True,
+        )
+        sibling_room = Room.objects.create(
+            hotel=self.hotel,
+            room_number="A-702",
+            category=self.room.category,
+            floor=1,
+            status="occupied",
+            current_guest=guest,
+        )
+        sibling_stay = Stay.objects.create(
+            booking=booking,
+            hotel=self.hotel,
+            guest=guest,
+            room=sibling_room,
+            register_number="REG-HISTORY-778",
+            check_in_date=booking.check_in_date,
+            check_out_date=booking.check_out_date,
+            actual_check_in=booking.check_in_date,
+            status="active",
+            identity_verified=True,
+            documents_uploaded=True,
+        )
+
+        other_guest = Guest.objects.create(
+            full_name="Other History Guest",
+            whatsapp_number="+15550000227",
+            status="checked_in",
+        )
+        other_booking = Booking.objects.create(
+            hotel=self.hotel,
+            primary_guest=other_guest,
+            check_in_date=now - timedelta(days=2),
+            check_out_date=now + timedelta(days=2),
+            status="confirmed",
+            total_amount=0,
+            guest_names=[other_guest.full_name],
+        )
+        Stay.objects.create(
+            booking=other_booking,
+            hotel=self.hotel,
+            guest=other_guest,
+            room=self.room,
+            register_number="REG-OTHER-001",
+            check_in_date=other_booking.check_in_date,
+            check_out_date=other_booking.check_out_date,
+            actual_check_in=other_booking.check_in_date,
+            status="active",
+            identity_verified=True,
+            documents_uploaded=True,
+        )
+
+        by_room = self.client.get(
+            "/api/guest/stay-management/stays-history-grouped/",
+            {"search": "A-701"},
+        )
+        self.assertEqual(by_room.status_code, 200)
+        self.assertEqual(by_room.data["data"]["count"], 1)
+        self.assertEqual(by_room.data["data"]["results"][0]["booking"]["id"], booking.id)
+        self.assertCountEqual(
+            [stay["id"] for stay in by_room.data["data"]["results"][0]["stays"]],
+            [target_stay.id, sibling_stay.id],
+        )
+
+        by_register = self.client.get(
+            "/api/guest/stay-management/stays-history-grouped/",
+            {"search": "REG-HISTORY-777"},
+        )
+        self.assertEqual(by_register.status_code, 200)
+        self.assertEqual(by_register.data["data"]["count"], 1)
+        self.assertEqual(by_register.data["data"]["results"][0]["booking"]["id"], booking.id)
+        self.assertCountEqual(
+            [stay["id"] for stay in by_register.data["data"]["results"][0]["stays"]],
+            [target_stay.id, sibling_stay.id],
+        )
 
     @patch("guest.views.send_whatsapp_list_message")
     @patch("guest.views.send_whatsapp_text_message")

@@ -314,6 +314,34 @@ class CheckedInGuestGroupSerializer(serializers.Serializer):
     completed_stay_ids = serializers.ListField(child=serializers.IntegerField(), read_only=True)
     flag_summary = serializers.DictField(required=False)
 
+
+class BookingSummarySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Booking
+        fields = [
+            "id", "status", "check_in_date", "check_out_date",
+            "total_amount", "is_via_whatsapp", "guest_names", "booking_date"
+        ]
+
+    def to_representation(self, instance):
+        representation = super().to_representation(instance)
+        representation["check_in_date"] = _hotel_local_iso(instance.check_in_date, instance.hotel)
+        representation["check_out_date"] = _hotel_local_iso(instance.check_out_date, instance.hotel)
+        representation["booking_date"] = _hotel_local_iso(instance.booking_date, instance.hotel)
+        return representation
+
+
+class BookingHistoryGroupSerializer(serializers.Serializer):
+    booking = BookingSummarySerializer(read_only=True)
+    guest = GuestResponseSerializer(read_only=True)
+    is_checked_in = serializers.BooleanField(read_only=True)
+    stays = StaySummarySerializer(many=True, read_only=True)
+    billing = serializers.DictField(read_only=True)
+    active_stay_ids = serializers.ListField(child=serializers.IntegerField(), read_only=True)
+    pending_stay_ids = serializers.ListField(child=serializers.IntegerField(), read_only=True)
+    completed_stay_ids = serializers.ListField(child=serializers.IntegerField(), read_only=True)
+    flag_summary = serializers.DictField(required=False)
+
 # Legacy serializers for compatibility with other parts of the codebase
 class GuestSerializer(serializers.ModelSerializer):
     """Legacy GuestSerializer for backward compatibility"""
