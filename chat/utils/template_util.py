@@ -651,6 +651,11 @@ def _resolve_variables(
                     })
     except Guest.DoesNotExist:
         pass
+
+    # Keep explicitly provided context authoritative. This allows callers to
+    # pass multi-room values (e.g. comma-separated room numbers/WiFi mappings)
+    # without being overwritten by single active-stay fallback resolution.
+    context.update(additional_context)
     
     # Add system variables in hotel-local timezone for guest-facing templates.
     tz_name = context.get('time_zone') or additional_context.get('hotel_timezone') or 'UTC'

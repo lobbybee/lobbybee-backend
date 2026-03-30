@@ -14,7 +14,7 @@ Successfully replaced the over-engineered guest management system with a clean, 
 ### Removed Files:
 - **`guest/services.py`** - Unused utility service
 
-## Simplified API Endpoints (6 Total)
+## Simplified API Endpoints
 
 ### Guest Management (`guest-management/`):
 1. **`POST create-guest/`** - Create primary + secondary guests with documents
@@ -25,6 +25,10 @@ Successfully replaced the over-engineered guest management system with a clean, 
 4. **`POST checkin-offline/`** - Create pending stays with room assignment
 5. **`PATCH {id}/verify-checkin/`** - Verify and activate stays
 6. **`GET pending-stays/`** - List stays needing verification
+7. **`GET checked-in-users/`** - Legacy stay-level checked-in list
+8. **`GET checked-in-users-grouped/`** - Grouped guest-level checked-in list with aggregated billing
+9. **`POST {id}/checkout/`** - Legacy single-stay checkout
+10. **`POST checkout-bulk/`** - Bulk checkout for single guest across multiple stays
 
 ## Key Improvements
 
@@ -86,6 +90,17 @@ const verify = await fetch('/api/guest/stay-management/789/verify-checkin/', {
     })
 });
 // Returns: { stay_id: 789, activated_stay_ids: [789, 790], room_ids: [201, 202], register_number: "REG-2024-001" }
+
+// 4. Bulk checkout active stays for one guest
+const bulkCheckout = await fetch('/api/guest/stay-management/checkout-bulk/', {
+    method: 'POST',
+    body: JSON.stringify({
+        guest_id: 123,
+        stay_ids: [789, 790],
+        internal_note: "Express checkout"
+    })
+});
+// Returns: { guest_id: 123, checked_out_stay_ids: [789, 790], guest_has_active_stays: false, checkout_message_sent: true, feedback_triggered: true }
 ```
 
 ## Installation

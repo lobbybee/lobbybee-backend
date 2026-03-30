@@ -1,9 +1,11 @@
 from datetime import timedelta
+from unittest.mock import patch
 
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.utils import timezone
 from rest_framework.test import APITestCase
 
+from chat.models import Conversation
 from guest.models import Booking, Guest, GuestIdentityDocument, Stay
 from hotel.models import Hotel, Room, RoomCategory
 from user.models import User
@@ -448,3 +450,347 @@ class GuestAndStayEndpointTests(APITestCase):
         self.assertEqual(target_room_two.status, "occupied")
         self.assertEqual(target_room_one.current_guest_id, guest.id)
         self.assertEqual(target_room_two.current_guest_id, guest.id)
+
+    def test_checked_in_users_grouped_returns_one_row_per_guest_with_billing(self):
+        now = timezone.now()
+        guest = Guest.objects.create(
+            full_name="Grouped Guest",
+            whatsapp_number="+15550000222",
+            status="checked_in",
+        )
+        room_two = Room.objects.create(
+            hotel=self.hotel,
+            room_number="107",
+            category=self.room.category,
+            floor=1,
+            status="occupied",
+            current_guest=guest,
+        )
+        self.room.status = "occupied"
+        self.room.current_guest = guest
+        self.room.save(update_fields=["status", "current_guest"])
+
+        stay_one = Stay.objects.create(
+            hotel=self.hotel,
+            guest=guest,
+            room=self.room,
+            check_in_date=now - timedelta(days=1),
+            check_out_date=now + timedelta(days=1),
+            actual_check_in=now - timedelta(days=1),
+            status="active",
+            identity_verified=True,
+            documents_uploaded=True,
+        )
+        stay_two = Stay.objects.create(
+            hotel=self.hotel,
+            guest=guest,
+            room=room_two,
+            check_in_date=now - timedelta(days=1),
+            check_out_date=now + timedelta(days=2),
+            actual_check_in=now - timedelta(days=1),
+            status="active",
+            identity_verified=True,
+            documents_uploaded=True,
+        )
+
+        response = self.client.get(
+            "/api/guest/stay-management/checked-in-users-grouped/",
+            {"page": 1, "page_size": 10},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["success"])
+        self.assertEqual(response.data["data"]["count"], 1)
+        grouped_row = response.data["data"]["results"][0]
+        self.assertEqual(grouped_row["guest"]["id"], guest.id)
+        self.assertTrue(grouped_row["is_checked_in"])
+        self.assertCountEqual(grouped_row["active_stay_ids"], [stay_one.id, stay_two.id])
+        self.assertEqual(len(grouped_row["stays"]), 2)
+        self.assertIn("billing", grouped_row)
+        self.assertIn("current_bill_total", grouped_row["billing"])
+        self.assertIn("expected_bill_total", grouped_row["billing"])
+        self.assertEqual(len(grouped_row["billing"]["rooms"]), 2)
+
+    @patch("guest.views.send_whatsapp_list_message")
+    @patch("guest.views.send_whatsapp_text_message")
+    @patch("guest.views.send_whatsapp_image_with_link")
+    @patch("guest.views.process_template")
+    def test_checkout_bulk_skips_messages_when_guest_still_has_active_stays(
+        self,
+        mock_process_template,
+        mock_send_image,
+        mock_send_text,
+        mock_send_list,
+    ):
+        guest = Guest.objects.create(
+            full_name="Bulk Checkout Guest",
+            whatsapp_number="+15550000333",
+            status="checked_in",
+        )
+        now = timezone.now()
+        room_two = Room.objects.create(
+            hotel=self.hotel,
+            room_number="108",
+            category=self.room.category,
+            floor=1,
+            status="occupied",
+            current_guest=guest,
+        )
+        room_three = Room.objects.create(
+            hotel=self.hotel,
+            room_number="109",
+            category=self.room.category,
+            floor=1,
+            status="occupied",
+            current_guest=guest,
+        )
+        self.room.status = "occupied"
+        self.room.current_guest = guest
+        self.room.save(update_fields=["status", "current_guest"])
+
+        checkout_stay = Stay.objects.create(
+            hotel=self.hotel,
+            guest=guest,
+            room=self.room,
+            check_in_date=now - timedelta(days=2),
+            check_out_date=now + timedelta(days=1),
+            actual_check_in=now - timedelta(days=2),
+            status="active",
+            identity_verified=True,
+            documents_uploaded=True,
+        )
+        # Guest still has one active stay after partial checkout.
+        active_stay = Stay.objects.create(
+            hotel=self.hotel,
+            guest=guest,
+            room=room_two,
+            check_in_date=now - timedelta(days=2),
+            check_out_date=now + timedelta(days=1),
+            actual_check_in=now - timedelta(days=2),
+            status="active",
+            identity_verified=True,
+            documents_uploaded=True,
+        )
+        Stay.objects.create(
+            hotel=self.hotel,
+            guest=guest,
+            room=room_three,
+            check_in_date=now - timedelta(days=2),
+            check_out_date=now + timedelta(days=1),
+            actual_check_in=now - timedelta(days=2),
+            status="completed",
+            identity_verified=True,
+            documents_uploaded=True,
+        )
+
+        response = self.client.post(
+            "/api/guest/stay-management/checkout-bulk/",
+            {"guest_id": guest.id, "stay_ids": [checkout_stay.id]},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["success"])
+        payload = response.data["data"]
+        self.assertEqual(payload["guest_id"], guest.id)
+        self.assertEqual(payload["checked_out_stay_ids"], [checkout_stay.id])
+        self.assertTrue(payload["guest_has_active_stays"])
+        self.assertFalse(payload["checkout_message_sent"])
+        self.assertFalse(payload["feedback_triggered"])
+
+        guest.refresh_from_db()
+        checkout_stay.refresh_from_db()
+        active_stay.refresh_from_db()
+        self.assertEqual(guest.status, "checked_in")
+        self.assertEqual(checkout_stay.status, "completed")
+        self.assertEqual(active_stay.status, "active")
+
+        mock_process_template.assert_not_called()
+        mock_send_image.assert_not_called()
+        mock_send_text.assert_not_called()
+        mock_send_list.assert_not_called()
+
+    @patch("guest.views.send_whatsapp_list_message")
+    @patch("guest.views.send_whatsapp_text_message")
+    @patch("guest.views.send_whatsapp_image_with_link")
+    @patch("guest.views.process_template")
+    def test_checkout_bulk_sends_messages_when_last_active_stays_checkout(
+        self,
+        mock_process_template,
+        mock_send_image,
+        mock_send_text,
+        mock_send_list,
+    ):
+        mock_process_template.return_value = {
+            "success": True,
+            "processed_content": "Thanks for staying!",
+            "media_url": "",
+        }
+        guest = Guest.objects.create(
+            full_name="Final Checkout Guest",
+            whatsapp_number="+15550000444",
+            status="checked_in",
+        )
+        now = timezone.now()
+        room_two = Room.objects.create(
+            hotel=self.hotel,
+            room_number="110",
+            category=self.room.category,
+            floor=1,
+            status="occupied",
+            current_guest=guest,
+        )
+        self.room.status = "occupied"
+        self.room.current_guest = guest
+        self.room.save(update_fields=["status", "current_guest"])
+
+        stay_one = Stay.objects.create(
+            hotel=self.hotel,
+            guest=guest,
+            room=self.room,
+            check_in_date=now - timedelta(days=2),
+            check_out_date=now + timedelta(days=1),
+            actual_check_in=now - timedelta(days=2),
+            status="active",
+            identity_verified=True,
+            documents_uploaded=True,
+        )
+        stay_two = Stay.objects.create(
+            hotel=self.hotel,
+            guest=guest,
+            room=room_two,
+            check_in_date=now - timedelta(days=2),
+            check_out_date=now + timedelta(days=1),
+            actual_check_in=now - timedelta(days=2),
+            status="active",
+            identity_verified=True,
+            documents_uploaded=True,
+        )
+
+        response = self.client.post(
+            "/api/guest/stay-management/checkout-bulk/",
+            {"guest_id": guest.id, "stay_ids": [stay_one.id, stay_two.id]},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.data["data"]
+        self.assertFalse(payload["guest_has_active_stays"])
+        self.assertTrue(payload["checkout_message_sent"])
+        self.assertTrue(payload["feedback_triggered"])
+        self.assertCountEqual(payload["checked_out_stay_ids"], [stay_one.id, stay_two.id])
+
+        guest.refresh_from_db()
+        stay_one.refresh_from_db()
+        stay_two.refresh_from_db()
+        self.room.refresh_from_db()
+        room_two.refresh_from_db()
+
+        self.assertEqual(guest.status, "checked_out")
+        self.assertEqual(stay_one.status, "completed")
+        self.assertEqual(stay_two.status, "completed")
+        self.assertEqual(self.room.status, "cleaning")
+        self.assertEqual(room_two.status, "cleaning")
+        self.assertIsNone(self.room.current_guest)
+        self.assertIsNone(room_two.current_guest)
+
+        mock_process_template.assert_called_once()
+        mock_send_text.assert_called_once()
+        mock_send_list.assert_called_once()
+
+        feedback_conversations = Conversation.objects.filter(
+            guest=guest,
+            hotel=self.hotel,
+            conversation_type="feedback",
+        )
+        self.assertTrue(feedback_conversations.exists())
+
+    def test_checkout_bulk_rejects_stays_from_different_guest(self):
+        now = timezone.now()
+        guest_one = Guest.objects.create(
+            full_name="Guest One",
+            whatsapp_number="+15550000445",
+            status="checked_in",
+        )
+        guest_two = Guest.objects.create(
+            full_name="Guest Two",
+            whatsapp_number="+15550000446",
+            status="checked_in",
+        )
+        room_two = Room.objects.create(
+            hotel=self.hotel,
+            room_number="111",
+            category=self.room.category,
+            floor=1,
+            status="occupied",
+            current_guest=guest_two,
+        )
+        self.room.status = "occupied"
+        self.room.current_guest = guest_one
+        self.room.save(update_fields=["status", "current_guest"])
+
+        stay_one = Stay.objects.create(
+            hotel=self.hotel,
+            guest=guest_one,
+            room=self.room,
+            check_in_date=now - timedelta(days=1),
+            check_out_date=now + timedelta(days=1),
+            actual_check_in=now - timedelta(days=1),
+            status="active",
+            identity_verified=True,
+            documents_uploaded=True,
+        )
+        stay_two = Stay.objects.create(
+            hotel=self.hotel,
+            guest=guest_two,
+            room=room_two,
+            check_in_date=now - timedelta(days=1),
+            check_out_date=now + timedelta(days=1),
+            actual_check_in=now - timedelta(days=1),
+            status="active",
+            identity_verified=True,
+            documents_uploaded=True,
+        )
+
+        response = self.client.post(
+            "/api/guest/stay-management/checkout-bulk/",
+            {"guest_id": guest_one.id, "stay_ids": [stay_one.id, stay_two.id]},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(response.data["success"])
+        self.assertIn("All stays must belong to the provided guest_id", response.data["message"])
+
+    def test_checkout_bulk_rejects_non_active_stay(self):
+        now = timezone.now()
+        guest = Guest.objects.create(
+            full_name="Guest Non Active",
+            whatsapp_number="+15550000447",
+            status="checked_in",
+        )
+        self.room.status = "occupied"
+        self.room.current_guest = guest
+        self.room.save(update_fields=["status", "current_guest"])
+
+        stay = Stay.objects.create(
+            hotel=self.hotel,
+            guest=guest,
+            room=self.room,
+            check_in_date=now - timedelta(days=1),
+            check_out_date=now + timedelta(days=1),
+            actual_check_in=now - timedelta(days=1),
+            status="completed",
+            identity_verified=True,
+            documents_uploaded=True,
+        )
+
+        response = self.client.post(
+            "/api/guest/stay-management/checkout-bulk/",
+            {"guest_id": guest.id, "stay_ids": [stay.id]},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(response.data["success"])
+        self.assertIn("All stays must be active", response.data["message"])

@@ -587,7 +587,7 @@ The `guest_updates` object can contain any of these Guest model fields:
 
 **Endpoint:** `GET /api/guest/stays/checked-in-users/`
 
-**Description:** Lists all guests who are currently checked-in (active stays). This endpoint is used by hotel staff to see which guests are currently occupying rooms and have completed the check-in process.
+**Description:** Legacy stay-level listing endpoint (one row per stay). Kept for compatibility.
 
 **Required Permissions:**
 - `permissions.IsAuthenticated`
@@ -692,11 +692,48 @@ The `guest_updates` object can contain any of these Guest model fields:
 }
 ```
 
+### List Checked-in Users Grouped (Recommended)
+
+**Endpoint:** `GET /api/guest/stay-management/checked-in-users-grouped/`
+
+**Description:** Returns one row per guest, with all room stays grouped together and aggregated billing totals.
+
+**Query Parameters:**
+- `search` (optional): guest full name / WhatsApp / document number
+- `page`, `page_size` (optional): paginates guest groups
+
+**Success Response (200 OK):**
+```json
+{
+  "count": 1,
+  "next": null,
+  "previous": null,
+  "results": [
+    {
+      "guest": { "id": 125, "full_name": "Michael Brown" },
+      "is_checked_in": true,
+      "active_stay_ids": [103, 104],
+      "pending_stay_ids": [],
+      "completed_stay_ids": [],
+      "billing": {
+        "current_bill_total": 2400.0,
+        "expected_bill_total": 3200.0,
+        "rooms": [
+          { "stay_id": 103, "room_id": 301, "current_bill": 1200.0, "expected_bill": 1600.0 },
+          { "stay_id": 104, "room_id": 302, "current_bill": 1200.0, "expected_bill": 1600.0 }
+        ]
+      },
+      "stays": []
+    }
+  ]
+}
+```
+
 ### Check Out User
 
 **Endpoint:** `POST /api/guest/stays/{stay_id}/checkout/`
 
-**Description:** Checks out a guest by changing the stay status to completed and updating related records. This endpoint handles the complete checkout process including guest status updates and room status changes.
+**Description:** Legacy single-stay checkout endpoint. Kept for backward compatibility and internally uses the same service as bulk checkout.
 
 **Required Permissions:**
 - `permissions.IsAuthenticated`
@@ -736,7 +773,40 @@ The `guest_updates` object can contain any of these Guest model fields:
 ```json
 {
   "stay_id": 103,
-  "message": "Guest checked out successfully"
+  "message": "Guest checked out successfully",
+  "guest_has_active_stays": false,
+  "checkout_message_sent": true,
+  "feedback_triggered": true
+}
+```
+
+### Check Out Guest Stays in Bulk (Recommended)
+
+**Endpoint:** `POST /api/guest/stay-management/checkout-bulk/`
+
+**Description:** Checks out multiple active stays for one guest atomically.
+
+**Request Body:**
+```json
+{
+  "guest_id": 125,
+  "stay_ids": [103, 104],
+  "internal_rating": 5,
+  "internal_note": "Smooth checkout"
+}
+```
+
+**Success Response (200 OK):**
+```json
+{
+  "guest_id": 125,
+  "checked_out_stay_ids": [103, 104],
+  "skipped_stay_ids": [],
+  "guest_has_active_stays": false,
+  "checkout_message_sent": true,
+  "feedback_triggered": true,
+  "total_amount": "3200.00",
+  "message": "Guest stays checked out successfully"
 }
 ```
 

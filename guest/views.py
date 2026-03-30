@@ -1,7 +1,7 @@
-from rest_framework import viewsets, permissions, status, generics
+from rest_framework import viewsets, permissions, status, generics, serializers
 from rest_framework.decorators import action
 from rest_framework.views import APIView
-from django.db.models import Q, Sum
+from django.db.models import Q
 from lobbybee.utils.responses import success_response, error_response, created_response, not_found_response
 from lobbybee.utils.pagination import StandardizedPagination
 from django.db import transaction
@@ -9,20 +9,19 @@ from django.utils import timezone
 from django.shortcuts import get_object_or_404
 from django.contrib.auth import get_user_model
 import threading
-import math
-from decimal import Decimal
 
 from .models import Guest, GuestIdentityDocument, Stay, Booking
 from .serializers import (
     CreateGuestSerializer, CheckinOfflineSerializer, VerifyCheckinSerializer,
-    StayListSerializer, BookingListSerializer, GuestResponseSerializer, ExtendStaySerializer
+    StayListSerializer, BookingListSerializer, GuestResponseSerializer, ExtendStaySerializer,
+    CheckoutSerializer, CheckoutBulkSerializer, CheckedInGuestGroupSerializer
 )
+from .services_checkout import checkout_stays_for_guest
 from hotel.models import Hotel, Room, WiFiCredential
 from hotel.permissions import IsHotelStaff, IsSameHotelUser
 from user.permissions import IsPlatformAdmin, IsPlatformStaff
 from .permissions import CanManageGuests, CanViewAndManageStays
-from flag_system.models import GuestFlag
-from flag_system.services import get_flag_summary_for_guest, create_guest_flag
+from flag_system.services import get_flag_summary_for_guest
 from chat.utils.template_util import process_template
 from chat.utils.whatsapp_utils import send_whatsapp_image_with_link, send_whatsapp_button_message, send_whatsapp_list_message, send_whatsapp_text_message, send_whatsapp_payload
 from chat.utils.whatsapp_flow_utils import generate_department_menu_payload
@@ -527,7 +526,10 @@ class StayManagementViewSet(viewsets.GenericViewSet):
                 if stay.guest.whatsapp_number:
                     def send_welcome_message_async():
                         try:
-                            template_context = self._build_checkin_template_context(stay)
+                            template_context = self._build_checkin_template_context(
+                                stay,
+                                stays_for_context=stays_to_activate,
+                            )
 
                             # Process the welcome template with complete guest context
                             template_result = process_template(
@@ -709,21 +711,88 @@ class StayManagementViewSet(viewsets.GenericViewSet):
             is_active=True
         ).first()
 
-    def _build_checkin_template_context(self, stay):
+    def _build_room_context(self, stays):
+        """
+        Build consolidated room/WiFi context for one or multiple stays.
+        """
+        room_entries = []
+        seen_room_ids = set()
+        for current_stay in stays:
+            room = getattr(current_stay, 'room', None)
+            if not room or room.id in seen_room_ids:
+                continue
+            seen_room_ids.add(room.id)
+            wifi_credential = self._get_wifi_credentials_for_stay(current_stay)
+            room_entries.append({
+                'room_number': room.room_number,
+                'room_floor': room.floor,
+                'wifi_name': wifi_credential.network_name if wifi_credential else '',
+                'wifi_password': wifi_credential.password if wifi_credential else '',
+            })
+
+        room_entries.sort(key=lambda item: str(item['room_number']))
+        room_numbers = [str(item['room_number']) for item in room_entries]
+        room_floors = [str(item['room_floor']) for item in room_entries if item['room_floor'] is not None]
+
+        unique_wifi_names = {item['wifi_name'] for item in room_entries if item['wifi_name']}
+        unique_wifi_passwords = {item['wifi_password'] for item in room_entries if item['wifi_password']}
+
+        wifi_name = ''
+        if len(unique_wifi_names) == 1:
+            wifi_name = next(iter(unique_wifi_names))
+        elif len(unique_wifi_names) > 1:
+            wifi_name = ', '.join(
+                f"{item['room_number']}:{item['wifi_name']}"
+                for item in room_entries
+                if item['wifi_name']
+            )
+
+        wifi_password = ''
+        if len(unique_wifi_passwords) == 1:
+            wifi_password = next(iter(unique_wifi_passwords))
+        elif len(unique_wifi_passwords) > 1:
+            wifi_password = ', '.join(
+                f"{item['room_number']}:{item['wifi_password']}"
+                for item in room_entries
+                if item['wifi_password']
+            )
+
+        return {
+            'room_number': ', '.join(room_numbers),
+            'room_floor': ', '.join(room_floors),
+            'wifi_name': wifi_name,
+            'wifi_password': wifi_password,
+        }
+
+    def _build_checkin_template_context(self, stay, stays_for_context=None):
         """
         Build additional template context for check-in confirmation templates.
         """
-        wifi_credential = self._get_wifi_credentials_for_stay(stay)
-        checkin_dt = stay.actual_check_in or stay.check_in_date
-        checkout_dt = stay.check_out_date
+        if stays_for_context is None:
+            stays_for_context = list(
+                Stay.objects.filter(
+                    guest=stay.guest,
+                    hotel=stay.hotel,
+                    status='active'
+                ).select_related('room', 'room__category')
+            )
+        if not stays_for_context:
+            stays_for_context = [stay]
 
-        room_number = stay.room.room_number if stay.room else ''
-        room_floor = stay.room.floor if stay.room else ''
+        checkin_candidates = [
+            s.actual_check_in or s.check_in_date
+            for s in stays_for_context
+            if (s.actual_check_in or s.check_in_date)
+        ]
+        checkout_candidates = [s.check_out_date for s in stays_for_context if s.check_out_date]
+        checkin_dt = min(checkin_candidates) if checkin_candidates else (stay.actual_check_in or stay.check_in_date)
+        checkout_dt = max(checkout_candidates) if checkout_candidates else stay.check_out_date
+        room_context = self._build_room_context(stays_for_context)
 
         return {
             # WiFi variables requested for templates.
-            'wifi_name': wifi_credential.network_name if wifi_credential else '',
-            'wifi_password': wifi_credential.password if wifi_credential else '',
+            'wifi_name': room_context['wifi_name'],
+            'wifi_password': room_context['wifi_password'],
             'hotel_timezone': stay.hotel.time_zone or 'UTC',
             # Time variables requested for templates.
             'checkin_time': checkin_dt,
@@ -732,8 +801,8 @@ class StayManagementViewSet(viewsets.GenericViewSet):
             'check_in_time': checkin_dt,
             'check_out_time': checkout_dt,
             # Explicit room fallbacks for template edge cases.
-            'room_number': room_number,
-            'room_floor': room_floor,
+            'room_number': room_context['room_number'],
+            'room_floor': room_context['room_floor'],
         }
 
     @action(detail=False, methods=['get'], url_path='pending-stays')
@@ -805,227 +874,119 @@ class StayManagementViewSet(viewsets.GenericViewSet):
         serializer = StayListSerializer(stays, many=True)
         return success_response(data=serializer.data)
 
+    @action(detail=False, methods=['get'], url_path='checked-in-users-grouped')
+    def checked_in_users_grouped(self, request):
+        """
+        Group checked-in users by guest with room-level stay data and aggregated billing.
+        """
+        stays = self.get_queryset().select_related(
+            'guest', 'room', 'room__category', 'booking'
+        )
+        search_term = request.query_params.get('search', None)
+
+        if search_term:
+            stays = stays.filter(
+                Q(guest__full_name__icontains=search_term) |
+                Q(guest__whatsapp_number__icontains=search_term) |
+                Q(guest__identity_documents__document_number__icontains=search_term)
+            ).distinct()
+
+        stays = stays.order_by('-created_at')
+        grouped_by_guest = {}
+        guest_order = []
+
+        for stay in stays:
+            guest_id = stay.guest_id
+            if guest_id not in grouped_by_guest:
+                grouped_by_guest[guest_id] = {
+                    'guest': stay.guest,
+                    'stays': [],
+                    'active_stay_ids': [],
+                    'pending_stay_ids': [],
+                    'completed_stay_ids': [],
+                    'is_checked_in': False,
+                }
+                guest_order.append(guest_id)
+
+            group = grouped_by_guest[guest_id]
+            group['stays'].append(stay)
+            if stay.status == 'active':
+                group['active_stay_ids'].append(stay.id)
+                group['is_checked_in'] = True
+            elif stay.status == 'pending':
+                group['pending_stay_ids'].append(stay.id)
+            elif stay.status == 'completed':
+                group['completed_stay_ids'].append(stay.id)
+
+        flag_summary_map = self._get_flag_summary_map(request, guest_order)
+        grouped_rows = []
+        from .services import calculate_stay_billing
+        for guest_id in guest_order:
+            group = grouped_by_guest[guest_id]
+            room_billing_rows = []
+            current_bill_total = 0.0
+            expected_bill_total = 0.0
+
+            for stay in group['stays']:
+                billing = calculate_stay_billing(stay)
+                current_bill_total += float(billing.get('current_bill', 0))
+                expected_bill_total += float(billing.get('expected_bill', 0))
+                room_billing_rows.append({
+                    'stay_id': stay.id,
+                    'room_id': stay.room_id,
+                    'current_bill': billing.get('current_bill', 0),
+                    'expected_bill': billing.get('expected_bill', 0),
+                })
+
+            group_row = {
+                'guest': group['guest'],
+                'is_checked_in': group['is_checked_in'],
+                'stays': group['stays'],
+                'billing': {
+                    'current_bill_total': round(current_bill_total, 2),
+                    'expected_bill_total': round(expected_bill_total, 2),
+                    'rooms': room_billing_rows,
+                },
+                'active_stay_ids': group['active_stay_ids'],
+                'pending_stay_ids': group['pending_stay_ids'],
+                'completed_stay_ids': group['completed_stay_ids'],
+            }
+            if guest_id in flag_summary_map:
+                group_row['flag_summary'] = flag_summary_map[guest_id]
+            grouped_rows.append(group_row)
+
+        page = self.paginate_queryset(grouped_rows)
+        if page is not None:
+            serializer = CheckedInGuestGroupSerializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+
+        serializer = CheckedInGuestGroupSerializer(grouped_rows, many=True)
+        return success_response(data=serializer.data)
+
     @action(detail=True, methods=['post'], url_path='checkout')
     def checkout_user(self, request, pk=None):
         """
-        Check out a guest by changing stay status to checked-out
-        Also updates guest status and room status to cleaning
-        Automatically initiates feedback flow
-        Accepts optional internal_rating and internal_note for staff use
+        Legacy single-stay checkout endpoint.
+        Backward compatible wrapper over bulk checkout service.
         """
         try:
             stay = self.get_object()
         except Exception:
             return not_found_response("Stay not found")
 
-        # Set to True for debugging WhatsApp messages without changing status
-        # Set to False for normal operation
-        debug = False
-
-        # Validate optional checkout data
-        from .serializers import CheckoutSerializer
-        checkout_serializer = CheckoutSerializer(data=request.data)
-        checkout_serializer.is_valid(raise_exception=True)
-
-        if stay.status != 'active':
-            return error_response(
-                f'Stay is not active. Current status: {stay.status}',
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        if debug:
-            logger.info(f"DEBUG MODE: Skipping status changes for stay {stay.id} - guest {stay.guest.full_name}")
+        serializer = CheckoutSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
 
         try:
-            with transaction.atomic():
-                if debug is not True:
-                    logger.info(f"Updating status for stay {stay.id} - guest {stay.guest.full_name}")
-                    checkout_at = timezone.now()
-
-                    amount_paid = checkout_serializer.validated_data.get('amount_paid')
-                    if amount_paid is None:
-                        amount_paid = self._calculate_checkout_amount(stay, checkout_at)
-
-                    # Persist amount against this stay.
-                    stay.total_amount = amount_paid
-
-                    # Update stay status
-                    stay.status = 'completed'
-                    stay.actual_check_out = checkout_at
-                    
-                    # Update optional internal rating and note if provided
-                    if 'internal_rating' in checkout_serializer.validated_data:
-                        stay.internal_rating = checkout_serializer.validated_data['internal_rating']
-                    if 'internal_note' in checkout_serializer.validated_data:
-                        stay.internal_note = checkout_serializer.validated_data['internal_note']
-                    
-                    stay.save()
-
-                    # Keep booking.total_amount in sync as the sum of associated stay totals.
-                    if stay.booking:
-                        booking_total = (
-                            stay.booking.stays.aggregate(total=Sum('total_amount')).get('total')
-                            or Decimal('0.00')
-                        )
-                        stay.booking.total_amount = booking_total
-                        stay.booking.save(update_fields=['total_amount'])
-
-                    # Create flag if flag_user is true
-                    if checkout_serializer.validated_data.get('flag_user', False):
-                        
-                        # Check if there's already an active flag for this guest from this hotel
-                        existing_flag = GuestFlag.objects.filter(
-                            guest=stay.guest,
-                            stay__hotel=stay.hotel,
-                            is_active=True
-                        ).first()
-                        
-                        if not existing_flag:
-                            # Use the internal_note for both internal_reason and global_note
-                            flag_note = stay.internal_note or "Flagged during checkout"
-                            flag = create_guest_flag(
-                                guest_id=stay.guest.id,
-                                stay_id=stay.id,
-                                internal_reason=flag_note,  # Use the internal note as reason
-                                global_note=flag_note,       # Also use as global note
-                                flagged_by_police=False,
-                                user=request.user
-                            )
-                            logger.info(f"Created flag for guest {stay.guest.full_name} at checkout with note: {flag_note}")
-
-                    # Update guest status
-                    stay.guest.status = 'checked_out'
-                    stay.guest.save()
-
-                    # Update room status to cleaning
-                    if stay.room:
-                        stay.room.status = 'cleaning'
-                        stay.room.current_guest = None
-                        stay.room.save()
-                else:
-                    logger.info(f"DEBUG MODE: Status changes skipped - stay.status={stay.status}, guest.status={stay.guest.status}, room.status={stay.room.status if stay.room else 'No room'}")
-
-                # Close all existing conversations for this guest before sending checkout message
-                from chat.models import Conversation
-                closed_conversations_count = Conversation.objects.filter(
-                    guest=stay.guest,
-                    hotel=stay.hotel,
-                    status='active'
-                ).update(status='closed')
-                
-                logger.info(f"Closed {closed_conversations_count} active conversations for guest {stay.guest.full_name} before checkout")
-
-                # Send checkout thank-you template message
-                if stay.guest.whatsapp_number:
-                    try:
-                        template_context = self._build_checkout_template_context(stay)
-                        template_result = process_template(
-                            hotel_id=stay.hotel.id,
-                            template_name='lobbybee_checkout_thank_you',
-                            guest_id=stay.guest.id,
-                            additional_context=template_context
-                        )
-
-                        if template_result.get('success'):
-                            checkout_message = template_result.get('processed_content', '')
-                            checkout_media_url = template_result.get('media_url')
-
-                            if checkout_media_url:
-                                send_whatsapp_image_with_link(
-                                    recipient_number=stay.guest.whatsapp_number,
-                                    image_url=checkout_media_url,
-                                    caption=checkout_message
-                                )
-                            elif checkout_message:
-                                send_whatsapp_text_message(
-                                    recipient_number=stay.guest.whatsapp_number,
-                                    message_text=checkout_message
-                                )
-                        else:
-                            logger.warning(
-                                f"Checkout template processing failed for stay {stay.id}: "
-                                f"{template_result.get('error', 'Unknown error')}"
-                            )
-                    except Exception as template_err:
-                        logger.error(
-                            f"Failed to send checkout thank-you template for stay {stay.id}: {template_err}",
-                            exc_info=True
-                        )
-
-                # Initiate feedback flow automatically
-                from .models import Feedback
-                from chat.models import Conversation
-
-                # Check if feedback already exists
-                if not Feedback.objects.filter(stay=stay).exists():
-                    # Archive any existing active feedback conversations for this guest
-                    Conversation.objects.filter(
-                        guest=stay.guest,
-                        hotel=stay.hotel,
-                        conversation_type='feedback',
-                        status='active'
-                    ).update(status='archived')
-
-                    # Create new feedback conversation
-                    conversation = Conversation.objects.create(
-                        guest=stay.guest,
-                        hotel=stay.hotel,
-                        department='Reception',
-                        conversation_type='feedback',
-                        status='active'
-                    )
-
-                    # Send initial feedback list message manually
-                    header_text = f"How was your stay at {stay.hotel.name}?"
-                    body_text = f"""Thank you for staying with us at {stay.hotel.name}!
-
-We hope you had a wonderful experience and your stay was comfortable. Your feedback helps us improve our service and ensure we continue to provide exceptional hospitality.
-
-Please take a moment to rate your overall experience from 1 to 5 stars. We truly appreciate your time and feedback!"""
-
-                    rating_options = [
-                        {"id": "rating_1", "title": "⭐ Poor"},
-                        {"id": "rating_2", "title": "⭐⭐ Fair"},
-                        {"id": "rating_3", "title": "⭐⭐⭐ Good"},
-                        {"id": "rating_4", "title": "⭐⭐⭐⭐ Very Good"},
-                        {"id": "rating_5", "title": "⭐⭐⭐⭐⭐ Excellent"}
-                    ]
-
-                    try:
-                        # Save the system message to conversation FIRST (like in feedback_flow.py)
-                        from chat.flows.feedback_flow import save_system_message, FeedbackStep
-                        save_system_message(
-                            conversation,
-                            f"{header_text}\n\n{body_text}",
-                            FeedbackStep.RATING
-                        )
-
-                        # Then send the WhatsApp message
-                        send_whatsapp_list_message(
-                            recipient_number=stay.guest.whatsapp_number,
-                            header_text=header_text,
-                            body_text=body_text,
-                            options=rating_options
-                        )
-                        logger.info(f"Feedback list message sent to guest {stay.guest.full_name} ({stay.guest.whatsapp_number})")
-                    except Exception as e:
-                        logger.error(f"Failed to send feedback list message: {e}")
-                        # Continue with checkout even if WhatsApp message fails
-
-                response_data = {
-                    'stay_id': stay.id,
-                    'message': 'Guest checked out successfully',
-                    'total_amount': str(stay.total_amount)
-                }
-                
-                # Include internal rating and note in response if they were set
-                if stay.internal_rating is not None:
-                    response_data['internal_rating'] = stay.internal_rating
-                if stay.internal_note:
-                    response_data['internal_note'] = stay.internal_note
-                    
-                return success_response(data=response_data)
-
+            result = checkout_stays_for_guest(
+                hotel=request.user.hotel,
+                guest_id=stay.guest_id,
+                stay_ids=[stay.id],
+                actor=request.user,
+                options=serializer.validated_data,
+            )
+        except serializers.ValidationError as exc:
+            return error_response(str(exc.detail), status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
             logger.error(f"Error checking out guest: {str(e)}")
             return error_response(
@@ -1033,29 +994,96 @@ Please take a moment to rate your overall experience from 1 to 5 stars. We truly
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-    def _calculate_checkout_amount(self, stay, checkout_at):
+        checkout_message_sent = False
+        feedback_triggered = False
+        if result['should_send_comms']:
+            checkout_message_sent, feedback_triggered = self._send_checkout_message_and_feedback(
+                representative_stay=result['representative_stay'],
+                checked_out_stays=result['checked_out_stays'],
+            )
+
+        checked_out_stay = result['checked_out_stays'][0]
+        response_data = {
+            'stay_id': checked_out_stay.id,
+            'message': 'Guest checked out successfully',
+            'total_amount': str(checked_out_stay.total_amount),
+            'guest_id': result['guest'].id,
+            'checked_out_stay_ids': [checked_out_stay.id],
+            'guest_has_active_stays': result['guest_has_active_stays'],
+            'checkout_message_sent': checkout_message_sent,
+            'feedback_triggered': feedback_triggered,
+        }
+        if checked_out_stay.internal_rating is not None:
+            response_data['internal_rating'] = checked_out_stay.internal_rating
+        if checked_out_stay.internal_note:
+            response_data['internal_note'] = checked_out_stay.internal_note
+
+        return success_response(data=response_data)
+
+    @action(detail=False, methods=['post'], url_path='checkout-bulk')
+    def checkout_bulk(self, request):
         """
-        Fallback checkout billing when frontend amount is not provided.
-        Uses room category base rate * number of stay days (minimum 1 day).
+        Checkout multiple stays for a single guest in one request.
         """
-        if not stay.room or not stay.room.category or stay.room.category.base_price is None:
-            return Decimal('0.00')
+        serializer = CheckoutBulkSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        payload = serializer.validated_data
 
-        start_time = stay.actual_check_in or stay.check_in_date
-        if not start_time:
-            return Decimal('0.00')
+        try:
+            result = checkout_stays_for_guest(
+                hotel=request.user.hotel,
+                guest_id=payload['guest_id'],
+                stay_ids=payload['stay_ids'],
+                actor=request.user,
+                options=payload,
+            )
+        except serializers.ValidationError as exc:
+            return error_response(str(exc.detail), status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            logger.error(f"Error in bulk checkout: {str(e)}")
+            return error_response(
+                f'Failed to bulk check out guest: {str(e)}',
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
-        total_seconds = (checkout_at - start_time).total_seconds()
-        days = max(1, math.ceil(max(total_seconds, 0) / (24 * 3600)))
-        return Decimal(stay.room.category.base_price) * Decimal(days)
+        checkout_message_sent = False
+        feedback_triggered = False
+        if result['should_send_comms']:
+            checkout_message_sent, feedback_triggered = self._send_checkout_message_and_feedback(
+                representative_stay=result['representative_stay'],
+                checked_out_stays=result['checked_out_stays'],
+            )
 
-    def _build_checkout_template_context(self, stay):
+        response_data = {
+            'guest_id': result['guest'].id,
+            'checked_out_stay_ids': [stay.id for stay in result['checked_out_stays']],
+            'skipped_stay_ids': [],
+            'guest_has_active_stays': result['guest_has_active_stays'],
+            'checkout_message_sent': checkout_message_sent,
+            'feedback_triggered': feedback_triggered,
+            'total_amount': str(result['total_amount']),
+            'message': 'Guest stays checked out successfully',
+        }
+        return success_response(data=response_data)
+
+    def _build_checkout_template_context(self, stay, checked_out_stays=None):
         """
         Build additional template context for checkout thank-you templates.
         """
-        checkin_dt = stay.actual_check_in or stay.check_in_date
-        checkout_dt = stay.actual_check_out or timezone.now()
-        room_number = stay.room.room_number if stay.room else ''
+        stays_for_context = checked_out_stays or [stay]
+        checkin_candidates = [
+            s.actual_check_in or s.check_in_date
+            for s in stays_for_context
+            if (s.actual_check_in or s.check_in_date)
+        ]
+        checkout_candidates = [
+            s.actual_check_out or s.check_out_date
+            for s in stays_for_context
+            if (s.actual_check_out or s.check_out_date)
+        ]
+        checkin_dt = min(checkin_candidates) if checkin_candidates else (stay.actual_check_in or stay.check_in_date)
+        checkout_dt = max(checkout_candidates) if checkout_candidates else (stay.actual_check_out or timezone.now())
+        room_context = self._build_room_context(stays_for_context)
 
         stay_duration = ''
         if checkin_dt and checkout_dt and checkout_dt >= checkin_dt:
@@ -1076,12 +1104,153 @@ Please take a moment to rate your overall experience from 1 to 5 stars. We truly
             'hotel_timezone': stay.hotel.time_zone or 'UTC',
             'checkin_time': checkin_dt,
             'checkout_time': checkout_dt,
-            'room_number': room_number,
+            'room_number': room_context['room_number'],
+            'room_floor': room_context['room_floor'],
+            'wifi_name': room_context['wifi_name'],
+            'wifi_password': room_context['wifi_password'],
             'stay_duration': stay_duration,
             # Compatibility aliases if template uses underscore style keys.
             'check_in_time': checkin_dt,
             'check_out_time': checkout_dt,
         }
+
+    def _get_flag_summary_map(self, request, guest_ids):
+        flag_summary_map = {}
+        if not guest_ids:
+            return flag_summary_map
+
+        from flag_system.serializers import GuestFlagResponseSerializer
+
+        for guest_id in guest_ids:
+            flag_summary = get_flag_summary_for_guest(guest_id)
+            if not flag_summary['is_flagged']:
+                continue
+
+            serialized_flags = GuestFlagResponseSerializer(flag_summary['flags'], many=True).data
+            if request.user.user_type in ['hotel_admin', 'manager', 'receptionist']:
+                for flag_data in serialized_flags:
+                    flag_data.pop('internal_reason', None)
+
+            flag_summary['flags'] = serialized_flags
+            flag_summary_map[guest_id] = flag_summary
+
+        return flag_summary_map
+
+    def _send_checkout_message_and_feedback(self, representative_stay, checked_out_stays=None):
+        checkout_message_sent = False
+        feedback_triggered = False
+        guest = representative_stay.guest
+        hotel = representative_stay.hotel
+
+        closed_conversations_count = Conversation.objects.filter(
+            guest=guest,
+            hotel=hotel,
+            status='active'
+        ).update(status='closed')
+        logger.info(
+            f"Closed {closed_conversations_count} active conversations for guest "
+            f"{guest.full_name} before checkout communications"
+        )
+
+        if guest.whatsapp_number:
+            try:
+                template_context = self._build_checkout_template_context(
+                    representative_stay,
+                    checked_out_stays=checked_out_stays,
+                )
+                template_result = process_template(
+                    hotel_id=hotel.id,
+                    template_name='lobbybee_checkout_thank_you',
+                    guest_id=guest.id,
+                    additional_context=template_context
+                )
+
+                if template_result.get('success'):
+                    checkout_message = template_result.get('processed_content', '')
+                    checkout_media_url = template_result.get('media_url')
+
+                    if checkout_media_url:
+                        send_whatsapp_image_with_link(
+                            recipient_number=guest.whatsapp_number,
+                            image_url=checkout_media_url,
+                            caption=checkout_message
+                        )
+                    elif checkout_message:
+                        send_whatsapp_text_message(
+                            recipient_number=guest.whatsapp_number,
+                            message_text=checkout_message
+                        )
+                    checkout_message_sent = True
+                else:
+                    logger.warning(
+                        f"Checkout template processing failed for stay {representative_stay.id}: "
+                        f"{template_result.get('error', 'Unknown error')}"
+                    )
+            except Exception as template_err:
+                logger.error(
+                    f"Failed to send checkout thank-you template for stay {representative_stay.id}: "
+                    f"{template_err}",
+                    exc_info=True
+                )
+
+        from .models import Feedback
+
+        feedback_exists = Feedback.objects.filter(
+            guest=guest,
+            stay__hotel=hotel
+        ).exists()
+        if not feedback_exists:
+            Conversation.objects.filter(
+                guest=guest,
+                hotel=hotel,
+                conversation_type='feedback',
+                status='active'
+            ).update(status='archived')
+
+            conversation = Conversation.objects.create(
+                guest=guest,
+                hotel=hotel,
+                department='Reception',
+                conversation_type='feedback',
+                status='active'
+            )
+
+            header_text = f"How was your stay at {hotel.name}?"
+            body_text = (
+                f"Thank you for staying with us at {hotel.name}!\n\n"
+                "We hope you had a wonderful experience and your stay was comfortable. "
+                "Your feedback helps us improve our service and ensure we continue to "
+                "provide exceptional hospitality.\n\n"
+                "Please take a moment to rate your overall experience from 1 to 5 stars. "
+                "We truly appreciate your time and feedback!"
+            )
+            rating_options = [
+                {"id": "rating_1", "title": "⭐ Poor"},
+                {"id": "rating_2", "title": "⭐⭐ Fair"},
+                {"id": "rating_3", "title": "⭐⭐⭐ Good"},
+                {"id": "rating_4", "title": "⭐⭐⭐⭐ Very Good"},
+                {"id": "rating_5", "title": "⭐⭐⭐⭐⭐ Excellent"}
+            ]
+
+            try:
+                from chat.flows.feedback_flow import save_system_message, FeedbackStep
+                save_system_message(
+                    conversation,
+                    f"{header_text}\n\n{body_text}",
+                    FeedbackStep.RATING
+                )
+                send_whatsapp_list_message(
+                    recipient_number=guest.whatsapp_number,
+                    header_text=header_text,
+                    body_text=body_text,
+                    options=rating_options
+                )
+                feedback_triggered = True
+                logger.info(f"Feedback list message sent to guest {guest.full_name} ({guest.whatsapp_number})")
+            except Exception as err:
+                logger.error(f"Failed to send feedback list message: {err}")
+
+        return checkout_message_sent, feedback_triggered
 
     @action(detail=True, methods=['post'], url_path='extend-stay')
     def extend_stay(self, request, pk=None):

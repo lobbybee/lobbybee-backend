@@ -350,10 +350,22 @@ def send_extend_checkin_reminder(self, stay_id, is_test=False, reminder_date=Non
             hotel_tz = _get_hotel_tz(stay.hotel)
             checkout_time_text = _format_checkout_time_for_guest(stay, hotel_tz)
             guest_name = get_first_name_from_full_name(stay.guest.full_name)
-            room_number = stay.room.room_number if stay.room else 'N/A'
+            active_room_numbers = list(
+                Stay.objects.filter(
+                    guest=stay.guest,
+                    hotel=stay.hotel,
+                    status='active',
+                    room__isnull=False
+                ).values_list('room__room_number', flat=True).distinct()
+            )
+            if active_room_numbers:
+                active_room_numbers = sorted(str(room_no) for room_no in active_room_numbers)
+                room_numbers_text = ', '.join(active_room_numbers)
+            else:
+                room_numbers_text = stay.room.room_number if stay.room else 'N/A'
             message = (
                 f"Dear {guest_name},\n\n"
-                f"Your check-out time for Room No {room_number} is {checkout_time_text}.\n"
+                f"Your check-out time for Room No(s) {room_numbers_text} is {checkout_time_text}.\n"
                 "Please settle the bills and return your room keys on time to avoid any additional charges.\n\n"
                 "If you like to continue your stay, Please contact Reception immediately to check availability.\n\n"
                 "Have a great day!!"

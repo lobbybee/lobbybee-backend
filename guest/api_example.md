@@ -135,7 +135,68 @@ guest_1_documents_0: [Child's document]
 
 **Endpoint**: `GET /api/guest/guest-management/guests/`
 
-## 6. List All Bookings
+## 6. List Checked-in Users (Grouped by Guest)
+
+**Endpoint**: `GET /api/guest/stay-management/checked-in-users-grouped/`
+
+### Response:
+```json
+{
+    "count": 1,
+    "next": null,
+    "previous": null,
+    "results": [
+        {
+            "guest": {
+                "id": 123,
+                "full_name": "John Doe"
+            },
+            "is_checked_in": true,
+            "active_stay_ids": [789, 790],
+            "pending_stay_ids": [],
+            "completed_stay_ids": [],
+            "billing": {
+                "current_bill_total": 2000.0,
+                "expected_bill_total": 3000.0,
+                "rooms": [
+                    {"stay_id": 789, "room_id": 101, "current_bill": 1000.0, "expected_bill": 1500.0},
+                    {"stay_id": 790, "room_id": 102, "current_bill": 1000.0, "expected_bill": 1500.0}
+                ]
+            },
+            "stays": []
+        }
+    ]
+}
+```
+
+## 7. Bulk Checkout for Single Guest
+
+**Endpoint**: `POST /api/guest/stay-management/checkout-bulk/`
+
+### Request Body:
+```json
+{
+    "guest_id": 123,
+    "stay_ids": [789, 790],
+    "internal_note": "Guest requested express checkout"
+}
+```
+
+### Response:
+```json
+{
+    "guest_id": 123,
+    "checked_out_stay_ids": [789, 790],
+    "skipped_stay_ids": [],
+    "guest_has_active_stays": false,
+    "checkout_message_sent": true,
+    "feedback_triggered": true,
+    "total_amount": "3000.00",
+    "message": "Guest stays checked out successfully"
+}
+```
+
+## 8. List All Bookings
 
 **Endpoint**: `GET /api/guest/guest-management/bookings/`
 

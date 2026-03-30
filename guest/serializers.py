@@ -164,6 +164,16 @@ class CheckoutSerializer(serializers.Serializer):
             )
         return attrs
 
+
+class CheckoutBulkSerializer(CheckoutSerializer):
+    guest_id = serializers.IntegerField(required=True)
+    stay_ids = serializers.ListField(
+        child=serializers.IntegerField(),
+        required=True,
+        allow_empty=False,
+        help_text="List of active stay IDs for a single guest"
+    )
+
 class ExtendStaySerializer(serializers.Serializer):
     check_out_date = serializers.DateTimeField(
         required=True,
@@ -255,6 +265,54 @@ class StayListSerializer(serializers.ModelSerializer):
         representation["check_in_date"] = _hotel_local_iso(effective_check_in, instance.hotel)
         representation["check_out_date"] = _hotel_local_iso(effective_check_out, instance.hotel)
         return representation
+
+
+class StaySummarySerializer(serializers.ModelSerializer):
+    room_details = serializers.SerializerMethodField()
+    billing = serializers.SerializerMethodField()
+    isCheckedIn = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Stay
+        fields = [
+            "id", "booking", "status", "check_in_date", "check_out_date",
+            "room", "room_details", "register_number", "identity_verified",
+            "internal_rating", "internal_note", "billing", "isCheckedIn"
+        ]
+
+    def get_room_details(self, obj):
+        return {
+            "id": obj.room.id if obj.room else None,
+            "room_number": obj.room.room_number if obj.room else None,
+            "floor": obj.room.floor if obj.room else None,
+            "category": obj.room.category.name if obj.room and obj.room.category else None
+        }
+
+    def get_billing(self, obj):
+        from .services import calculate_stay_billing
+        return calculate_stay_billing(obj)
+
+    def get_isCheckedIn(self, obj):
+        return obj.status == 'active'
+
+    def to_representation(self, instance):
+        representation = super().to_representation(instance)
+        effective_check_in = instance.actual_check_in or instance.check_in_date
+        effective_check_out = instance.actual_check_out or instance.check_out_date
+        representation["check_in_date"] = _hotel_local_iso(effective_check_in, instance.hotel)
+        representation["check_out_date"] = _hotel_local_iso(effective_check_out, instance.hotel)
+        return representation
+
+
+class CheckedInGuestGroupSerializer(serializers.Serializer):
+    guest = GuestResponseSerializer(read_only=True)
+    is_checked_in = serializers.BooleanField(read_only=True)
+    stays = StaySummarySerializer(many=True, read_only=True)
+    billing = serializers.DictField(read_only=True)
+    active_stay_ids = serializers.ListField(child=serializers.IntegerField(), read_only=True)
+    pending_stay_ids = serializers.ListField(child=serializers.IntegerField(), read_only=True)
+    completed_stay_ids = serializers.ListField(child=serializers.IntegerField(), read_only=True)
+    flag_summary = serializers.DictField(required=False)
 
 # Legacy serializers for compatibility with other parts of the codebase
 class GuestSerializer(serializers.ModelSerializer):
