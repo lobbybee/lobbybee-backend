@@ -580,16 +580,22 @@ class StayManagementViewSet(viewsets.GenericViewSet):
                 if stay.guest.whatsapp_number:
                     from .tasks import schedule_checkout_extension_reminder, schedule_meal_reminders
                     is_test_reminder = serializer.validated_data.get('is_test', False)
-                    # Schedule the reminder task asynchronously
-                    schedule_checkout_extension_reminder.delay(stay.id, is_test_reminder)
+                    stay_id = stay.id
 
-                    # Schedule meal reminders if both hotel setting is true AND request has it true
+                    # Evaluate effective reminder flags from the freshly-updated stay.
                     breakfast_enabled = stay.hotel.breakfast_reminder and stay.breakfast_reminder
                     lunch_enabled = stay.lunch_reminder
                     dinner_enabled = stay.hotel.dinner_reminder and stay.dinner_reminder
 
-                    if breakfast_enabled or lunch_enabled or dinner_enabled:
-                        schedule_meal_reminders.delay(stay.id)
+                    def schedule_reminders_after_commit():
+                        # Schedule checkout reminder after transaction commits to avoid stale reads.
+                        schedule_checkout_extension_reminder.delay(stay_id, is_test_reminder)
+
+                        # Schedule meal reminders only when at least one meal reminder is enabled.
+                        if breakfast_enabled or lunch_enabled or dinner_enabled:
+                            schedule_meal_reminders.delay(stay_id)
+
+                    transaction.on_commit(schedule_reminders_after_commit)
 
                 # Check for guest flags before completing check-in
                 from flag_system.serializers import GuestFlagSummarySerializer, GuestFlagResponseSerializer
@@ -1311,7 +1317,7 @@ class StayManagementViewSet(viewsets.GenericViewSet):
                 from celery import current_app
                 current_app.control.revoke(f"extend_reminder_{stay.id}")
                 from .tasks import schedule_checkout_extension_reminder, schedule_meal_reminders
-                schedule_checkout_extension_reminder.delay(stay.id)
+                stay_id = stay.id
 
                 # Schedule meal reminders for the newly added days.
                 # Deterministic date-based task IDs make this idempotent for already-scheduled days.
@@ -1319,8 +1325,15 @@ class StayManagementViewSet(viewsets.GenericViewSet):
                     breakfast_enabled = stay.hotel.breakfast_reminder and stay.breakfast_reminder
                     lunch_enabled = stay.lunch_reminder
                     dinner_enabled = stay.hotel.dinner_reminder and stay.dinner_reminder
-                    if breakfast_enabled or lunch_enabled or dinner_enabled:
-                        schedule_meal_reminders.delay(stay.id)
+
+                    def schedule_extended_stay_reminders_after_commit():
+                        schedule_checkout_extension_reminder.delay(stay_id)
+                        if breakfast_enabled or lunch_enabled or dinner_enabled:
+                            schedule_meal_reminders.delay(stay_id)
+
+                    transaction.on_commit(schedule_extended_stay_reminders_after_commit)
+                else:
+                    transaction.on_commit(lambda: schedule_checkout_extension_reminder.delay(stay_id))
 
                 logger.info(f"Extended stay for guest {stay.guest.full_name} from {old_checkout_date} to {new_checkout_date}")
 
