@@ -1002,7 +1002,14 @@ class StayManagementViewSet(viewsets.GenericViewSet):
         """
         Build additional template context for checkout thank-you templates.
         """
-        stays_for_context = checked_out_stays or [stay]
+        # Prefer booking-wide room context so the final checkout message
+        # includes all rooms booked together in the same transaction.
+        if stay.booking_id:
+            stays_for_context = list(
+                stay.booking.stays.select_related('room', 'room__category').all()
+            )
+        else:
+            stays_for_context = checked_out_stays or [stay]
         checkin_candidates = [
             s.actual_check_in or s.check_in_date
             for s in stays_for_context
