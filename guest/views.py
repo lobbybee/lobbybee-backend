@@ -891,7 +891,8 @@ class StayManagementViewSet(viewsets.GenericViewSet):
                 Q(guest__identity_documents__document_number__icontains=search_term)
             ).distinct()
 
-        stays = stays.order_by('-created_at')
+        # For checked-in grouping, only active stays should be returned.
+        stays = stays.filter(status='active').order_by('-created_at')
         grouped_by_guest = {}
         guest_order = []
 
