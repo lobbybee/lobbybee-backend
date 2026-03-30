@@ -511,6 +511,70 @@ class GuestAndStayEndpointTests(APITestCase):
         self.assertIn("expected_bill_total", grouped_row["billing"])
         self.assertEqual(len(grouped_row["billing"]["rooms"]), 2)
 
+    def test_stays_history_grouped_includes_completed_history_for_search(self):
+        now = timezone.now()
+        guest = Guest.objects.create(
+            full_name="History Guest",
+            whatsapp_number="+15550000223",
+            status="checked_in",
+        )
+        room_two = Room.objects.create(
+            hotel=self.hotel,
+            room_number="112",
+            category=self.room.category,
+            floor=1,
+            status="occupied",
+            current_guest=guest,
+        )
+        self.room.status = "occupied"
+        self.room.current_guest = guest
+        self.room.save(update_fields=["status", "current_guest"])
+
+        active_stay = Stay.objects.create(
+            hotel=self.hotel,
+            guest=guest,
+            room=self.room,
+            check_in_date=now - timedelta(days=1),
+            check_out_date=now + timedelta(days=1),
+            actual_check_in=now - timedelta(days=1),
+            status="active",
+            identity_verified=True,
+            documents_uploaded=True,
+        )
+        completed_stay = Stay.objects.create(
+            hotel=self.hotel,
+            guest=guest,
+            room=room_two,
+            check_in_date=now - timedelta(days=3),
+            check_out_date=now - timedelta(days=1),
+            actual_check_in=now - timedelta(days=3),
+            actual_check_out=now - timedelta(days=1),
+            status="completed",
+            identity_verified=True,
+            documents_uploaded=True,
+        )
+
+        active_response = self.client.get("/api/guest/stay-management/checked-in-users-grouped/")
+        self.assertEqual(active_response.status_code, 200)
+        active_row = active_response.data["data"]["results"][0]
+        self.assertEqual(len(active_row["stays"]), 1)
+        self.assertEqual(active_row["stays"][0]["id"], active_stay.id)
+
+        history_response = self.client.get(
+            "/api/guest/stay-management/stays-history-grouped/",
+            {"search": "History Guest", "page": 1, "page_size": 10},
+        )
+        self.assertEqual(history_response.status_code, 200)
+        self.assertTrue(history_response.data["success"])
+        self.assertEqual(history_response.data["data"]["count"], 1)
+        history_row = history_response.data["data"]["results"][0]
+        self.assertCountEqual(
+            [stay["id"] for stay in history_row["stays"]],
+            [active_stay.id, completed_stay.id],
+        )
+        self.assertCountEqual(history_row["active_stay_ids"], [active_stay.id])
+        self.assertCountEqual(history_row["completed_stay_ids"], [completed_stay.id])
+
     @patch("guest.views.send_whatsapp_list_message")
     @patch("guest.views.send_whatsapp_text_message")
     @patch("guest.views.send_whatsapp_image_with_link")

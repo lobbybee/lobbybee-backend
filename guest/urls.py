@@ -20,5 +20,6 @@ urlpatterns = [
 # GET  /api/guest/stay-management/pending-stays/
 # GET  /api/guest/stay-management/checked-in-users/
 # GET  /api/guest/stay-management/checked-in-users-grouped/
+# GET  /api/guest/stay-management/stays-history-grouped/
 # POST /api/guest/stay-management/{id}/checkout/
 # POST /api/guest/stay-management/checkout-bulk/

@@ -169,7 +169,16 @@ guest_1_documents_0: [Child's document]
 }
 ```
 
-## 7. Bulk Checkout for Single Guest
+## 7. Stay History Grouped (All Statuses)
+
+**Endpoint**: `GET /api/guest/stay-management/stays-history-grouped/?search=John&page=1&page_size=10`
+
+### Notes:
+- Returns grouped rows by guest.
+- Includes active + pending + completed stays.
+- Useful for historical search/audit.
+
+## 8. Bulk Checkout for Single Guest
 
 **Endpoint**: `POST /api/guest/stay-management/checkout-bulk/`
 
@@ -196,7 +205,7 @@ guest_1_documents_0: [Child's document]
 }
 ```
 
-## 8. List All Bookings
+## 9. List All Bookings
 
 **Endpoint**: `GET /api/guest/guest-management/bookings/`
 

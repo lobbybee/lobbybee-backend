@@ -729,6 +729,40 @@ The `guest_updates` object can contain any of these Guest model fields:
 }
 ```
 
+### Stay History Grouped (Recommended for Search)
+
+**Endpoint:** `GET /api/guest/stay-management/stays-history-grouped/`
+
+**Description:** Returns grouped stay history by guest. Includes active, pending, completed, and cancelled stays.
+
+**Query Parameters:**
+- `search` (optional): guest full name / WhatsApp / document number
+- `page`, `page_size` (optional): paginates guest groups
+
+**Success Response (200 OK):**
+```json
+{
+  "count": 1,
+  "next": null,
+  "previous": null,
+  "results": [
+    {
+      "guest": { "id": 125, "full_name": "Michael Brown" },
+      "is_checked_in": true,
+      "active_stay_ids": [103],
+      "pending_stay_ids": [],
+      "completed_stay_ids": [95, 96],
+      "billing": {
+        "current_bill_total": 3400.0,
+        "expected_bill_total": 4200.0,
+        "rooms": []
+      },
+      "stays": []
+    }
+  ]
+}
+```
+
 ### Check Out User
 
 **Endpoint:** `POST /api/guest/stays/{stay_id}/checkout/`
