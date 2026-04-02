@@ -7,9 +7,34 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from .models import ReminderLog, Stay
 from .name_utils import get_first_name_from_full_name
-from chat.utils.whatsapp_utils import send_whatsapp_button_message, send_whatsapp_text_message
+from chat.models import Message
+from chat.utils.whatsapp_utils import (
+    send_whatsapp_button_message,
+    send_whatsapp_template_message,
+    send_whatsapp_text_message,
+)
 
 logger = logging.getLogger(__name__)
+
+MEAL_TEMPLATE_NAME = 'meal_reminder'
+CHECKOUT_TEMPLATE_NAME = 'chekout_reminder'
+WHATSAPP_TEMPLATE_LANGUAGE = 'en'
+WHATSAPP_SESSION_WINDOW = timedelta(hours=24)
+MEAL_TEMPLATE_FALLBACK_TIMES = {
+    'breakfast': time(7, 30),
+    'lunch': time(12, 30),
+    'dinner': time(19, 0),
+}
+MEAL_TEMPLATE_GREETINGS = {
+    'breakfast': 'Morning',
+    'lunch': 'Afternoon',
+    'dinner': 'Evening',
+}
+MEAL_TEMPLATE_NAMES = {
+    'breakfast': 'Breakfast',
+    'lunch': 'Lunch',
+    'dinner': 'Dinner',
+}
 
 
 def _get_hotel_tz(hotel):
@@ -221,6 +246,98 @@ def _build_meal_message(stay, reminder_type):
     )
 
 
+def _get_latest_guest_message_at(stay):
+    latest_message = (
+        Message.objects.filter(
+            conversation__guest=stay.guest,
+            conversation__hotel=stay.hotel,
+            sender_type='guest',
+        )
+        .order_by('-created_at')
+        .values_list('created_at', flat=True)
+        .first()
+    )
+    return latest_message
+
+
+def _should_use_whatsapp_template_for_reminder(stay, now=None):
+    now = now or timezone.now()
+    latest_guest_message_at = _get_latest_guest_message_at(stay)
+    if latest_guest_message_at is None:
+        return True, None
+
+    return (now - latest_guest_message_at) > WHATSAPP_SESSION_WINDOW, latest_guest_message_at
+
+
+def _build_reminder_metadata(*, delivery_mode, template_name=None, last_guest_message_at=None):
+    return {
+        'delivery_channel': 'whatsapp',
+        'delivery_mode': delivery_mode,
+        'template_name': template_name,
+        'last_guest_message_at': last_guest_message_at.isoformat() if last_guest_message_at else None,
+    }
+
+
+def _get_meal_template_time_range(stay, reminder_type):
+    hotel_tz = _get_hotel_tz(stay.hotel)
+    reminder_date = _resolve_reminder_date(stay, reminder_type)
+    hotel_time = getattr(stay.hotel, f'{reminder_type}_time', None) or MEAL_TEMPLATE_FALLBACK_TIMES[reminder_type]
+    meal_start = datetime.combine(reminder_date, hotel_time, tzinfo=hotel_tz)
+    meal_end = meal_start + timedelta(hours=3)
+    return meal_start, meal_end
+
+
+def _format_time_for_template(value):
+    return value.strftime('%I:%M %p').lstrip('0')
+
+
+def _build_meal_template_components(stay, reminder_type):
+    meal_start, meal_end = _get_meal_template_time_range(stay, reminder_type)
+    guest_name = get_first_name_from_full_name(stay.guest.full_name)
+    return [
+        {
+            'type': 'body',
+            'parameters': [
+                {'type': 'text', 'text': MEAL_TEMPLATE_GREETINGS[reminder_type], 'parameter_name': 'day_greeting'},
+                {'type': 'text', 'text': guest_name, 'parameter_name': 'guest_name'},
+                {'type': 'text', 'text': MEAL_TEMPLATE_NAMES[reminder_type], 'parameter_name': 'meal_name'},
+                {'type': 'text', 'text': _format_time_for_template(meal_start), 'parameter_name': 'meal_start'},
+                {'type': 'text', 'text': _format_time_for_template(meal_end), 'parameter_name': 'meal_end'},
+            ],
+        }
+    ]
+
+
+def _build_checkout_template_components(stay, checkout_time_text, room_numbers_text):
+    guest_name = get_first_name_from_full_name(stay.guest.full_name)
+    return [
+        {
+            'type': 'body',
+            'parameters': [
+                {'type': 'text', 'text': guest_name, 'parameter_name': 'guest_name'},
+                {'type': 'text', 'text': room_numbers_text, 'parameter_name': 'room_number'},
+                {'type': 'text', 'text': checkout_time_text, 'parameter_name': 'checkout_time'},
+            ],
+        },
+        {
+            'type': 'button',
+            'sub_type': 'quick_reply',
+            'index': 0,
+            'parameters': [
+                {'type': 'payload', 'payload': f'stay_extend_yes_{stay.id}'},
+            ],
+        },
+        {
+            'type': 'button',
+            'sub_type': 'quick_reply',
+            'index': 1,
+            'parameters': [
+                {'type': 'payload', 'payload': f'stay_extend_no_{stay.id}'},
+            ],
+        },
+    ]
+
+
 def _format_checkout_time_for_guest(stay, hotel_tz):
     """
     Format checkout time in hotel-local timezone for guest-facing reminder copy.
@@ -273,12 +390,31 @@ def _send_meal_reminder(reminder_type, stay_id, reminder_date_str=None):
                 logger.warning(f"Guest {stay.guest.id} has no WhatsApp number")
                 return {'status': 'error', 'reason': 'no_whatsapp_number'}
 
-            send_whatsapp_text_message(
-                recipient_number=stay.guest.whatsapp_number,
-                message_text=_build_meal_message(stay, reminder_type),
-            )
+            use_template, last_guest_message_at = _should_use_whatsapp_template_for_reminder(stay)
+            metadata = None
+            if use_template:
+                send_whatsapp_template_message(
+                    recipient_number=stay.guest.whatsapp_number,
+                    template_name=MEAL_TEMPLATE_NAME,
+                    components=_build_meal_template_components(stay, reminder_type),
+                    language_code=WHATSAPP_TEMPLATE_LANGUAGE,
+                )
+                metadata = _build_reminder_metadata(
+                    delivery_mode='template',
+                    template_name=MEAL_TEMPLATE_NAME,
+                    last_guest_message_at=last_guest_message_at,
+                )
+            else:
+                send_whatsapp_text_message(
+                    recipient_number=stay.guest.whatsapp_number,
+                    message_text=_build_meal_message(stay, reminder_type),
+                )
+                metadata = _build_reminder_metadata(
+                    delivery_mode='session_text',
+                    last_guest_message_at=last_guest_message_at,
+                )
 
-            _set_log_status(log, status='sent', reason=None, sent_at=timezone.now())
+            _set_log_status(log, status='sent', reason=None, sent_at=timezone.now(), metadata=metadata)
 
         logger.info(
             "Sent %s reminder to guest %s (%s)",
@@ -402,11 +538,30 @@ def send_extend_checkin_reminder(self, stay_id, is_test=False, reminder_date=Non
                 },
             ]
 
-            response = send_whatsapp_button_message(
-                recipient_number=stay.guest.whatsapp_number,
-                message_text=message,
-                buttons=buttons,
-            )
+            use_template, last_guest_message_at = _should_use_whatsapp_template_for_reminder(stay, now=now)
+            metadata = None
+            if use_template:
+                response = send_whatsapp_template_message(
+                    recipient_number=stay.guest.whatsapp_number,
+                    template_name=CHECKOUT_TEMPLATE_NAME,
+                    components=_build_checkout_template_components(stay, checkout_time_text, room_numbers_text),
+                    language_code=WHATSAPP_TEMPLATE_LANGUAGE,
+                )
+                metadata = _build_reminder_metadata(
+                    delivery_mode='template',
+                    template_name=CHECKOUT_TEMPLATE_NAME,
+                    last_guest_message_at=last_guest_message_at,
+                )
+            else:
+                response = send_whatsapp_button_message(
+                    recipient_number=stay.guest.whatsapp_number,
+                    message_text=message,
+                    buttons=buttons,
+                )
+                metadata = _build_reminder_metadata(
+                    delivery_mode='session_button',
+                    last_guest_message_at=last_guest_message_at,
+                )
             if not response:
                 _set_log_status(log, status='failed', reason='whatsapp_send_failed', is_test=is_test)
                 logger.error(
@@ -416,7 +571,14 @@ def send_extend_checkin_reminder(self, stay_id, is_test=False, reminder_date=Non
                 )
                 return {'status': 'error', 'reason': 'whatsapp_send_failed', 'stay_id': stay_id}
 
-            _set_log_status(log, status='sent', reason=None, is_test=is_test, sent_at=timezone.now())
+            _set_log_status(
+                log,
+                status='sent',
+                reason=None,
+                is_test=is_test,
+                sent_at=timezone.now(),
+                metadata=metadata,
+            )
 
         logger.info(
             "Sent extension check-in reminder to guest %s (%s)",
