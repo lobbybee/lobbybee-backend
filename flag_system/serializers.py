@@ -68,7 +68,7 @@ class GuestFlagResponseSerializer(serializers.ModelSerializer):
     class Meta:
         model = GuestFlag
         fields = [
-            'id', 'global_note', 'flagged_by_police', 'source',
+            'id', 'global_note', 'flagged_by_police', 'is_active', 'source',
             'flagged_by', 'flagged_date', 'hotel_name', 'internal_rating'
         ]
     

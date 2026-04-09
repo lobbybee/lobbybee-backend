@@ -2,7 +2,7 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from lobbybee.utils.responses import success_response, error_response, created_response, not_found_response, forbidden_response
-from django.shortcuts import get_object_or_404
+from django.http import Http404
 from django.db.models import Q
 from .models import GuestFlag
 from guest.models import Guest
@@ -109,13 +109,12 @@ class GuestFlagViewSet(viewsets.ModelViewSet):
         return success_response(data=serializer.data)
     
     @action(detail=True, methods=['post'], url_path='reset')
-    @action(detail=True, methods=['post'], url_path='reset')
     def reset(self, request, pk=None):
         """Reset (deactivate) a flag"""
         try:
             try:
                 flag = self.get_object()
-            except Exception:
+            except Http404:
                 return not_found_response("Flag not found")
             
             if not flag.is_active:
@@ -124,8 +123,13 @@ class GuestFlagViewSet(viewsets.ModelViewSet):
                     status=status.HTTP_400_BAD_REQUEST
                 )
             
-            serializer = ResetFlagSerializer(data=request.data)
-            serializer.is_valid(raise_exception=True)
+            serializer = self.get_serializer(data=request.data)
+            if not serializer.is_valid():
+                return error_response(
+                    'Validation failed',
+                    errors=serializer.errors,
+                    status=status.HTTP_400_BAD_REQUEST
+                )
             
             reset_flag = reset_guest_flag(
                 flag_id=flag.id,
@@ -145,8 +149,7 @@ class GuestFlagViewSet(viewsets.ModelViewSet):
         except Exception as e:
             return error_response(f"Failed to reset flag: {str(e)}", status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
-    @action(detail=False, methods=['get'], url_path='check/(?P<guest_id>\d+)')
-    @action(detail=False, methods=['get'], url_path='check/(?P<guest_id>\d+)')
+    @action(detail=False, methods=['get'], url_path=r'check/(?P<guest_id>\d+)')
     def check_guest(self, request, guest_id=None):
         """
         Check if a guest has any active flags.
@@ -177,7 +180,7 @@ class GuestFlagViewSet(viewsets.ModelViewSet):
 @permission_classes([IsAuthenticated])
 def search_guests(request):
     """
-    Search guests by name, ID, or phone number with fuzzy matching.
+    Search guests by name, register/document number, email, or phone number with fuzzy matching.
     Available for platform admins and hotel staff.
     """
     try:
@@ -202,7 +205,8 @@ def search_guests(request):
             Q(full_name__icontains=query) |
             Q(whatsapp_number__icontains=query) |
             Q(email__icontains=query) |
-            Q(register_number__icontains=query)
+            Q(register_number__icontains=query) |
+            Q(identity_documents__document_number__icontains=query)
         ).distinct()[:limit]
 
         # Prepare response data
