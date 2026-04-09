@@ -1058,11 +1058,14 @@ class StayManagementViewSet(viewsets.GenericViewSet):
         room_context = self._build_room_context(stays_for_context)
 
         stay_duration = ''
+        no_of_days = ''
         if checkin_dt and checkout_dt and checkout_dt >= checkin_dt:
             duration = checkout_dt - checkin_dt
             total_minutes = int(duration.total_seconds() // 60)
             days, rem_minutes = divmod(total_minutes, 1440)
             hours, minutes = divmod(rem_minutes, 60)
+            total_days = (checkout_dt.date() - checkin_dt.date()).days
+            no_of_days = f"{total_days} day{'s' if total_days != 1 else ''}"
             duration_parts = []
             if days:
                 duration_parts.append(f"{days} day{'s' if days != 1 else ''}")
@@ -1080,6 +1083,7 @@ class StayManagementViewSet(viewsets.GenericViewSet):
             'room_floor': room_context['room_floor'],
             'wifi_name': room_context['wifi_name'],
             'wifi_password': room_context['wifi_password'],
+            'no_of_days': no_of_days,
             'stay_duration': stay_duration,
             # Compatibility aliases if template uses underscore style keys.
             'check_in_time': checkin_dt,
