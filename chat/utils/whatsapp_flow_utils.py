@@ -1,7 +1,8 @@
-from datetime import datetime, timezone
+from datetime import timedelta
 from typing import Dict, Optional, Tuple, List
 import logging
 import re
+from django.utils import timezone
 
 logger = logging.getLogger(__name__)
 
@@ -28,13 +29,21 @@ def is_conversation_expired(last_message_at, expiry_minutes=2):
     if not last_message_at:
         return True
 
-    # Ensure last_message_at is timezone-aware
-    if last_message_at.tzinfo is None:
-        last_message_at = last_message_at.replace(tzinfo=timezone.utc)
+    # Handle naive datetimes defensively using the app's default timezone.
+    if timezone.is_naive(last_message_at):
+        last_message_at = timezone.make_aware(
+            last_message_at,
+            timezone.get_default_timezone(),
+        )
 
-    current_time = datetime.now(timezone.utc)
-    time_diff = (current_time - last_message_at).total_seconds() / 60
-    return time_diff > expiry_minutes
+    expiry_delta = timedelta(minutes=expiry_minutes)
+    current_time = timezone.now()
+
+    # Guard against minor clock skew or inconsistent upstream timestamps.
+    if last_message_at > current_time:
+        return False
+
+    return (current_time - last_message_at) > expiry_delta
 
 
 def extract_whatsapp_message_data(webhook_body):

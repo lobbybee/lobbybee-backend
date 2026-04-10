@@ -41,7 +41,7 @@ from ..utils.webhook_deduplication import (
 )
 from .webhooks import process_guest_webhook
 from ..utils.whatsapp_payload_utils import convert_flow_response_to_whatsapp_payload
-from datetime import datetime,timezone
+from datetime import datetime
 from guest.name_utils import get_first_name_from_full_name
 class ConversationListView(APIView):
     """
@@ -562,8 +562,6 @@ class GuestConversationTypeView(APIView):
 
             # Build conversation data with expiry status
             conversations_data = []
-            current_time = datetime.now(timezone.utc)
-
             for conv in conversations_list:
                 is_expired = is_conversation_expired(conv.last_message_at)
                 conversation_data = {
