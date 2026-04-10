@@ -5,7 +5,7 @@ from zoneinfo import ZoneInfo
 from django.test import TestCase
 from django.utils import timezone
 
-from chat.models import Conversation, Message
+from chat.models import Conversation, CustomMessageTemplate, Message, MessageTemplate
 from guest.models import Guest, ReminderLog, Stay
 from guest.tasks import (
     schedule_checkin_reminder,
@@ -215,6 +215,89 @@ class ReminderTaskTests(TestCase):
         self.assertEqual(log.metadata['delivery_mode'], 'session_text')
         self.assertIsNone(log.metadata['template_name'])
         self.assertIsNotNone(log.metadata['last_guest_message_at'])
+
+    @patch('guest.tasks.send_whatsapp_text_message')
+    @patch('guest.tasks.send_whatsapp_template_message')
+    def test_meal_reminder_uses_custom_template_text_within_24_hours(self, mock_template_send, mock_text_send):
+        stay = self._create_active_stay(checkout_delta_hours=30)
+        self._create_guest_message(timezone.now() - timedelta(hours=2))
+        MessageTemplate.objects.create(
+            name='lobbybee_breakfast_reminder',
+            template_type='service',
+            text_content='Global breakfast template for {{guest_name}}',
+            variables=['guest_name'],
+            is_active=True,
+        )
+        CustomMessageTemplate.objects.create(
+            hotel=self.hotel,
+            name='lobbybee_breakfast_reminder',
+            template_type='service',
+            text_content='Good {{day_greeting}} {{guest_name}}!\n\nYour requested {{meal_name}} is available from {{meal_start}} to {{meal_end}}.\nEnjoy your Meal.\nHave a wonderful day ahead!',
+            variables=['guest_name', 'meal_start', 'meal_end'],
+            is_active=True,
+        )
+
+        send_breakfast_reminder(stay.id)
+
+        mock_template_send.assert_not_called()
+        mock_text_send.assert_called_once_with(
+            recipient_number=stay.guest.whatsapp_number,
+            message_text='Good Morning Reminder!\n\nYour requested Breakfast is available from 7:30 AM to 10:30 AM.\nEnjoy your Meal.\nHave a wonderful day ahead!',
+        )
+
+    @patch('guest.tasks.send_whatsapp_text_message')
+    @patch('guest.tasks.send_whatsapp_template_message')
+    def test_meal_reminder_uses_global_template_text_when_custom_missing(self, mock_template_send, mock_text_send):
+        stay = self._create_active_stay(checkout_delta_hours=30)
+        self._create_guest_message(timezone.now() - timedelta(hours=2))
+        MessageTemplate.objects.create(
+            name='lobbybee_breakfast_reminder',
+            template_type='service',
+            text_content='Good {{day_greeting}} {{guest_name}}!\n\nYour requested {{meal_name}} is available from {{meal_start}} to {{meal_end}}.\nEnjoy your Meal.\nHave a wonderful day ahead!',
+            variables=['guest_name', 'meal_start', 'meal_end'],
+            is_active=True,
+        )
+
+        send_breakfast_reminder(stay.id)
+
+        mock_template_send.assert_not_called()
+        mock_text_send.assert_called_once_with(
+            recipient_number=stay.guest.whatsapp_number,
+            message_text='Good Morning Reminder!\n\nYour requested Breakfast is available from 7:30 AM to 10:30 AM.\nEnjoy your Meal.\nHave a wonderful day ahead!',
+        )
+
+    @patch('guest.tasks.send_whatsapp_text_message')
+    @patch('guest.tasks.send_whatsapp_template_message')
+    def test_meal_reminder_falls_back_to_default_text_when_template_missing(self, mock_template_send, mock_text_send):
+        stay = self._create_active_stay(checkout_delta_hours=30)
+        self._create_guest_message(timezone.now() - timedelta(hours=2))
+
+        send_breakfast_reminder(stay.id)
+
+        mock_template_send.assert_not_called()
+        mock_text_send.assert_called_once()
+        self.assertIn('Good morning!', mock_text_send.call_args.kwargs['message_text'])
+
+    @patch('guest.tasks.send_whatsapp_text_message')
+    @patch('guest.tasks.send_whatsapp_template_message')
+    def test_lunch_reminder_uses_respective_global_template_text_within_24_hours(self, mock_template_send, mock_text_send):
+        stay = self._create_active_stay(checkout_delta_hours=30)
+        self._create_guest_message(timezone.now() - timedelta(hours=2))
+        MessageTemplate.objects.create(
+            name='lobbybee_lunch_reminder',
+            template_type='service',
+            text_content='Good {{day_greeting}} {{guest_name}}!\n\nYour requested {{meal_name}} is available from {{meal_start}} to {{meal_end}}.\nEnjoy your Meal.\nHave a wonderful day ahead!',
+            variables=['guest_name', 'meal_start', 'meal_end'],
+            is_active=True,
+        )
+
+        send_lunch_reminder(stay.id)
+
+        mock_template_send.assert_not_called()
+        mock_text_send.assert_called_once_with(
+            recipient_number=stay.guest.whatsapp_number,
+            message_text='Good Afternoon Reminder!\n\nYour requested Lunch is available from 12:30 PM to 3:30 PM.\nEnjoy your Meal.\nHave a wonderful day ahead!',
+        )
 
     @patch('guest.tasks.send_whatsapp_text_message')
     @patch('guest.tasks.send_whatsapp_template_message')

@@ -9,6 +9,7 @@ from django.utils import timezone
 from django.shortcuts import get_object_or_404
 from django.contrib.auth import get_user_model
 import threading
+import math
 
 from .models import Guest, GuestIdentityDocument, Stay, Booking
 from .serializers import (
@@ -1064,8 +1065,8 @@ class StayManagementViewSet(viewsets.GenericViewSet):
             total_minutes = int(duration.total_seconds() // 60)
             days, rem_minutes = divmod(total_minutes, 1440)
             hours, minutes = divmod(rem_minutes, 60)
-            total_days = (checkout_dt.date() - checkin_dt.date()).days
-            no_of_days = f"{total_days} day{'s' if total_days != 1 else ''}"
+            rounded_days = max(1, math.ceil(total_minutes / 1440)) if total_minutes >= 0 else 0
+            no_of_days = f"{rounded_days} day{'s' if rounded_days != 1 else ''}"
             duration_parts = []
             if days:
                 duration_parts.append(f"{days} day{'s' if days != 1 else ''}")

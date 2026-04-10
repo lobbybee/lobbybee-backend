@@ -8,6 +8,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from .models import ReminderLog, Stay
 from .name_utils import get_first_name_from_full_name
 from chat.models import Message
+from chat.utils.template_util import process_template
 from chat.utils.whatsapp_utils import (
     send_whatsapp_button_message,
     send_whatsapp_template_message,
@@ -20,6 +21,11 @@ MEAL_TEMPLATE_NAME = 'meal_reminder'
 CHECKOUT_TEMPLATE_NAME = 'chekout_reminder'
 WHATSAPP_TEMPLATE_LANGUAGE = 'en'
 WHATSAPP_SESSION_WINDOW = timedelta(hours=24)
+MEAL_TEXT_TEMPLATE_NAMES = {
+    'breakfast': 'lobbybee_breakfast_reminder',
+    'lunch': 'lobbybee_lunch_reminder',
+    'dinner': 'lobbybee_dinner_reminder',
+}
 MEAL_TEMPLATE_FALLBACK_TIMES = {
     'breakfast': time(7, 30),
     'lunch': time(12, 30),
@@ -246,6 +252,38 @@ def _build_meal_message(stay, reminder_type):
     )
 
 
+def _build_meal_template_context(stay, reminder_type):
+    meal_start, meal_end = _get_meal_template_time_range(stay, reminder_type)
+    return {
+        'hotel_timezone': str(_get_hotel_tz(stay.hotel)),
+        'day_greeting': MEAL_TEMPLATE_GREETINGS[reminder_type],
+        'meal_name': MEAL_TEMPLATE_NAMES[reminder_type],
+        'meal_start': _format_time_for_template(meal_start),
+        'meal_end': _format_time_for_template(meal_end),
+        f'{reminder_type}_time': _format_time_for_template(meal_start),
+        f'{reminder_type}_end_time': _format_time_for_template(meal_end),
+    }
+
+
+def _build_meal_text_message_from_template(stay, reminder_type):
+    template_result = process_template(
+        hotel_id=stay.hotel_id,
+        template_name=MEAL_TEXT_TEMPLATE_NAMES[reminder_type],
+        guest_id=stay.guest_id,
+        additional_context=_build_meal_template_context(stay, reminder_type),
+    )
+    if template_result.get('success'):
+        return template_result.get('processed_content') or _build_meal_message(stay, reminder_type)
+
+    logger.warning(
+        "Meal reminder template processing failed for stay_id=%s reminder_type=%s: %s",
+        stay.id,
+        reminder_type,
+        template_result.get('error', 'Unknown error'),
+    )
+    return _build_meal_message(stay, reminder_type)
+
+
 def _get_latest_guest_message_at(stay):
     latest_message = (
         Message.objects.filter(
@@ -407,7 +445,7 @@ def _send_meal_reminder(reminder_type, stay_id, reminder_date_str=None):
             else:
                 send_whatsapp_text_message(
                     recipient_number=stay.guest.whatsapp_number,
-                    message_text=_build_meal_message(stay, reminder_type),
+                    message_text=_build_meal_text_message_from_template(stay, reminder_type),
                 )
                 metadata = _build_reminder_metadata(
                     delivery_mode='session_text',
