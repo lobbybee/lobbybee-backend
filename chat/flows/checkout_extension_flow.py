@@ -68,7 +68,7 @@ def process_checkout_extension_response(guest, message_text):
                 f"{get_first_name_from_full_name(guest.full_name)} requested a stay extension "
                 f"(Room: {room_number}, Current checkout: {checkout_time_text})."
             ),
-            link=f"/stays/{stay.id}",
+            link="/checkout",
             link_label="Review Request"
         )
     except Exception as e:
