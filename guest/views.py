@@ -618,7 +618,7 @@ class StayManagementViewSet(viewsets.GenericViewSet):
 
                     # Evaluate effective reminder flags from the freshly-updated stay.
                     breakfast_enabled = stay.hotel.breakfast_reminder and stay.breakfast_reminder
-                    lunch_enabled = stay.lunch_reminder
+                    lunch_enabled = stay.hotel.lunch_reminder and stay.lunch_reminder
                     dinner_enabled = stay.hotel.dinner_reminder and stay.dinner_reminder
 
                     def schedule_reminders_after_commit():
@@ -1469,7 +1469,7 @@ class StayManagementViewSet(viewsets.GenericViewSet):
                 # Deterministic date-based task IDs make this idempotent for already-scheduled days.
                 if stay.guest.whatsapp_number:
                     breakfast_enabled = stay.hotel.breakfast_reminder and stay.breakfast_reminder
-                    lunch_enabled = stay.lunch_reminder
+                    lunch_enabled = stay.hotel.lunch_reminder and stay.lunch_reminder
                     dinner_enabled = stay.hotel.dinner_reminder and stay.dinner_reminder
 
                     def schedule_extended_stay_reminders_after_commit():

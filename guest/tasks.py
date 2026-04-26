@@ -390,7 +390,7 @@ def _is_meal_enabled(stay, reminder_type):
     if reminder_type == 'breakfast':
         return stay.breakfast_reminder and stay.hotel.breakfast_reminder
     if reminder_type == 'lunch':
-        return stay.lunch_reminder
+        return stay.lunch_reminder and stay.hotel.lunch_reminder
     if reminder_type == 'dinner':
         return stay.dinner_reminder and stay.hotel.dinner_reminder
     return False
@@ -786,7 +786,7 @@ def schedule_meal_reminders(stay_id):
             },
             {
                 'type': 'lunch',
-                'enabled': bool(stay.lunch_reminder),
+                'enabled': bool(stay.lunch_reminder and stay.hotel.lunch_reminder),
                 'meal_time': stay.hotel.lunch_time or time(12, 30),
                 'task': send_lunch_reminder,
             },

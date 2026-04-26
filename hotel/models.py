@@ -45,6 +45,7 @@ class Hotel(models.Model):
     lunch_time = models.TimeField(null=True, blank=True, help_text="Time when lunch is served (e.g. 12:30)")
     dinner_time = models.TimeField(null=True, blank=True, help_text="Time when dinner is served (e.g. 19:00)")
     breakfast_reminder = models.BooleanField(default=False, help_text="Enable breakfast reminders for guests")
+    lunch_reminder = models.BooleanField(default=False, help_text="Enable lunch reminders for guests")
     dinner_reminder = models.BooleanField(default=False, help_text="Enable dinner reminders for guests")
 
     status = models.CharField(max_length=20, choices=HOTEL_STATUS, default='pending')

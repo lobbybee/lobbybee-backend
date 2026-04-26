@@ -1,11 +1,65 @@
 from django.contrib import admin
 from .models import Guest, GuestIdentityDocument, Stay, Booking, Feedback, ReminderLog
 
-admin.site.register(Guest)
-admin.site.register(GuestIdentityDocument)
-admin.site.register(Stay)
-admin.site.register(Booking)
-admin.site.register(Feedback)
+
+@admin.register(Guest)
+class GuestAdmin(admin.ModelAdmin):
+    list_display = (
+        'id',
+        'full_name',
+        'whatsapp_number',
+        'register_number',
+        'email',
+        'status',
+    )
+    list_filter = ('status',)
+    search_fields = (
+        'full_name',
+        'whatsapp_number',
+        'register_number',
+        'email',
+    )
+
+
+@admin.register(GuestIdentityDocument)
+class GuestIdentityDocumentAdmin(admin.ModelAdmin):
+    list_display = ('id', 'guest', 'document_type', 'document_number', 'is_verified', 'uploaded_at')
+    list_filter = ('document_type', 'is_verified')
+    search_fields = ('document_number', 'guest__full_name', 'guest__whatsapp_number')
+
+
+@admin.register(Stay)
+class StayAdmin(admin.ModelAdmin):
+    list_display = (
+        'id',
+        'guest',
+        'hotel',
+        'room',
+        'check_in_date',
+        'check_out_date',
+        'status',
+    )
+    list_filter = ('status', 'hotel')
+    search_fields = (
+        'register_number',
+        'guest__full_name',
+        'guest__whatsapp_number',
+        'hotel__name',
+    )
+
+
+@admin.register(Booking)
+class BookingAdmin(admin.ModelAdmin):
+    list_display = ('id', 'primary_guest', 'hotel', 'check_in_date', 'check_out_date', 'status', 'booking_date')
+    list_filter = ('status', 'hotel')
+    search_fields = ('primary_guest__full_name', 'primary_guest__whatsapp_number', 'hotel__name')
+
+
+@admin.register(Feedback)
+class FeedbackAdmin(admin.ModelAdmin):
+    list_display = ('id', 'guest', 'stay', 'rating', 'created_at')
+    list_filter = ('rating',)
+    search_fields = ('guest__full_name', 'guest__whatsapp_number', 'note')
 
 
 @admin.register(ReminderLog)
