@@ -15,8 +15,8 @@ class CanFlagGuests(permissions.BasePermission):
         if request.user.user_type in ['hotel_admin', 'manager', 'receptionist']:
             return request.user.hotel is not None
         
-        # Platform staff can flag guests
-        return request.user.user_type in ['platform_admin', 'platform_staff']
+        # Platform staff and superusers can flag guests
+        return request.user.is_superuser or request.user.user_type in ['platform_admin', 'platform_staff']
 
 
 class CanViewGuestFlags(permissions.BasePermission):
@@ -33,8 +33,8 @@ class CanViewGuestFlags(permissions.BasePermission):
         if request.user.user_type in ['hotel_admin', 'manager', 'receptionist']:
             return request.user.hotel is not None
         
-        # Platform staff can view all flags
-        return request.user.user_type in ['platform_admin', 'platform_staff']
+        # Platform staff and superusers can view all flags
+        return request.user.is_superuser or request.user.user_type in ['platform_admin', 'platform_staff']
 
 
 class CanManageGuestFlags(permissions.BasePermission):
@@ -46,12 +46,12 @@ class CanManageGuestFlags(permissions.BasePermission):
         if not request.user or not request.user.is_authenticated:
             return False
         
-        # Only platform staff can manage (reset) flags
-        return request.user.user_type in ['platform_admin', 'platform_staff']
+        # Only platform staff and superusers can manage (reset) flags
+        return request.user.is_superuser or request.user.user_type in ['platform_admin', 'platform_staff']
     
     def has_object_permission(self, request, view, obj):
-        # Platform staff can manage all flags
-        return request.user.user_type in ['platform_admin', 'platform_staff']
+        # Platform staff and superusers can manage all flags
+        return request.user.is_superuser or request.user.user_type in ['platform_admin', 'platform_staff']
 
 
 class CanResetGuestFlags(permissions.BasePermission):
@@ -62,5 +62,5 @@ class CanResetGuestFlags(permissions.BasePermission):
         if not request.user or not request.user.is_authenticated:
             return False
         
-        # Only platform staff can reset flags
-        return request.user.user_type in ['platform_admin', 'platform_staff']
+        # Only platform staff and superusers can reset flags
+        return request.user.is_superuser or request.user.user_type in ['platform_admin', 'platform_staff']

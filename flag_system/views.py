@@ -41,8 +41,8 @@ class GuestFlagViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         user = self.request.user
         
-        # Platform staff can see all flags
-        if user.user_type in ['platform_admin', 'platform_staff']:
+        # Platform staff and superusers can see all flags
+        if user.is_superuser or user.user_type in ['platform_admin', 'platform_staff']:
             return GuestFlag.objects.all().select_related(
                 'guest', 'last_modified_by', 'stay__hotel', 'reset_by'
             ).order_by('-created_at')
@@ -92,7 +92,7 @@ class GuestFlagViewSet(viewsets.ModelViewSet):
         
         # Filter by hotel if provided (only for platform staff)
         hotel_id = request.query_params.get('hotel_id')
-        if hotel_id and request.user.user_type in ['platform_admin', 'platform_staff']:
+        if hotel_id and (request.user.is_superuser or request.user.user_type in ['platform_admin', 'platform_staff']):
             queryset = queryset.filter(stay__hotel_id=hotel_id)
         
         # Filter active flags only
@@ -193,7 +193,7 @@ def search_guests(request):
             )
 
         # Check if user has permission (platform admin/staff or hotel staff)
-        if not (request.user.user_type in ['platform_admin', 'platform_staff'] or
+        if not (request.user.is_superuser or request.user.user_type in ['platform_admin', 'platform_staff'] or
                 (request.user.user_type in ['hotel_admin', 'manager', 'receptionist'] and request.user.hotel)):
             return forbidden_response('Permission denied')
 
