@@ -765,6 +765,20 @@ class GuestConversationTypeView(APIView):
 
             # Use the most recent active conversation for other message types
             logger.info(f"Using existing conversation: {most_recent_conv.get('id')}")
+
+            # Flow-type conversations (checkin, demo, feedback, send_id_docs)
+            # route to the flow webhook instead of the service relay
+            flow_types = ['checkin', 'demo', 'feedback', 'send_id_docs']
+            if most_recent_conv.get('conversation_type') in flow_types:
+                logger.info(f"Routing flow conversation to flow webhook")
+                return {
+                    **guest_data,
+                    'action': 'flow',
+                    'target_conversation': self._format_target_conversation(
+                        most_recent_conv, use_existing=True
+                    )
+                }
+
             return {
                 **guest_data,
                 'action': 'relay',
@@ -828,6 +842,13 @@ class GuestConversationTypeView(APIView):
             list_reply_title=list_reply_title
         )
 
+        # "Send ID Documents" flow option - initiates a flow, not a live chat
+        if is_valid and dept_name == 'send_id_docs':
+            return self._handle_send_id_docs_flow_initiation(
+                guest_data,
+                conversations
+            )
+
         if not is_valid:
             return {
                 **guest_data,
@@ -872,6 +893,59 @@ class GuestConversationTypeView(APIView):
                 },
                 'whatsapp_payload': [success_payload]
             }
+
+    def _handle_send_id_docs_flow_initiation(self, guest_data, conversations):
+        """
+        Initiate the Send ID Documents flow for collecting accompanying guest IDs.
+        Creates a new send_id_docs conversation if none is active.
+        """
+        guest_info = guest_data.get('guest_info')
+        if not guest_info:
+            return {
+                **guest_data,
+                'action': 'error',
+                'whatsapp_payload': [generate_error_text_payload(
+                    guest_data.get('guest_info', {}).get('whatsapp_number', ''),
+                    "Unable to process your request. Please try again."
+                )]
+            }
+
+        try:
+            guest = Guest.objects.get(id=guest_info['id'])
+        except Guest.DoesNotExist:
+            return {
+                **guest_data,
+                'action': 'flow'
+            }
+
+        # Check if an active send_id_docs conversation already exists
+        existing_flow_conv = next(
+            (c for c in conversations
+             if c.get('conversation_type') == 'send_id_docs' and not c.get('is_expired')),
+            None
+        )
+
+        if not existing_flow_conv:
+            active_stay = Stay.objects.filter(guest=guest, status='active').first()
+            if not active_stay:
+                return {
+                    **guest_data,
+                    'action': 'flow'
+                }
+
+            with transaction.atomic():
+                Conversation.objects.create(
+                    guest=guest,
+                    hotel=active_stay.hotel,
+                    department='Reception',
+                    conversation_type='send_id_docs',
+                    status='active'
+                )
+
+        return {
+            **guest_data,
+            'action': 'flow'
+        }
 
     def _format_target_conversation(self, conversation, use_existing=True):
         """

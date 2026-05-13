@@ -190,6 +190,15 @@ def _build_department_options(available_departments=None):
             }
         )
 
+    # Permanent extra option for sending accompanying guest ID documents
+    flow_menu_id = "dept_send_id_docs"
+    id_to_department[flow_menu_id] = "send_id_docs"
+    rows.append({
+        "id": flow_menu_id,
+        "title": "Send ID Documents",
+        "description": "Upload accompanying guest ID documents",
+    })
+
     return normalized_departments, id_to_department, rows
 
 
@@ -266,7 +275,13 @@ def validate_department_selection(department_id, available_departments=None, lis
     """
     normalized_departments, id_to_department, _ = _build_department_options(available_departments)
 
+    # Check for send_id_docs flow option first
+    if department_id and department_id.lower() == 'dept_send_id_docs':
+        return True, 'send_id_docs'
+
     if list_reply_title:
+        if list_reply_title.strip().lower() == 'send id documents':
+            return True, 'send_id_docs'
         title_match = next(
             (
                 department_name

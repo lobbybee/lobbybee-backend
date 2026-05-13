@@ -29,6 +29,7 @@ class Conversation(models.Model):
         ('checked_in', 'Checked In'),
         ('general', 'General'),
         ('feedback', 'Feedback'),
+        ('send_id_docs', 'Send ID Documents'),
     ]
     guest = models.ForeignKey(Guest, on_delete=models.CASCADE, related_name='conversations', null=True, blank=True)
     hotel = models.ForeignKey(Hotel, on_delete=models.CASCADE, related_name='conversations', null=True, blank=True)

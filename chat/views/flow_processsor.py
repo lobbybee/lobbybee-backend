@@ -289,9 +289,9 @@ def get_active_flow_conversation(guest):
 
     logger.info(f"Looking for active flow conversation for guest: {guest.id}")
 
-    # Priority order: checkin > demo > feedback
+    # Priority order: checkin > demo > feedback > send_id_docs
     # This ensures checkin flow responses don't get routed to feedback flows
-    conversation_priority = ['checkin', 'demo', 'feedback']
+    conversation_priority = ['checkin', 'demo', 'feedback', 'send_id_docs']
     
     for conv_type in conversation_priority:
         active_conversation = Conversation.objects.filter(
@@ -365,6 +365,15 @@ def route_to_flow_handler(guest, conversation, flow_data):
         result = process_feedback_flow(
             conversation=conversation,
             guest=guest,
+            flow_data=flow_data
+        )
+        return result
+
+    if conversation.conversation_type == 'send_id_docs':
+        from ..flows.send_id_docs_flow import process_send_id_docs_flow
+        result = process_send_id_docs_flow(
+            guest=guest,
+            conversation=conversation,
             flow_data=flow_data
         )
         return result
