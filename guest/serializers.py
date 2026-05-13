@@ -312,6 +312,7 @@ class CheckedInGuestGroupSerializer(serializers.Serializer):
     active_stay_ids = serializers.ListField(child=serializers.IntegerField(), read_only=True)
     pending_stay_ids = serializers.ListField(child=serializers.IntegerField(), read_only=True)
     completed_stay_ids = serializers.ListField(child=serializers.IntegerField(), read_only=True)
+    accompanying_guests = serializers.ListField(child=serializers.DictField(), read_only=True)
     flag_summary = serializers.DictField(required=False)
 
 

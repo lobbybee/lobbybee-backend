@@ -767,10 +767,9 @@ class GuestConversationTypeView(APIView):
             # Use the most recent active conversation for other message types
             logger.info(f"Using existing conversation: {most_recent_conv.get('id')}")
 
-            # Flow-type conversations (checkin, demo, feedback, send_id_docs)
-            # route to the flow webhook instead of the service relay
-            flow_types = ['checkin', 'demo', 'feedback', 'send_id_docs']
-            if most_recent_conv.get('conversation_type') in flow_types:
+            # Send ID Documents flow conversation routes to flow webhook
+            # instead of service relay
+            if most_recent_conv.get('conversation_type') == 'send_id_docs':
                 logger.info(f"Routing flow conversation to flow webhook")
                 return {
                     **guest_data,
@@ -934,15 +933,34 @@ class GuestConversationTypeView(APIView):
                     'action': 'flow'
                 }
 
-            with transaction.atomic():
-                Conversation.objects.create(
-                    guest=guest,
-                    hotel=active_stay.hotel,
-                    department='Reception',
-                    conversation_type='send_id_docs',
-                    status='active',
-                    last_message_at=timezone.now(),
-                    last_message_preview="Send ID Documents flow started"
+            conversation, created = Conversation.objects.get_or_create(
+                guest=guest,
+                hotel=active_stay.hotel,
+                department='Reception',
+                conversation_type='send_id_docs',
+                defaults={
+                    'status': 'active',
+                    'last_message_at': timezone.now(),
+                    'last_message_preview': "Send ID Documents flow started"
+                }
+            )
+
+            # Re-open if conversation was previously closed, and mark as fresh init
+            if not created or conversation.status != 'active':
+                conversation.status = 'active'
+                conversation.last_message_at = timezone.now()
+                conversation.last_message_preview = "Send ID Documents flow started"
+                conversation.save()
+                # Save a marker so the flow handler knows this is a fresh start
+                Message.objects.create(
+                    conversation=conversation,
+                    sender_type='staff',
+                    message_type='system',
+                    content="__FLOW_INIT__",
+                    is_flow=True,
+                    flow_id='send_id_docs',
+                    flow_step=99,
+                    is_flow_step_success=True
                 )
 
         return {

@@ -898,11 +898,27 @@ class StayManagementViewSet(viewsets.GenericViewSet):
         search_term = request.query_params.get('search', None)
 
         if search_term:
-            stays = stays.filter(
+            search_filter = (
                 Q(guest__full_name__icontains=search_term) |
                 Q(guest__whatsapp_number__icontains=search_term) |
                 Q(guest__identity_documents__document_number__icontains=search_term)
-            ).distinct()
+            )
+            # Also find stays whose booking has matching accompanying guests
+            matching_acc_guest_ids = list(
+                Guest.objects.filter(
+                    Q(full_name__icontains=search_term) |
+                    Q(identity_documents__document_number__icontains=search_term),
+                    is_primary_guest=False
+                ).values_list('id', flat=True)
+            )
+            if matching_acc_guest_ids:
+                acc_booking_ids = self._find_booking_ids_for_accompanying_guests(
+                    matching_acc_guest_ids
+                )
+                if acc_booking_ids:
+                    search_filter |= Q(booking_id__in=acc_booking_ids)
+
+            stays = stays.filter(search_filter).distinct()
 
         stays = stays.order_by('-created_at')
 
@@ -1120,11 +1136,27 @@ class StayManagementViewSet(viewsets.GenericViewSet):
         search_term = request.query_params.get('search', None)
 
         if search_term:
-            stays = stays.filter(
+            search_filter = (
                 Q(guest__full_name__icontains=search_term) |
                 Q(guest__whatsapp_number__icontains=search_term) |
                 Q(guest__identity_documents__document_number__icontains=search_term)
-            ).distinct()
+            )
+
+            matching_acc_guest_ids = list(
+                Guest.objects.filter(
+                    Q(full_name__icontains=search_term) |
+                    Q(identity_documents__document_number__icontains=search_term),
+                    is_primary_guest=False
+                ).values_list('id', flat=True)
+            )
+            if matching_acc_guest_ids:
+                acc_booking_ids = self._find_booking_ids_for_accompanying_guests(
+                    matching_acc_guest_ids
+                )
+                if acc_booking_ids:
+                    search_filter |= Q(booking_id__in=acc_booking_ids)
+
+            stays = stays.filter(search_filter).distinct()
 
         if active_only:
             stays = stays.filter(status='active')
@@ -1188,6 +1220,7 @@ class StayManagementViewSet(viewsets.GenericViewSet):
                 'active_stay_ids': group['active_stay_ids'],
                 'pending_stay_ids': group['pending_stay_ids'],
                 'completed_stay_ids': group['completed_stay_ids'],
+                'accompanying_guests': self._build_accompanying_guests_data(group['stays']),
             }
             if guest_id in flag_summary_map:
                 group_row['flag_summary'] = flag_summary_map[guest_id]
@@ -1201,6 +1234,43 @@ class StayManagementViewSet(viewsets.GenericViewSet):
         serializer = CheckedInGuestGroupSerializer(grouped_rows, many=True)
         return success_response(data=serializer.data)
 
+    def _build_accompanying_guests_data(self, stays):
+        """Build accompanying guest data from booking.accompanying_guest_ids."""
+        if not stays:
+            return []
+        first_stay = stays[0]
+        if not first_stay.booking_id:
+            return []
+        booking = first_stay.booking
+        acc_ids = booking.accompanying_guest_ids or []
+        if not acc_ids:
+            return []
+
+        acc_guests = Guest.objects.filter(id__in=acc_ids).prefetch_related('identity_documents')
+        result = []
+        for acc in acc_guests:
+            doc = acc.identity_documents.filter(is_accompanying_guest=True).first()
+            result.append({
+                'id': acc.id,
+                'full_name': acc.full_name,
+                'document_number': doc.document_number if doc else '',
+                'document_file_url': doc.document_file.url if doc and doc.document_file else '',
+            })
+        return result
+
+    def _find_booking_ids_for_accompanying_guests(self, matching_acc_guest_ids):
+        """Find booking IDs whose accompanying_guest_ids overlap with given guest IDs."""
+        booking_ids = set()
+        acc_id_set = set(matching_acc_guest_ids)
+        hotel_bookings = Booking.objects.filter(
+            hotel=self.request.user.hotel
+        ).values('id', 'accompanying_guest_ids')
+        for b in hotel_bookings:
+            b_ids = set(b['accompanying_guest_ids'] or [])
+            if b_ids & acc_id_set:
+                booking_ids.add(b['id'])
+        return booking_ids
+
     def _group_stays_by_booking(self, request):
         base_stays = self.get_queryset().select_related(
             'guest', 'room', 'room__category', 'booking'
@@ -1208,13 +1278,33 @@ class StayManagementViewSet(viewsets.GenericViewSet):
         search_term = request.query_params.get('search', None)
 
         if search_term:
-            matching_booking_ids = base_stays.filter(
+            matching_acc_guest_ids = list(
+                Guest.objects.filter(
+                    Q(full_name__icontains=search_term) |
+                    Q(identity_documents__document_number__icontains=search_term),
+                    is_primary_guest=False
+                ).values_list('id', flat=True)
+            )
+
+            primary_filter = (
                 Q(guest__full_name__icontains=search_term) |
                 Q(guest__whatsapp_number__icontains=search_term) |
                 Q(guest__identity_documents__document_number__icontains=search_term) |
                 Q(room__room_number__icontains=search_term) |
                 Q(register_number__icontains=search_term)
-            ).values_list('booking_id', flat=True).distinct()
+            )
+
+            matching_booking_ids = set(
+                base_stays.filter(primary_filter)
+                .values_list('booking_id', flat=True).distinct()
+            )
+
+            if matching_acc_guest_ids:
+                acc_booking_ids = self._find_booking_ids_for_accompanying_guests(
+                    matching_acc_guest_ids
+                )
+                matching_booking_ids |= acc_booking_ids
+
             stays = base_stays.filter(booking_id__in=matching_booking_ids)
         else:
             stays = base_stays

@@ -26,6 +26,9 @@ class Booking(models.Model):
     # This field will store the list of guests for the entire booking
     guest_names = models.JSONField(default=list)
 
+    # Accompanying guest IDs for this booking
+    accompanying_guest_ids = models.JSONField(default=list, blank=True)
+
     def __str__(self):
         return f"Booking for {self.primary_guest.full_name} at {self.hotel.name}"
 

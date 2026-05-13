@@ -3,14 +3,23 @@
 import logging
 import os
 import tempfile
+import time
 
 from django.core.files.base import ContentFile
-from django.db import transaction
+from django.db import transaction, OperationalError
 
 logger = logging.getLogger(__name__)
 
 from ..utils.whatsapp_utils import download_whatsapp_media
 from chat.utils.ocr.tasks.simple_ocr_tasks import detect_and_extract_id_document
+
+
+# Flow step constants (flow_step is an IntegerField)
+SEND_ID_DOCS_INITIAL = 0
+SEND_ID_DOCS_IMAGE_PROCESSED = 1
+SEND_ID_DOCS_RE_SELECTION = 2
+SEND_ID_DOCS_IMAGE_UPLOADED = 3
+SEND_ID_DOCS_UNSUPPORTED = 4
 
 
 def process_send_id_docs_flow(guest, conversation=None, flow_data=None):
@@ -30,12 +39,19 @@ def process_send_id_docs_flow(guest, conversation=None, flow_data=None):
 
     has_messages = conversation.messages.exists() if conversation else False
 
+    # Check if this is a fresh flow initiation (marker saved by _handle_send_id_docs_flow_initiation)
+    last_msg = conversation.messages.order_by('-created_at').first() if conversation else None
+    is_fresh_init = (
+        not has_messages or
+        (last_msg and last_msg.is_flow and last_msg.flow_step == 99)
+    )
+
     # STATE 1: Initial - show upload instructions
-    if not has_messages:
+    if is_fresh_init:
         save_system_message(
             conversation,
             "Send ID Documents flow started",
-            flow_step='initial',
+            flow_step=SEND_ID_DOCS_INITIAL,
             flow_id='send_id_docs'
         )
         conversation.update_last_message("Send ID Documents flow started")
@@ -53,18 +69,18 @@ def process_send_id_docs_flow(guest, conversation=None, flow_data=None):
 
     # STATE 2: Re-selection from menu - silent, flow continues
     if message_text == 'dept_send_id_docs':
-        save_guest_message(conversation, message_text, None, None, 're_selection')
+        save_guest_message(conversation, message_text, None, None, SEND_ID_DOCS_RE_SELECTION)
         conversation.update_last_message(message_text)
         return []
 
     # STATE 3: Image received - process silently
     if message_type == 'image' and media_id:
-        save_guest_message(conversation, "📷 ID document image", None, media_id, 'image_uploaded')
+        save_guest_message(conversation, "📷 ID document image", None, media_id, SEND_ID_DOCS_IMAGE_UPLOADED)
         _process_id_image(guest, conversation, media_id, flow_data)
         save_system_message(
             conversation,
             "ID document image processed",
-            flow_step='image_processed',
+            flow_step=SEND_ID_DOCS_IMAGE_PROCESSED,
             flow_id='send_id_docs'
         )
         conversation.update_last_message("ID document image processed")
@@ -72,7 +88,7 @@ def process_send_id_docs_flow(guest, conversation=None, flow_data=None):
 
     # STATE 4: Non-image media - warn
     if message_type in ['video', 'audio', 'document']:
-        save_guest_message(conversation, f"Unsupported media type: {message_type}", None, None, 'unsupported')
+        save_guest_message(conversation, f"Unsupported media type: {message_type}", None, None, SEND_ID_DOCS_UNSUPPORTED)
         conversation.update_last_message(f"Unsupported media type: {message_type}")
         return [{
             "type": "text",
@@ -112,7 +128,6 @@ def process_send_id_docs_flow(guest, conversation=None, flow_data=None):
 
 def _process_id_image(primary_guest, conversation, media_id, flow_data):
     """Download, OCR, deduplicate, and store an ID document image."""
-    from guest.models import Guest, GuestIdentityDocument, Stay
 
     try:
         media_data = download_whatsapp_media(media_id)
@@ -147,6 +162,34 @@ def _process_id_image(primary_guest, conversation, media_id, flow_data):
 
     name = extracted_name or 'Unknown'
 
+    # Retry DB writes to handle SQLite concurrency (OperationalError: database is locked)
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            _store_extracted_id_data(
+                primary_guest, name, extracted_id_number, media_data
+            )
+            break
+        except OperationalError:
+            if attempt < max_retries - 1:
+                wait = 0.2 * (attempt + 1)
+                logger.warning(
+                    f"send_id_docs_flow: DB locked, retrying in {wait}s "
+                    f"(attempt {attempt + 1}/{max_retries})"
+                )
+                time.sleep(wait)
+            else:
+                logger.error(
+                    f"send_id_docs_flow: DB locked after {max_retries} attempts, "
+                    f"image not saved for {name}"
+                )
+                raise
+
+
+def _store_extracted_id_data(primary_guest, name, extracted_id_number, media_data):
+    """Store extracted ID data into accompanying guest and document records."""
+    from guest.models import Guest, GuestIdentityDocument, Stay
+
     # DUPLICATE CHECK: same name + same id_number -> skip
     if name and extracted_id_number:
         dup_exists = GuestIdentityDocument.objects.filter(
@@ -173,14 +216,12 @@ def _process_id_image(primary_guest, conversation, media_id, flow_data):
             document_number=extracted_id_number or '',
             document_file=ContentFile(media_data['content'], name=media_data['filename']),
             is_accompanying_guest=True,
-            is_primary=not GuestIdentityDocument.objects.filter(
-                guest=acc_guest, is_primary=True
-            ).exists()
+            is_primary=False
         )
 
     # Update guest name if OCR succeeded and guest had generic name
+    extracted_name = name if name != 'Unknown' else ''
     if extracted_name and acc_guest.full_name != extracted_name:
-        # Only update if the current name is generic/placeholder
         current_name_lower = (acc_guest.full_name or '').lower()
         if current_name_lower in ('unknown', ''):
             acc_guest.full_name = extracted_name
@@ -194,6 +235,15 @@ def _process_id_image(primary_guest, conversation, media_id, flow_data):
             names.append(name)
             active_stay.guest_names = names
             active_stay.save(update_fields=['guest_names'])
+
+        # Ensure accompanying guest ID in booking
+        if active_stay.booking_id:
+            booking = active_stay.booking
+            ids = list(booking.accompanying_guest_ids or [])
+            if acc_guest.id not in ids:
+                ids.append(acc_guest.id)
+                booking.accompanying_guest_ids = ids
+                booking.save(update_fields=['accompanying_guest_ids'])
 
     logger.info(
         f"send_id_docs_flow: Stored ID doc for {name} "
@@ -228,7 +278,7 @@ def _find_or_create_accompanying_guest(primary_guest, name, id_number=''):
     )
 
 
-def save_system_message(conversation, content, flow_step='initial', flow_id='send_id_docs', is_success=True):
+def save_system_message(conversation, content, flow_step=SEND_ID_DOCS_INITIAL, flow_id='send_id_docs', is_success=True):
     """Save system/bot response message in the flow conversation."""
     from chat.models import Message
 
