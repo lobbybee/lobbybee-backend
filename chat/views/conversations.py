@@ -42,6 +42,7 @@ from ..utils.webhook_deduplication import (
 from .webhooks import process_guest_webhook
 from ..utils.whatsapp_payload_utils import convert_flow_response_to_whatsapp_payload
 from datetime import datetime
+from django.utils import timezone
 from guest.name_utils import get_first_name_from_full_name
 class ConversationListView(APIView):
     """
@@ -939,7 +940,9 @@ class GuestConversationTypeView(APIView):
                     hotel=active_stay.hotel,
                     department='Reception',
                     conversation_type='send_id_docs',
-                    status='active'
+                    status='active',
+                    last_message_at=timezone.now(),
+                    last_message_preview="Send ID Documents flow started"
                 )
 
         return {

@@ -38,6 +38,7 @@ def process_send_id_docs_flow(guest, conversation=None, flow_data=None):
             flow_step='initial',
             flow_id='send_id_docs'
         )
+        conversation.update_last_message("Send ID Documents flow started")
         return [{
             "type": "text",
             "text": (
@@ -52,10 +53,13 @@ def process_send_id_docs_flow(guest, conversation=None, flow_data=None):
 
     # STATE 2: Re-selection from menu - silent, flow continues
     if message_text == 'dept_send_id_docs':
+        save_guest_message(conversation, message_text, None, None, 're_selection')
+        conversation.update_last_message(message_text)
         return []
 
     # STATE 3: Image received - process silently
     if message_type == 'image' and media_id:
+        save_guest_message(conversation, "📷 ID document image", None, media_id, 'image_uploaded')
         _process_id_image(guest, conversation, media_id, flow_data)
         save_system_message(
             conversation,
@@ -63,10 +67,13 @@ def process_send_id_docs_flow(guest, conversation=None, flow_data=None):
             flow_step='image_processed',
             flow_id='send_id_docs'
         )
+        conversation.update_last_message("ID document image processed")
         return []  # Silent - no WhatsApp response
 
     # STATE 4: Non-image media - warn
     if message_type in ['video', 'audio', 'document']:
+        save_guest_message(conversation, f"Unsupported media type: {message_type}", None, None, 'unsupported')
+        conversation.update_last_message(f"Unsupported media type: {message_type}")
         return [{
             "type": "text",
             "text": (
@@ -235,3 +242,24 @@ def save_system_message(conversation, content, flow_step='initial', flow_id='sen
         flow_step=flow_step,
         is_flow_step_success=is_success
     )
+
+
+def save_guest_message(conversation, message_text, message_id, media_id, flow_step):
+    """Save incoming guest message in the flow conversation."""
+    from chat.models import Message
+
+    msg = Message.objects.create(
+        conversation=conversation,
+        sender_type='guest',
+        message_type='text',
+        content=message_text,
+        whatsapp_message_id=message_id,
+        is_flow=True,
+        flow_id='send_id_docs',
+        flow_step=flow_step
+    )
+    if message_id:
+        msg.whatsapp_message_id = message_id
+        msg.save(update_fields=['whatsapp_message_id'])
+
+    conversation.update_last_message(message_text)
