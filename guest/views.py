@@ -225,6 +225,17 @@ class StayManagementViewSet(viewsets.GenericViewSet):
                     total_amount=0  # Calculate based on room rates if needed
                 )
 
+                # Link accompanying guests to booking (mirroring WhatsApp send_id_docs_flow)
+                acc_guests = Guest.objects.filter(
+                    whatsapp_number__startswith=f"ACC_{primary_guest.whatsapp_number}_",
+                    is_primary_guest=False
+                )
+                if acc_guests.exists():
+                    booking.accompanying_guest_ids = [g.id for g in acc_guests]
+                    booking.save(update_fields=['accompanying_guest_ids'])
+                    acc_names = [g.full_name for g in acc_guests if g.full_name]
+                    guest_names = list(guest_names) + acc_names
+
                 # Create stay records
                 stays = []
                 for i, room in enumerate(rooms):
