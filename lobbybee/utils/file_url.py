@@ -6,6 +6,13 @@ def upload_to_hotel_documents(instance, filename):
     return f"hotels/{instance.hotel.id}/documents/{filename}"
 
 
+def upload_to_hotel_logo(instance, filename):
+    """Generate upload path for a hotel's logo"""
+    ext = filename.split('.')[-1]
+    filename = f"logo.{ext}"
+    return f"hotels/{instance.id}/logo/{filename}"
+
+
 def upload_to_guest_documents(instance, filename):
     """Generate upload path for guest identity documents"""
     ext = filename.split('.')[-1]

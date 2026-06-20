@@ -3,6 +3,7 @@ from rest_framework.routers import DefaultRouter
 from .views import (
     HotelViewSet,
     UpdateProfileView,
+    HotelGSTUpdateView,
     HotelDocumentUploadView,
     HotelDocumentUpdateView,
     AdminHotelDocumentViewSet,
@@ -33,6 +34,7 @@ urlpatterns = [
     path('admin/hotels/<uuid:hotel_pk>/', include(admin_documents_router.urls)),
     path('admin/hotels/<uuid:hotel_pk>/documents/update-by-type/', AdminHotelDocumentViewSet.as_view({'patch': 'update_by_type'}), name='admin-hotel-document-update-by-type'),
     path('profile/update/', UpdateProfileView.as_view(), name='hotel-profile-update'),
+    path('gst/', HotelGSTUpdateView.as_view(), name='hotel-gst-update'),
     path('documents/upload/', HotelDocumentUploadView.as_view(), name='hotel-document-upload'),
     path('documents/<uuid:pk>/update/', HotelDocumentUpdateView.as_view(), name='hotel-document-update'),
 ]

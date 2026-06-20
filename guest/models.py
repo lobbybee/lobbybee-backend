@@ -1,5 +1,6 @@
 from django.db import models
 from django.db import transaction
+from django.core.serializers.json import DjangoJSONEncoder
 from user.models import User
 from hotel.models import Hotel, Room
 from lobbybee.utils.file_url import upload_to_guest_documents
@@ -198,3 +199,32 @@ class ReminderLog(models.Model):
 
     def __str__(self):
         return f"{self.reminder_type} reminder for stay {self.stay_id} on {self.reminder_date}"
+
+
+class Invoice(models.Model):
+    """One stored invoice per booking (a guest's set of rooms)."""
+    hotel = models.ForeignKey(Hotel, on_delete=models.CASCADE, related_name='invoices')
+    booking = models.OneToOneField(Booking, on_delete=models.CASCADE, related_name='invoice')
+    invoice_number = models.CharField(max_length=30)  # unique per hotel, e.g. INV-000007
+
+    # [{stay_id, room_number, room_type, nights, rate, amount, gst_rate, gst_amount}]
+    line_items = models.JSONField(default=list, encoder=DjangoJSONEncoder)
+    gst_slabs = models.JSONField(default=list)  # snapshot of hotel.gst_slabs at generation
+
+    subtotal = models.DecimalField(max_digits=12, decimal_places=2, default=0)  # pre-discount, pre-tax
+    discount_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    gst_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)  # sum of per-line gst
+    total_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+
+    is_locked = models.BooleanField(default=False)
+    locked_at = models.DateTimeField(null=True, blank=True)
+
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = [('hotel', 'invoice_number')]
+
+    def __str__(self):
+        return f"{self.invoice_number} ({self.hotel.name})"

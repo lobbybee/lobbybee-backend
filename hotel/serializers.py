@@ -22,26 +22,32 @@ class HotelDocumentSerializer(serializers.ModelSerializer):
 class HotelSerializer(serializers.ModelSerializer):
     admin = serializers.SerializerMethodField()
     documents = HotelDocumentSerializer(many=True, read_only=True)
+    logo_url = serializers.SerializerMethodField()
 
     class Meta:
         model = Hotel
         fields = [
-            'id', 'name', 'description', 'address', 'city', 'state', 'country',
+            'id', 'name', 'logo', 'logo_url', 'description', 'address', 'city', 'state', 'country',
             'pincode', 'phone', 'email', 'google_review_link', 'google_map_link', 'latitude',
             'longitude', 'qr_code_url', 'unique_qr_code',
             'check_in_time', 'check_out_time', 'time_zone',
             'breakfast_time', 'lunch_time', 'dinner_time', 'breakfast_reminder', 'lunch_reminder', 'dinner_reminder',
+            'gst_slabs',
             'status', 'is_verified', 'is_active',
             'is_demo', 'verification_notes', 'registration_date', 'verified_at',
             'updated_at', 'admin', 'documents'
         ]
         read_only_fields = ('status', 'is_verified', 'verified_at')
+        extra_kwargs = {'logo': {'write_only': True, 'required': False}}
 
     def get_admin(self, obj):
         admin_user = obj.get_admin()
         if admin_user:
             return UserSerializer(admin_user).data
         return None
+
+    def get_logo_url(self, obj):
+        return obj.get_logo_url()
 
 class UserHotelSerializer(serializers.ModelSerializer):
     class Meta:
@@ -57,11 +63,37 @@ class AdminHotelUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Hotel
         fields = [
-            'name', 'description', 'address', 'city', 'state', 'country',
+            'name', 'logo', 'description', 'address', 'city', 'state', 'country',
             'pincode', 'phone', 'email', 'google_review_link', 'google_map_link', 'latitude',
             'longitude', 'qr_code_url', 'check_in_time', 'check_out_time', 'time_zone',
             'breakfast_time', 'lunch_time', 'dinner_time', 'breakfast_reminder', 'lunch_reminder', 'dinner_reminder'
         ]
+
+
+class HotelGSTSerializer(serializers.ModelSerializer):
+    """Manager/admin update of the hotel's GST slab table."""
+    class Meta:
+        model = Hotel
+        fields = ['gst_slabs']
+
+    def validate_gst_slabs(self, value):
+        if not isinstance(value, list):
+            raise serializers.ValidationError("gst_slabs must be a list of tiers.")
+        null_tiers = 0
+        for tier in value:
+            if not isinstance(tier, dict):
+                raise serializers.ValidationError("Each tier must be an object.")
+            gst_value = tier.get('gst_value')
+            max_rate = tier.get('max_rate')
+            if not isinstance(gst_value, (int, float)) or not (0 <= gst_value <= 100):
+                raise serializers.ValidationError("gst_value must be a number between 0 and 100.")
+            if max_rate is None:
+                null_tiers += 1
+            elif not isinstance(max_rate, (int, float)) or max_rate <= 0:
+                raise serializers.ValidationError("max_rate must be a positive number or null.")
+        if null_tiers > 1:
+            raise serializers.ValidationError("Only one open-ended tier (max_rate=null) is allowed.")
+        return value
 
 
 class AdminHotelDocumentUpdateSerializer(serializers.ModelSerializer):

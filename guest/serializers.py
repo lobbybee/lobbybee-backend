@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Guest, GuestIdentityDocument, Stay, Booking
+from .models import Guest, GuestIdentityDocument, Stay, Booking, Invoice
 from django.db import transaction
 from hotel.models import Room
 from django.utils import timezone
@@ -382,3 +382,34 @@ class BookingListSerializer(serializers.ModelSerializer):
         representation["check_in_date"] = _hotel_local_iso(instance.check_in_date, instance.hotel)
         representation["check_out_date"] = _hotel_local_iso(instance.check_out_date, instance.hotel)
         return representation
+
+
+# --- Invoice serializers ---
+class InvoiceSerializer(serializers.ModelSerializer):
+    """Read serializer for a stored invoice."""
+    class Meta:
+        model = Invoice
+        fields = [
+            "id", "invoice_number", "booking", "line_items", "gst_slabs",
+            "subtotal", "discount_amount", "gst_amount", "total_amount",
+            "is_locked", "locked_at", "created_by", "created_at", "updated_at",
+        ]
+        read_only_fields = fields
+
+
+class InvoiceGenerateSerializer(serializers.Serializer):
+    booking_id = serializers.IntegerField()
+    # {category_id (str/int): nightly_rate}
+    room_rates = serializers.DictField(child=serializers.DecimalField(max_digits=10, decimal_places=2), required=False)
+    discount_amount = serializers.DecimalField(max_digits=12, decimal_places=2, required=False, min_value=0, default=0)
+    gst_rate = serializers.DecimalField(max_digits=5, decimal_places=2, required=False, min_value=0, max_value=100, allow_null=True)
+
+
+class InvoiceUpdateSerializer(serializers.Serializer):
+    line_items = serializers.ListField(child=serializers.DictField(), required=False)
+    discount_amount = serializers.DecimalField(max_digits=12, decimal_places=2, required=False, min_value=0)
+    gst_rate = serializers.DecimalField(max_digits=5, decimal_places=2, required=False, min_value=0, max_value=100, allow_null=True)
+
+
+class LockAllInvoicesSerializer(serializers.Serializer):
+    date = serializers.DateField()

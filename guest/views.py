@@ -11,15 +11,17 @@ from django.contrib.auth import get_user_model
 import threading
 import math
 
-from .models import Guest, GuestIdentityDocument, Stay, Booking
+from .models import Guest, GuestIdentityDocument, Stay, Booking, Invoice
 from .serializers import (
     CreateGuestSerializer, CheckinOfflineSerializer, VerifyCheckinSerializer,
     StayListSerializer, BookingListSerializer, GuestResponseSerializer, ExtendStaySerializer,
     CheckoutSerializer, CheckoutBulkSerializer, CheckedInGuestGroupSerializer,
-    BookingHistoryGroupSerializer
+    BookingHistoryGroupSerializer,
+    InvoiceSerializer, InvoiceGenerateSerializer, InvoiceUpdateSerializer, LockAllInvoicesSerializer
 )
 from .services_checkout import checkout_stays_for_guest
-from hotel.models import Hotel, Room, WiFiCredential
+from .services_invoice import build_invoice_lines, compute_totals, next_invoice_number, invoice_booking_context
+from hotel.models import Hotel, Room, WiFiCredential, default_gst_slabs
 from hotel.permissions import IsHotelStaff, IsSameHotelUser
 from user.permissions import IsPlatformAdmin, IsPlatformStaff
 from .permissions import CanManageGuests, CanViewAndManageStays
@@ -1669,6 +1671,164 @@ class StayManagementViewSet(viewsets.GenericViewSet):
                 f'Failed to reject checkin: {str(e)}',
                 status=status.HTTP_400_BAD_REQUEST
             )
+
+
+class InvoiceViewSet(viewsets.GenericViewSet):
+    """
+    Guest invoice management (receptionist, manager, hotel admin).
+      POST   /api/invoices/generate/    — generate an invoice for a booking
+      PATCH  /api/invoices/{id}/         — update an unlocked invoice
+      GET    /api/invoices/              — list (filters below)
+      GET    /api/invoices/{id}/         — retrieve
+      POST   /api/invoices/lock-all/     — freeze invoices created on/before a date
+
+    List filters (query params, all optional):
+      is_locked=true|false         booking=<id>         guest_id=<primary guest id>
+      date_from=YYYY-MM-DD         date_to=YYYY-MM-DD   (on created_at date)
+      q=<text>                     (matches invoice_number)
+    """
+    permission_classes = [permissions.IsAuthenticated, CanViewAndManageStays, IsSameHotelUser]
+    pagination_class = StandardResultsSetPagination
+    serializer_class = InvoiceSerializer
+
+    def get_queryset(self):
+        return Invoice.objects.filter(hotel=self.request.user.hotel).order_by('-created_at')
+
+    def list(self, request):
+        qs = self.get_queryset()
+        params = request.query_params
+
+        is_locked = params.get('is_locked')
+        if is_locked is not None:
+            qs = qs.filter(is_locked=is_locked.lower() in ('true', '1', 'yes'))
+        if params.get('booking'):
+            qs = qs.filter(booking_id=params['booking'])
+        if params.get('guest_id'):
+            qs = qs.filter(booking__primary_guest_id=params['guest_id'])
+        if params.get('date_from'):
+            qs = qs.filter(created_at__date__gte=params['date_from'])
+        if params.get('date_to'):
+            qs = qs.filter(created_at__date__lte=params['date_to'])
+        if params.get('q'):
+            qs = qs.filter(invoice_number__icontains=params['q'])
+
+        page = self.paginate_queryset(qs)
+        serializer = InvoiceSerializer(page, many=True)
+        return self.get_paginated_response(serializer.data)
+
+    def retrieve(self, request, pk=None):
+        invoice = get_object_or_404(self.get_queryset(), pk=pk)
+        data = InvoiceSerializer(invoice).data
+        data['booking_details'] = invoice_booking_context(invoice.booking)
+        return success_response(data=data)
+
+    @action(detail=False, methods=['post'], url_path='preview')
+    def preview(self, request):
+        """Compute a draft invoice for a booking without saving. Same inputs as generate."""
+        serializer = InvoiceGenerateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        hotel = request.user.hotel
+
+        booking = get_object_or_404(Booking, id=data['booking_id'], hotel=hotel)
+        room_rates = {str(k): v for k, v in (data.get('room_rates') or {}).items()}
+        lines = build_invoice_lines(booking, room_rates)
+        if not lines:
+            return error_response('Booking has no rooms to invoice.', status=status.HTTP_400_BAD_REQUEST)
+
+        slabs = hotel.gst_slabs or default_gst_slabs()
+        discount = data.get('discount_amount') or 0
+        subtotal, gst_total, total = compute_totals(lines, discount, slabs, data.get('gst_rate'))
+
+        return success_response(data={
+            'booking': booking.id,
+            'has_existing_invoice': hasattr(booking, 'invoice'),
+            'booking_details': invoice_booking_context(booking),
+            'line_items': lines,
+            'gst_slabs': slabs,
+            'subtotal': subtotal,
+            'discount_amount': discount,
+            'gst_amount': gst_total,
+            'total_amount': total,
+        })
+
+    @action(detail=False, methods=['post'], url_path='generate')
+    def generate(self, request):
+        serializer = InvoiceGenerateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        hotel = request.user.hotel
+
+        booking = get_object_or_404(Booking, id=data['booking_id'], hotel=hotel)
+        if hasattr(booking, 'invoice'):
+            return error_response('An invoice already exists for this booking.', status=status.HTTP_400_BAD_REQUEST)
+
+        room_rates = {str(k): v for k, v in (data.get('room_rates') or {}).items()}
+        lines = build_invoice_lines(booking, room_rates)
+        if not lines:
+            return error_response('Booking has no rooms to invoice.', status=status.HTTP_400_BAD_REQUEST)
+
+        slabs = hotel.gst_slabs or default_gst_slabs()  # fall back for hotels with none configured
+        discount = data.get('discount_amount') or 0
+        subtotal, gst_total, total = compute_totals(lines, discount, slabs, data.get('gst_rate'))
+
+        try:
+            with transaction.atomic():
+                invoice = Invoice.objects.create(
+                    hotel=hotel,
+                    booking=booking,
+                    invoice_number=next_invoice_number(hotel),
+                    line_items=lines,
+                    gst_slabs=slabs,
+                    subtotal=subtotal,
+                    discount_amount=discount,
+                    gst_amount=gst_total,
+                    total_amount=total,
+                    created_by=request.user,
+                )
+        except Exception as e:
+            logger.error(f"Error generating invoice: {str(e)}")
+            return error_response(f'Failed to generate invoice: {str(e)}', status=status.HTTP_400_BAD_REQUEST)
+
+        data = InvoiceSerializer(invoice).data
+        data['booking_details'] = invoice_booking_context(booking)
+        return created_response(data=data)
+
+    def partial_update(self, request, pk=None):
+        invoice = get_object_or_404(self.get_queryset(), pk=pk)
+        if invoice.is_locked:
+            return error_response('This invoice is locked and cannot be updated.', status=status.HTTP_423_LOCKED)
+
+        serializer = InvoiceUpdateSerializer(data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        lines = data.get('line_items', invoice.line_items)
+        discount = data.get('discount_amount', invoice.discount_amount)
+        # gst_rate override: pass-through if supplied, else recompute from snapshotted slabs
+        gst_override = data.get('gst_rate') if 'gst_rate' in data else None
+        subtotal, gst_total, total = compute_totals(lines, discount, invoice.gst_slabs, gst_override)
+
+        invoice.line_items = lines
+        invoice.discount_amount = discount
+        invoice.subtotal = subtotal
+        invoice.gst_amount = gst_total
+        invoice.total_amount = total
+        invoice.save(update_fields=['line_items', 'discount_amount', 'subtotal', 'gst_amount', 'total_amount', 'updated_at'])
+
+        return success_response(data=InvoiceSerializer(invoice).data)
+
+    @action(detail=False, methods=['post'], url_path='lock-all')
+    def lock_all(self, request):
+        serializer = LockAllInvoicesSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        lock_date = serializer.validated_data['date']
+
+        count = Invoice.objects.filter(
+            hotel=request.user.hotel, is_locked=False, created_at__date__lte=lock_date
+        ).update(is_locked=True, locked_at=timezone.now())
+
+        return success_response(data={'locked_count': count}, message=f'{count} invoice(s) locked.')
 
 
 class ScheduleTestReminderView(APIView):

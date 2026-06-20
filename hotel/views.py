@@ -17,6 +17,7 @@ from .serializers import (
     HotelSerializer,
     UserHotelSerializer,
     HotelDocumentSerializer,
+    HotelGSTSerializer,
     RoomCategorySerializer,
     RoomSerializer,
     RoomStatusUpdateSerializer,
@@ -26,6 +27,7 @@ from .serializers import (
     RoomWiFiCredentialSerializer,
 )
 from .permissions import IsHotelAdmin, IsSameHotelUser, CanManagePlatform, IsHotelStaffReadOnlyOrAdmin, RoomPermissions, CanManagePaymentQRCode
+from user.permissions import IsHotelManagerOrAdmin
 from django_filters.rest_framework import DjangoFilterBackend
 
 # Set up logger
@@ -174,6 +176,21 @@ class UpdateProfileView(generics.UpdateAPIView):
 
     def get_object(self):
         # Hotel admins can only update their own hotel
+        hotel = getattr(self.request.user, "hotel", None)
+        if hotel is None:
+            raise Http404("No hotel associated with this user.")
+        return hotel
+
+
+class HotelGSTUpdateView(generics.UpdateAPIView):
+    """
+    Update the GST slab table for the requesting user's hotel.
+    Accessible to hotel admins and managers.
+    """
+    serializer_class = HotelGSTSerializer
+    permission_classes = [permissions.IsAuthenticated, IsHotelManagerOrAdmin]
+
+    def get_object(self):
         hotel = getattr(self.request.user, "hotel", None)
         if hotel is None:
             raise Http404("No hotel associated with this user.")

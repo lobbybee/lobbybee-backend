@@ -5,7 +5,21 @@ import re
 from django.core.exceptions import ValidationError
 
 from user.models import User
-from lobbybee.utils.file_url import upload_to_hotel_documents
+from lobbybee.utils.file_url import upload_to_hotel_documents, upload_to_hotel_logo
+
+# Default GST slabs (India, eff. 22 Sep 2025): per room per night —
+# <=1000 -> 0%, 1001-7500 -> 5%, >7500 -> 18%. New hotels start with these; hotels with no slabs
+# configured fall back to them at billing time. Either can be overridden.
+DEFAULT_GST_SLABS = [
+    {'id': 1, 'max_rate': 1000, 'gst_value': 0},
+    {'id': 2, 'max_rate': 7500, 'gst_value': 5},
+    {'id': 3, 'max_rate': None, 'gst_value': 18},
+]
+
+
+def default_gst_slabs():
+    return [dict(s) for s in DEFAULT_GST_SLABS]
+
 
 # Hotel Management
 class Hotel(models.Model):
@@ -18,6 +32,7 @@ class Hotel(models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=200)
+    logo = models.FileField(upload_to=upload_to_hotel_logo, blank=True, null=True, help_text="Hotel logo (optional)")
     description = models.TextField(blank=True)
     address = models.TextField(blank=True)
     city = models.CharField(max_length=100, blank=True)
@@ -48,6 +63,11 @@ class Hotel(models.Model):
     lunch_reminder = models.BooleanField(default=False, help_text="Enable lunch reminders for guests")
     dinner_reminder = models.BooleanField(default=False, help_text="Enable dinner reminders for guests")
 
+    # GST slabs for guest billing. Each tier: {id, max_rate, gst_value}. max_rate is the nightly-rate
+    # ceiling of the tier; the open-ended top tier uses max_rate=null. Empty list = no GST.
+    # India (eff. 22 Sep 2025): <=1000 -> 0%, 1001-7500 -> 5%, >7500 -> 18% per room per night.
+    gst_slabs = models.JSONField(default=default_gst_slabs, blank=True, help_text="GST tiers: [{id, max_rate, gst_value}]")
+
     status = models.CharField(max_length=20, choices=HOTEL_STATUS, default='pending')
     is_verified = models.BooleanField(default=False)
     is_active = models.BooleanField(default=True)
@@ -63,6 +83,9 @@ class Hotel(models.Model):
             base_code = self.name.lower().replace(' ', '_')
             self.unique_qr_code = f"{base_code}_{uuid.uuid4().hex[:6]}"
         super().save(*args, **kwargs)
+
+    def get_logo_url(self):
+        return self.logo.url if self.logo else None
 
     def get_admin(self):
         return self.user_set.filter(user_type='hotel_admin').first()
