@@ -31,6 +31,7 @@ from chat.utils.whatsapp_utils import send_whatsapp_image_with_link, send_whatsa
 from chat.utils.whatsapp_flow_utils import generate_department_menu_payload
 from chat.models import Conversation
 from guest.name_utils import get_first_name_from_full_name
+from user.activity import log_activity
 import logging
 
 logger = logging.getLogger(__name__)
@@ -127,6 +128,12 @@ class GuestManagementViewSet(viewsets.GenericViewSet):
                             is_primary=(acc_doc_count == 0)  # First doc is primary for this guest
                         )
                         acc_doc_count += 1
+
+                log_activity(
+                    request.user, request.user.hotel, 'guest_created',
+                    f'Created guest {primary_guest.full_name}',
+                    guest_id=primary_guest.id, guest_name=primary_guest.full_name,
+                )
 
                 return created_response(data={
                     'primary_guest_id': primary_guest.id,
@@ -678,7 +685,16 @@ class StayManagementViewSet(viewsets.GenericViewSet):
                         'flags': serialized_flags
                     }
                     response_data['flag_summary'] = flag_summary_data
-                
+
+                room_numbers = [s.room.room_number for s in stays_to_activate if s.room]
+                rooms = ', '.join(room_numbers)
+                log_activity(
+                    request.user, stay.hotel, 'checked_in',
+                    f'Checked in {stay.guest.full_name}' + (f' to Room {rooms}' if rooms else ''),
+                    guest_id=stay.guest_id, guest_name=stay.guest.full_name,
+                    room_numbers=room_numbers, stay_ids=[s.id for s in stays_to_activate],
+                )
+
                 return success_response(data=response_data)
 
         except Exception as e:
@@ -1013,6 +1029,14 @@ class StayManagementViewSet(viewsets.GenericViewSet):
         if checked_out_stay.internal_note:
             response_data['internal_note'] = checked_out_stay.internal_note
 
+        room = getattr(checked_out_stay.room, 'room_number', None)
+        log_activity(
+            request.user, request.user.hotel, 'checked_out',
+            f'Checked out {result["guest"].full_name}' + (f' from Room {room}' if room else ''),
+            guest_id=result['guest'].id, guest_name=result['guest'].full_name,
+            room_number=room, stay_ids=[checked_out_stay.id],
+        )
+
         return success_response(data=response_data)
 
     @action(detail=False, methods=['post'], url_path='checkout-bulk')
@@ -1059,6 +1083,16 @@ class StayManagementViewSet(viewsets.GenericViewSet):
             'total_amount': str(result['total_amount']),
             'message': 'Guest stays checked out successfully',
         }
+
+        room_numbers = [s.room.room_number for s in result['checked_out_stays'] if s.room]
+        rooms = ', '.join(room_numbers)
+        log_activity(
+            request.user, request.user.hotel, 'checked_out',
+            f'Checked out {result["guest"].full_name}' + (f' from Room {rooms}' if rooms else ''),
+            guest_id=result['guest'].id, guest_name=result['guest'].full_name,
+            room_numbers=room_numbers,
+            stay_ids=[s.id for s in result['checked_out_stays']],
+        )
         return success_response(data=response_data)
 
     def _build_checkout_template_context(self, stay, checked_out_stays=None):
@@ -1586,6 +1620,17 @@ class StayManagementViewSet(viewsets.GenericViewSet):
 
                 logger.info(f"Extended stay for guest {stay.guest.full_name} from {old_checkout_date} to {new_checkout_date}")
 
+                room = getattr(stay.room, 'room_number', None)
+                log_activity(
+                    request.user, stay.hotel, 'stay_extended',
+                    f'Extended stay for {stay.guest.full_name}'
+                    + (f' (Room {room})' if room else '')
+                    + f' to {new_checkout_date.date()}',
+                    guest_id=stay.guest_id, guest_name=stay.guest.full_name,
+                    room_number=room, new_checkout_date=str(new_checkout_date.date()),
+                    stay_id=stay.id,
+                )
+
                 return success_response(data={
                     'stay_id': stay.id,
                     'old_checkout_date': old_checkout_date,
@@ -1658,6 +1703,12 @@ class StayManagementViewSet(viewsets.GenericViewSet):
                     thread.daemon = True
                     thread.start()
 
+                log_activity(
+                    request.user, stay.hotel, 'checkin_rejected',
+                    f'Rejected check-in for {guest.full_name}',
+                    guest_id=guest.id, guest_name=guest.full_name,
+                )
+
                 return success_response(data={
                     'guest_id': guest.id,
                     'guest_name': guest.full_name,
@@ -1710,7 +1761,12 @@ class InvoiceViewSet(viewsets.GenericViewSet):
         if params.get('date_to'):
             qs = qs.filter(created_at__date__lte=params['date_to'])
         if params.get('q'):
-            qs = qs.filter(invoice_number__icontains=params['q'])
+            term = params['q']
+            qs = qs.filter(
+                Q(invoice_number__icontains=term) |
+                Q(booking__primary_guest__full_name__icontains=term) |
+                Q(booking__primary_guest__whatsapp_number__icontains=term)
+            ).distinct()
 
         page = self.paginate_queryset(qs)
         serializer = InvoiceSerializer(page, many=True)

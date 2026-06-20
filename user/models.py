@@ -33,6 +33,20 @@ class User(AbstractUser):
     created_at = models.DateTimeField(auto_now_add=True)
     department = models.JSONField(null=True, blank=True)
 
+class ActivityLog(models.Model):
+    """Human-readable feed of staff actions, scoped per hotel."""
+    actor = models.ForeignKey('user.User', null=True, blank=True, on_delete=models.SET_NULL)
+    hotel = models.ForeignKey('hotel.Hotel', on_delete=models.CASCADE, related_name='activity_logs')
+    action = models.CharField(max_length=40)   # verb: checked_in, checked_out, room_status, guest_created, ...
+    message = models.CharField(max_length=255)  # rendered at write time
+    metadata = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [models.Index(fields=['hotel', '-created_at'], name='user_activi_hotel_i_idx')]
+
+
 class OTP(models.Model):
     user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     otp = models.CharField(max_length=6)

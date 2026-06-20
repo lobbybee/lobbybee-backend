@@ -9,9 +9,10 @@ from django.db import transaction, models
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 from rest_framework.exceptions import PermissionDenied
-from .models import User, OTP
+from .models import User, OTP, ActivityLog
+from .activity import log_activity
 from .serializers import UserSerializer
-from hotel.permissions import IsHotelAdmin
+from hotel.permissions import IsHotelAdmin, IsHotelStaff
 from .permissions import IsSuperUser, IsPlatformAdmin, IsPlatformStaff, CanManageHotelUsers
 from hotel.models import Hotel
 from hotel.serializers import UserHotelSerializer
@@ -23,6 +24,49 @@ from .serializers import MyTokenObtainPairSerializer, ChangePasswordSerializer
 
 class CustomTokenObtainPairView(TokenObtainPairView):
     serializer_class = MyTokenObtainPairSerializer
+
+
+class ActivityLogSerializer(serializers.ModelSerializer):
+    actor = serializers.CharField(source='actor.username', default=None, read_only=True)
+    actor_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ActivityLog
+        fields = ['id', 'actor', 'actor_name', 'action', 'message', 'metadata', 'created_at']
+
+    def get_actor_name(self, obj):
+        if not obj.actor:
+            return None
+        return obj.actor.get_full_name() or obj.actor.username
+
+
+class RecentActivityView(generics.ListAPIView):
+    """Recent staff actions for the caller's hotel, newest first."""
+    serializer_class = ActivityLogSerializer
+    permission_classes = [IsAuthenticated, IsHotelStaff]
+
+    def get_queryset(self):
+        p = self.request.query_params
+        qs = ActivityLog.objects.filter(hotel=self.request.user.hotel).select_related('actor')
+
+        action = p.get('action')
+        if action:
+            qs = qs.filter(action__in=action.split(','))   # ?action=checked_in,checked_out
+
+        actor = p.get('actor')
+        if actor:
+            qs = qs.filter(actor=actor) if actor.isdigit() else qs.filter(actor__username=actor)
+
+        if p.get('date_from'):
+            qs = qs.filter(created_at__date__gte=p['date_from'])   # YYYY-MM-DD
+        if p.get('date_to'):
+            qs = qs.filter(created_at__date__lte=p['date_to'])
+
+        search = p.get('search')
+        if search:
+            qs = qs.filter(message__icontains=search)
+
+        return qs
 
 class PlatformUserViewSet(viewsets.ModelViewSet):
     serializer_class = UserSerializer
@@ -300,11 +344,17 @@ class HotelStaffRegistrationView(generics.CreateAPIView):
                         is_active_hotel_user=True
                     )
                     created_staff.append(user)
-                
+                    log_activity(
+                        request.user, request.user.hotel, 'staff_created',
+                        f'Added staff {user.username} ({user.user_type})',
+                        staff_id=user.id, staff_username=user.username,
+                        staff_name=user.get_full_name() or user.username, user_type=user.user_type,
+                    )
+
                 return created_response(
                     message=f'{len(created_staff)} staff users created successfully'
                 )
-            
+
             # Single staff creation (old format)
             serializer = self.get_serializer(data=request.data)
             serializer.is_valid(raise_exception=True)
@@ -313,6 +363,12 @@ class HotelStaffRegistrationView(generics.CreateAPIView):
                 hotel=request.user.hotel,
                 created_by=request.user,
                 is_verified=True  # No email verification needed for staff
+            )
+            log_activity(
+                request.user, request.user.hotel, 'staff_created',
+                f'Added staff {user.username} ({user.user_type})',
+                staff_id=user.id, staff_username=user.username,
+                staff_name=user.get_full_name() or user.username, user_type=user.user_type,
             )
             return created_response(message='Staff user created successfully')
         except Exception as e:
@@ -489,10 +545,16 @@ class UserViewSet(viewsets.ModelViewSet):
         return User.objects.none()
 
     def perform_create(self, serializer):
-        serializer.save(
+        user = serializer.save(
             hotel=self.request.user.hotel,
             created_by=self.request.user,
             is_verified=True
+        )
+        log_activity(
+            self.request.user, self.request.user.hotel, 'staff_created',
+            f'Added staff {user.username} ({user.user_type})',
+            staff_id=user.id, staff_username=user.username,
+            staff_name=user.get_full_name() or user.username, user_type=user.user_type,
         )
 
     def create(self, request, *args, **kwargs):
@@ -536,7 +598,13 @@ class UserViewSet(viewsets.ModelViewSet):
                         is_active_hotel_user=item.get('is_active_hotel_user', True)
                     )
                     created_users.append(user)
-                
+                    log_activity(
+                        request.user, request.user.hotel, 'staff_created',
+                        f'Added staff {user.username} ({user.user_type})',
+                        staff_id=user.id, staff_username=user.username,
+                        staff_name=user.get_full_name() or user.username, user_type=user.user_type,
+                    )
+
                 # Serialize the created users for the response
                 response_serializer = self.get_serializer(created_users, many=True)
                 headers = self.get_success_headers(response_serializer.data)

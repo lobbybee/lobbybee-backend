@@ -28,6 +28,7 @@ from .serializers import (
 )
 from .permissions import IsHotelAdmin, IsSameHotelUser, CanManagePlatform, IsHotelStaffReadOnlyOrAdmin, RoomPermissions, CanManagePaymentQRCode
 from user.permissions import IsHotelManagerOrAdmin
+from user.activity import log_activity
 from django_filters.rest_framework import DjangoFilterBackend
 
 # Set up logger
@@ -387,7 +388,22 @@ class RoomViewSet(viewsets.ModelViewSet):
         return Room.objects.filter(hotel=self.request.user.hotel)
 
     def perform_create(self, serializer):
-        serializer.save(hotel=self.request.user.hotel)
+        room = serializer.save(hotel=self.request.user.hotel)
+        log_activity(
+            self.request.user, self.request.user.hotel, 'room_created',
+            f'Added Room {room.room_number}', room_id=room.id, room_number=room.room_number,
+        )
+
+    def perform_update(self, serializer):
+        old_status = serializer.instance.status
+        room = serializer.save()
+        if room.status != old_status:
+            log_activity(
+                self.request.user, self.request.user.hotel, 'room_status',
+                f'Room {room.room_number}: {old_status} → {room.status}',
+                room_id=room.id, room_number=room.room_number,
+                old=old_status, new=room.status,
+            )
 
     def create(self, request, *args, **kwargs):
         data = request.data
@@ -407,7 +423,18 @@ class RoomViewSet(viewsets.ModelViewSet):
         # Save multiple rooms, assigning the hotel to each
         for item in serializer.validated_data:
             item['hotel'] = self.request.user.hotel
-        serializer.save()
+        rooms = serializer.save()
+        self._log_rooms_added(rooms)
+
+    def _log_rooms_added(self, rooms):
+        if not rooms:
+            return
+        numbers = [r.room_number for r in rooms]
+        log_activity(
+            self.request.user, self.request.user.hotel, 'rooms_created',
+            f'Added {len(numbers)} rooms ({", ".join(numbers)})',
+            count=len(numbers), room_numbers=numbers,
+        )
 
     @action(detail=False, methods=['post'], url_path='bulk-create')
     def bulk_create(self, request):
@@ -471,7 +498,8 @@ class RoomViewSet(viewsets.ModelViewSet):
                     end_number_str=validated_data['end_number']
                 )
                 all_created_rooms.extend(created_rooms)
-            
+
+            self._log_rooms_added(all_created_rooms)
             return created_response(
                 message=f"{len(all_created_rooms)} rooms created successfully."
             )
