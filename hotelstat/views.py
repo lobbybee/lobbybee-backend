@@ -3,7 +3,7 @@ from rest_framework.response import Response
 from rest_framework.decorators import action
 from hotel.models import Hotel, Room, RoomCategory
 from lobbybee.utils.responses import success_response, error_response, forbidden_response
-from guest.models import Guest, Stay, Booking, Feedback
+from guest.models import Guest, Stay, Booking, Feedback, Invoice
 from chat.models import Conversation, Message
 from user.models import User
 from user.permissions import IsHotelManagerOrAdmin, IsHotelStaffOrAdmin
@@ -1200,50 +1200,37 @@ class HotelUserStatsViewSet(viewsets.ViewSet):
             )
             current_guests_count = current_stays.count()
             
-            # 5. Total Revenue
+            # 5. Total Revenue — real numbers from generated invoices.
+            # completed_stays is still needed below for ADR room-nights.
             if start_date and end_date:
-                # Revenue for date range
-                completed_stays = Stay.objects.filter(
-                    hotel=hotel,
-                    status='completed',
-                ).annotate(
-                    effective_check_out=Coalesce('actual_check_out', 'check_out_date')
-                ).filter(
-                    effective_check_out__date__gte=start_date,
-                    effective_check_out__date__lte=end_date
-                )
+                period_start, period_end = start_date, end_date
                 revenue_period = f"{start_date} to {end_date}"
             else:
-                # Revenue for current month
-                month_start = target_date.replace(day=1)
-                completed_stays = Stay.objects.filter(
-                    hotel=hotel,
-                    status='completed',
-                ).annotate(
-                    effective_check_out=Coalesce('actual_check_out', 'check_out_date')
-                ).filter(
-                    effective_check_out__date__gte=month_start,
-                    effective_check_out__date__lte=target_date
-                )
+                period_start, period_end = target_date.replace(day=1), target_date
                 revenue_period = f"Month of {target_date.strftime('%B %Y')}"
-            
-            # Also include confirmed bookings revenue
-            confirmed_bookings = Booking.objects.filter(
+
+            completed_stays = Stay.objects.filter(
                 hotel=hotel,
-                status='confirmed'
+                status='completed',
+            ).annotate(
+                effective_check_out=Coalesce('actual_check_out', 'check_out_date')
+            ).filter(
+                effective_check_out__date__gte=period_start,
+                effective_check_out__date__lte=period_end
             )
-            
-            if start_date and end_date:
-                confirmed_bookings = confirmed_bookings.filter(
-                    check_in_date__gte=start_date,
-                    check_in_date__lte=end_date
-                )
-            
-            total_revenue = (completed_stays.aggregate(
-                total=Sum('total_amount')
-            )['total'] or 0) + (confirmed_bookings.aggregate(
-                total=Sum('total_amount')
-            )['total'] or 0)
+
+            revenue_agg = Invoice.objects.filter(
+                hotel=hotel,
+                created_at__date__gte=period_start,
+                created_at__date__lte=period_end,
+            ).aggregate(
+                total=Sum('total_amount'),
+                subtotal=Sum('subtotal'),
+                discount=Sum('discount_amount'),
+                gst=Sum('gst_amount'),
+                count=Count('id'),
+            )
+            total_revenue = revenue_agg['total'] or 0
             
             # 6. Additional useful metrics
             # Expected check-ins today
@@ -1324,12 +1311,10 @@ class HotelUserStatsViewSet(viewsets.ViewSet):
                 'revenue_summary': {
                     'period': revenue_period,
                     'total_revenue': float(total_revenue),
-                    'completed_stays_revenue': float(completed_stays.aggregate(
-                        total=Sum('total_amount')
-                    )['total'] or 0),
-                    'confirmed_bookings_revenue': float(confirmed_bookings.aggregate(
-                        total=Sum('total_amount')
-                    )['total'] or 0),
+                    'subtotal': float(revenue_agg['subtotal'] or 0),
+                    'discount_amount': float(revenue_agg['discount'] or 0),
+                    'gst_amount': float(revenue_agg['gst'] or 0),
+                    'invoice_count': revenue_agg['count'] or 0,
                 },
                 'room_status_breakdown': {
                     'occupied': occupied_rooms,

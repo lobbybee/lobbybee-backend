@@ -1734,9 +1734,10 @@ class InvoiceViewSet(viewsets.GenericViewSet):
       POST   /api/invoices/lock-all/     — freeze invoices created on/before a date
 
     List filters (query params, all optional):
-      is_locked=true|false         booking=<id>         guest_id=<primary guest id>
+      is_locked=true|false|all     booking=<id>         guest_id=<primary guest id>
       date_from=YYYY-MM-DD         date_to=YYYY-MM-DD   (on created_at date)
       q=<text>                     (matches invoice_number)
+      report=true                  (return all matches, no pagination)
     """
     permission_classes = [permissions.IsAuthenticated, CanViewAndManageStays, IsSameHotelUser]
     pagination_class = StandardResultsSetPagination
@@ -1750,7 +1751,7 @@ class InvoiceViewSet(viewsets.GenericViewSet):
         params = request.query_params
 
         is_locked = params.get('is_locked')
-        if is_locked is not None:
+        if is_locked is not None and is_locked.lower() != 'all':
             qs = qs.filter(is_locked=is_locked.lower() in ('true', '1', 'yes'))
         if params.get('booking'):
             qs = qs.filter(booking_id=params['booking'])
@@ -1767,6 +1768,9 @@ class InvoiceViewSet(viewsets.GenericViewSet):
                 Q(booking__primary_guest__full_name__icontains=term) |
                 Q(booking__primary_guest__whatsapp_number__icontains=term)
             ).distinct()
+
+        if params.get('report', '').lower() in ('true', '1', 'yes'):
+            return success_response(data=InvoiceSerializer(qs, many=True).data)
 
         page = self.paginate_queryset(qs)
         serializer = InvoiceSerializer(page, many=True)
