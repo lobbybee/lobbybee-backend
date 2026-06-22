@@ -1800,9 +1800,11 @@ class InvoiceViewSet(viewsets.GenericViewSet):
         discount = data.get('discount_amount') or 0
         subtotal, gst_total, total = compute_totals(lines, discount, slabs, data.get('gst_rate'))
 
+        existing = getattr(booking, 'invoice', None)
         return success_response(data={
             'booking': booking.id,
-            'has_existing_invoice': hasattr(booking, 'invoice'),
+            'has_existing_invoice': existing is not None,
+            'previous_data': InvoiceSerializer(existing).data if existing else None,
             'booking_details': invoice_booking_context(booking),
             'line_items': lines,
             'gst_slabs': slabs,
